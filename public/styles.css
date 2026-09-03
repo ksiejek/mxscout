@@ -691,7 +691,17 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 .access-matrix .am-lvl-rw { color: var(--text); }
 .access-matrix .am-lvl-r { color: color-mix(in srgb, var(--text) 78%, var(--muted)); }
 .access-matrix .am-lvl-none { color: var(--muted); }
+/* The break between the attribute rows and the association rows. Same table,
+   same rule columns — a label, not a second header. */
+.access-matrix .am-group-cell {
+  padding-top: 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
 .access-matrix tbody tr:hover td { background: color-mix(in srgb, var(--panel-2) 40%, transparent); }
+.access-matrix tbody tr.am-group:hover td { background: transparent; }
 
 /* The row-level rule. It lives in its own column's header (see
    .access-matrix above); what is left here is the caption that introduces the
@@ -1596,6 +1606,31 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 /* The id column earns the accent: it is the one value the user copies out of
    here, to paste into a flow's object parameter. */
 .data-id { color: var(--accent); }
+/* A value this session may WRITE, asked of the running app per object rather
+   than per column: two rows of one entity can fall under different access
+   rules (different XPath), so one row's Status is writable and the next one's
+   is not. Green is the same green the access matrix uses for read+write. */
+.data-table td.data-write {
+  background: color-mix(in srgb, #46b45c 12%, transparent);
+  color: #8fe0a2;
+}
+.data-write-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.data-write-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+  background: color-mix(in srgb, #46b45c 35%, transparent);
+  border: 1px solid #46b45c;
+}
 .data-null { color: var(--muted); }
 .data-empty { padding: 14px; margin: 0; }
 

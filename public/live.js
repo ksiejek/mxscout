@@ -684,6 +684,26 @@
     return from + '\u2013' + to + (d.more ? '+' : '');
   }
 
+  // Did the app say this value is writable on this row? Only an explicit true
+  // counts: a runtime that would not answer leaves it null, and nothing is
+  // marked rather than something marked wrongly.
+  function isWritable(row, column) {
+    return !!(row && row.writable && row.writable[column] === true);
+  }
+
+  // Shown under a table that has at least one writable value, because a green
+  // cell with nothing naming it is decoration.
+  function writeLegend(rows, columns) {
+    var any = (rows || []).some(function (row) {
+      return (columns || []).some(function (c) { return isWritable(row, c); });
+    });
+    if (!any) return null;
+    return el('div', { class: 'data-write-legend' }, [
+      el('span', { class: 'data-write-swatch' }),
+      el('span', { text: 'Green: this session may write that value on that row. Everything else is read-only here.' })
+    ]);
+  }
+
   // `selectedSet`, when given, switches picking from single (click replaces
   // d.picked, used for a single-Object flow parameter) to multi (click
   // toggles membership in the Set, used for a List-typed one) \u2014 a checkbox
@@ -705,7 +725,14 @@
           return el('td', {}, [box]);
         }
         var v = c === 'id' ? row.id : (row.cells || {})[c];
-        var td = el('td', { class: v == null ? 'data-null' : (c === 'id' ? 'data-id' : ''), text: v == null ? '\u2014' : String(v) });
+        var cls = v == null ? 'data-null' : (c === 'id' ? 'data-id' : '');
+        // Green says this session may WRITE this value on THIS row. The answer
+        // is the running app's own (see writableCells in bridge.js), asked per
+        // object rather than per column, because a rule's XPath decides which
+        // rows it covers \u2014 the same attribute can be writable on one row and
+        // read-only on the next.
+        if (c !== 'id' && isWritable(row, c)) cls += (cls ? ' ' : '') + 'data-write';
+        var td = el('td', { class: cls || null, text: v == null ? '\u2014' : String(v) });
         if (v != null) td.setAttribute('title', String(v));
         return td;
       }));
@@ -720,9 +747,12 @@
       if (onPick) tr.addEventListener('click', toggle);
       return tr;
     });
-    return el('div', { class: 'data-scroll' }, [
-      el('table', { class: 'data-table' }, [el('thead', {}, [head]), el('tbody', {}, body)])
-    ]);
+    return el('div', {}, [
+      el('div', { class: 'data-scroll' }, [
+        el('table', { class: 'data-table' }, [el('thead', {}, [head]), el('tbody', {}, body)])
+      ]),
+      writeLegend(d.rows, dataColumns(entity))
+    ].filter(Boolean));
   }
 
   // Reading real data needs an approved app AND a bridge in its tab. Returns
@@ -889,7 +919,7 @@
           cur.lookupBusy = false;
           var row = data && data.rows && data.rows[0];
           if (err || !row) { cur.lookupError = 'Could not find that object — it may no longer exist in this session' + (err ? (' (' + err + ')') : '') + '.'; render(); return; }
-          cur.items = [{ id: row.id, cells: row.cells }].concat(cur.items.filter(function (i) { return i.id !== row.id; })).slice(0, 20);
+          cur.items = [{ id: row.id, cells: row.cells, writable: row.writable || null }].concat(cur.items.filter(function (i) { return i.id !== row.id; })).slice(0, 20);
           render();
         });
       }
@@ -969,7 +999,9 @@
       var rows = t.items.map(function (item) {
         var tds = ['id'].concat(columns).map(function (c) {
           var v = c === 'id' ? item.id : (item.cells || {})[c];
-          return el('td', { class: v == null ? 'data-null' : '', text: v == null ? '—' : String(v) });
+          var cls = v == null ? 'data-null' : '';
+          if (c !== 'id' && isWritable(item, c)) cls += (cls ? ' ' : '') + 'data-write';
+          return el('td', { class: cls || null, text: v == null ? '—' : String(v) });
         });
         var tr = el('tr', { class: onPick ? ('data-pickable' + (t.pickedId === item.id ? ' is-picked' : '')) : '' }, tds);
         if (onPick) tr.addEventListener('click', function () { t.pickedId = item.id; onPick(item.id); render(); });
@@ -978,8 +1010,9 @@
       var head = el('tr', {}, ['id'].concat(columns).map(function (c) { return el('th', { text: c }); }));
       kids.push(el('div', { class: 'popup-section' }, [
         el('h4', { text: 'Seen this session (' + t.items.length + ')' }),
-        el('div', { class: 'data-scroll' }, [el('table', { class: 'data-table' }, [el('thead', {}, [head]), el('tbody', {}, rows)])])
-      ]));
+        el('div', { class: 'data-scroll' }, [el('table', { class: 'data-table' }, [el('thead', {}, [head]), el('tbody', {}, rows)])]),
+        writeLegend(t.items, columns)
+      ].filter(Boolean)));
     }
 
     return el('div', { class: 'data-pane' }, kids);
@@ -1070,7 +1103,7 @@
                 cur.createBusy = false;
                 var row = data && data.rows && data.rows[0];
                 if (err || !row) { cur.createError = err || 'Could not create that object.'; render(); return; }
-                cur.items = [{ id: row.id, cells: row.cells }].concat(cur.items).slice(0, 20);
+                cur.items = [{ id: row.id, cells: row.cells, writable: row.writable || null }].concat(cur.items).slice(0, 20);
                 cur.createValues = {};
                 state.detail.createObject = null; // the window has done its job
                 render();

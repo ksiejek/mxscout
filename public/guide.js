@@ -95,13 +95,21 @@
     var head = el('tr', {}, [
       el('th', { text: 'id' }), el('th', { text: 'reference' }), el('th', { text: 'status' })
     ]);
+    // Green marks a value this session may write on THAT row — and only one of
+    // these two rows has it, which is the point: the app's own access rule
+    // decides per row, so the same column can be writable on one and not the
+    // next. Real classes, same as the screen.
     var rows = [
-      el('tr', {}, [el('td', { text: '8841' }), el('td', { text: 'RL-22091' }), el('td', { text: 'In transit' })]),
+      el('tr', {}, [el('td', { text: '8841' }), el('td', { text: 'RL-22091' }), el('td', { class: 'data-write', text: 'In transit' })]),
       el('tr', {}, [el('td', { text: '8842' }), el('td', { text: 'RL-22092' }), el('td', { text: 'Delayed' })])
     ];
     var table = el('table', { class: 'data-table' }, [el('thead', {}, [head]), el('tbody', {}, rows)]);
     return mock([
       tabs, table,
+      el('div', { class: 'data-write-legend' }, [
+        el('span', { class: 'data-write-swatch' }),
+        el('span', { text: 'Green: this session may write that value on that row.' })
+      ]),
       el('div', { class: 'muted', text: '1–10 of 253 — search narrows this as you type' })
     ]);
   }
@@ -198,7 +206,8 @@
         'Entities, Microflows, Nanoflows and Pages are grouped by module. Switch “View as” at the top and every list narrows to what that role can actually reach — the badges above say read, write, create or nothing at all.'
       ] },
       { num: '03', title: 'Open an object', mockup: mockObject, body: [
-        'Click an entity and its popup opens on Attributes & access, Data and Comments. What it is and who may see which rows sit on one tab, together — the same question asked at the same time — then what is in it right now, then what you have to say about it.',
+        'Click an entity and its popup opens on Attributes & access, Data and Comments. What it is and who may see which rows sit on one tab, together — the same question asked at the same time — attributes and the associations the entity owns, each with its access under every rule that applies — then what is in it right now, then what you have to say about it.',
+        'In the rows that come back, a value shown in green is one this session may write. That is asked of the app per row, not per column: a rule’s XPath decides which rows it covers, so the same field can be writable on one row and read-only on the next.',
         'Data needs a running app to answer from — that is the next step.'
       ] },
       { num: '04', title: 'Connect to a running app', mockup: mockConnect, body: [

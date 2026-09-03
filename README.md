@@ -111,8 +111,8 @@ the stored JSON (no server, no live app needed):
 
 - **Entities** — as a **List** (grouped by module, with per-role access
   badges) or a **Map** (a domain overview: each module's entities plus the
-  relationships between them). Click any entity for its attributes, access
-  rules and relationships.
+  relationships between them). Click any entity for its attributes and
+  associations, access rules and relationships.
 - **Microflows**, **Nanoflows**, **Pages** — grouped by module, each showing
   which roles can run/open it and its inputs.
 
@@ -177,10 +177,13 @@ have MxScout open for that.
 Open an entity and you get three tabs, in the order the questions actually
 arrive:
 
-- **Attributes & access** — the fields and their types, next to who may read or
-  write each one and the row-level XPath rule that decides *which rows* anyone
-  is allowed to see — one matrix, because "what is this" and "who can see it"
-  are the same question asked from opposite ends.
+- **Attributes & access** — every member of the entity: its attributes and the
+  associations it owns, each next to who may read or write it and the row-level
+  XPath rule that decides *which rows* anyone is allowed to see — one matrix,
+  because "what is this" and "who can see it" are the same question asked from
+  opposite ends. An association is a member like an attribute is, and an access
+  rule grants read or read+write on it the same way, so it belongs in the same
+  table.
 - **Data** — the rows themselves.
 - **Comments** — findings written against this object, see "Sending a review
   out" below.
@@ -191,6 +194,13 @@ client itself makes behind every paged data grid (`retrieve_by_xpath` with
 `count: true`). Search is live as you type, searches every text field, and
 recounts; typing a bare number finds that one object by its id. The id column
 is highlighted because it is the one value you copy out of here.
+
+A value shown in **green** is one this session may **write**. That is asked of
+the app per row, not per column — the application itself answers, for each
+object it returned, whether each of its values is editable under this session's
+rights. A rule's XPath decides which rows it covers, so the same field can be
+writable on one row and read-only on the next, and the table shows exactly
+that. Nothing is written to say so.
 
 Everything is read through the app's own client API, in your own logged-in
 session. The count runs against the app's own origin, so it keeps working even
