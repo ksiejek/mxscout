@@ -396,7 +396,23 @@ function sanitizeQueryData(raw) {
         const str = typeof v === 'string' ? v : String(v);
         cells[String(k).slice(0, 200)] = str.slice(0, 500);
       });
-      return { id: row.id == null ? null : String(row.id).slice(0, 60), cells };
+      // Which of those values the app said this session may write (see
+      // writableCells in public/bridge.js). Booleans only, and only for
+      // columns that actually came back — the same posture as the cells
+      // themselves: whatever shape arrives, what leaves here is a known one.
+      // An absent or unusable map becomes null, which the UI reads as "the
+      // runtime would not say", and it marks nothing.
+      let writable = null;
+      const w = row.writable && typeof row.writable === 'object' ? row.writable : null;
+      if (w) {
+        writable = {};
+        Object.keys(cells).forEach((k) => {
+          if (w[k] === true) writable[k] = true;
+          else if (w[k] === false) writable[k] = false;
+        });
+        if (!Object.keys(writable).length) writable = null;
+      }
+      return { id: row.id == null ? null : String(row.id).slice(0, 60), cells, writable };
     }).filter(Boolean),
     total: typeof raw.total === 'number' && Number.isFinite(raw.total) ? raw.total : null,
     offset: clampInt(raw.offset, 0, 1e7, 0),
