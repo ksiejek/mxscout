@@ -1,0 +1,1676 @@
+/* Palette. The shell is neutral grey on purpose — chrome should not compete
+ * with content — and colour is rationed to three jobs that never overlap:
+ *
+ *   --accent  things you can act on, plus the logo. One warm hue, used sparingly.
+ *   --mod     WHICH module something belongs to. Identity, not importance;
+ *             a stable hue per module name, set per element from app.js.
+ *   severity  HOW MUCH something matters, once comments land. A fixed scale.
+ *
+ * Mixing those channels is what turns a list of 200 comments into confetti,
+ * so each stays in its own lane. */
+:root {
+  color-scheme: dark;
+  --bg: #121212;
+  --panel: #1a1a1a;
+  --panel-2: #222222;
+  --text: #ededed;
+  --muted: #9b9b9b;
+  --accent: #e8a33d;
+  --border: #2e2e2e;
+  --alarm: #ff6b6b;
+  /* Fallback for anything not inside a module-coloured element. */
+  --mod: var(--muted);
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  background-image: radial-gradient(circle at 15% 0%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 42%);
+  background-attachment: fixed;
+  color: var(--text);
+}
+
+#app { min-height: 100vh; }
+
+/* ---------- shell: sidebar + main ---------- */
+.shell { display: flex; min-height: 100vh; align-items: stretch; }
+
+.sidebar {
+  width: 258px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+.sidebar-head { display: flex; align-items: center; gap: 10px; padding: 16px 14px 12px; }
+.sidebar-brand { font-size: 14px; font-weight: 650; letter-spacing: -0.01em; }
+.sidebar-brand-sub { font-size: 11px; color: var(--muted); }
+/* Quieter than a primary button elsewhere: it is the most-used action in the
+   sidebar, but a full-strength slab of accent at the top of every screen
+   shouts over the content it is meant to introduce. */
+.btn.sidebar-new {
+  margin: 0 12px 10px;
+  width: calc(100% - 24px);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel-2));
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  color: color-mix(in srgb, var(--accent) 70%, var(--text));
+  font-weight: 600;
+}
+.btn.sidebar-new:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 26%, var(--panel-2));
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+}
+.sidebar-scroll { flex: 1; overflow-y: auto; padding: 4px 8px 12px; }
+.sidebar-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  padding: 12px 8px 5px;
+}
+.sidebar-foot { border-top: 1px solid var(--border); padding: 8px; }
+.sidebar-foot-btn, .tree-all, .tree-project, .tree-section {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.sidebar-foot-btn, .tree-all { padding: 7px 9px; font-size: 12.5px; }
+.sidebar-foot-btn:hover, .tree-all:hover, .tree-project:hover, .tree-section:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+.sidebar-foot-btn.active, .tree-all.active { background: var(--panel-2); color: var(--text); }
+
+/* A project is a CARD. Before this, a project row and the section rows under
+   it differed only by weight and a background tint, and with eight sections
+   hanging off the open one there was no drawn boundary saying where a project
+   began — you had to reconstruct it from typography. A border says it once. */
+.tree-node {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--panel-2) 40%, transparent);
+}
+.tree-node + .tree-node { margin-top: 8px; }
+.tree-node.open { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.tree-project { padding: 8px 10px; font-size: 13px; gap: 8px; }
+.tree-node.open .tree-project {
+  color: var(--text);
+  font-weight: 650;
+  font-size: 13.5px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+/* The open card's title bar is not a button any more in practice — clicking
+   the project you are already in does nothing — so it stops pretending. */
+.tree-node.open .tree-project { cursor: default; }
+.tree-node.open .tree-project:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.tree-project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-empty { color: var(--muted); font-size: 12px; padding: 6px 9px; }
+
+/* The open project's sections, inside its card — flush rather than indented,
+   because the card's own border is already doing the work an indent used to
+   have to do, and an indent on top of it would only narrow the rows. */
+.tree-sections {
+  padding: 5px 5px 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.tree-section { padding: 5px 9px; font-size: 12.5px; justify-content: space-between; gap: 8px; }
+.tree-section.active {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.tree-section.apart { margin-top: 6px; }
+.tree-count { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tree-section.active .tree-count { color: var(--text); }
+
+.main { flex: 1; min-width: 0; }
+
+@media (max-width: 820px) {
+  .shell { flex-direction: column; }
+  .sidebar { width: 100%; height: auto; position: static; border-right: none; border-bottom: 1px solid var(--border); }
+  .sidebar-scroll { max-height: 320px; }
+}
+
+/* ---------- topbar ---------- */
+.topbar {
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.topbar-inner {
+  padding: 14px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.brand-row { display: flex; align-items: center; gap: 12px; }
+h1 { font-size: 19px; margin: 0; letter-spacing: -0.01em; }
+.subtitle { color: var(--muted); margin: 0; font-size: 12px; }
+.header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* ---------- layout ---------- */
+.content-wrap { padding: 28px 24px 48px; max-width: 980px; width: 100%; margin: 0 auto; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.section-head h2 { font-size: 15px; margin: 0; }
+
+/* ---------- buttons ---------- */
+.btn {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 13px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #08120f;
+  font-weight: 600;
+}
+.btn-danger-outline { border-color: color-mix(in srgb, var(--alarm) 45%, var(--border)); color: var(--alarm); }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+
+/* ---------- forms ---------- */
+label.field { display: block; margin-bottom: 12px; }
+label.field > span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+input[type="text"] {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 11px;
+  font: inherit;
+}
+input[type="text"]:focus { outline: none; border-color: var(--accent); }
+
+.file-drop {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 18px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--panel) 40%, transparent);
+}
+.file-drop:hover, .file-drop.dragover { border-color: var(--accent); color: var(--text); }
+.file-drop strong { color: var(--text); font-weight: 600; }
+
+.folder-pick {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 18px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--panel) 40%, transparent);
+}
+.folder-pick:hover { border-color: var(--accent); color: var(--text); }
+.folder-pick strong { color: var(--text); font-weight: 600; }
+
+/* ---------- cards ---------- */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px;
+}
+.card + .card { margin-top: 14px; }
+
+.project-list { display: flex; flex-direction: column; gap: 12px; }
+.project-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.project-card.active { border-color: var(--accent); }
+.project-main { min-width: 0; flex: 1 1 320px; }
+.project-name { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+.project-meta { color: var(--muted); font-size: 12px; margin: 0; }
+.project-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.counts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.count-pill {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--panel-2);
+}
+.count-pill b { color: var(--text); font-weight: 600; }
+
+/* ---------- empty state / messages ---------- */
+.empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 36px 20px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+}
+.empty h2 { color: var(--text); font-size: 16px; margin: 0 0 6px; }
+
+.msg { border-radius: 8px; padding: 9px 12px; font-size: 13px; margin-top: 12px; }
+.msg.error { background: color-mix(in srgb, var(--alarm) 14%, transparent); border: 1px solid color-mix(in srgb, var(--alarm) 40%, transparent); color: #ffc9c9; }
+.msg.ok { background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+.muted { color: var(--muted); }
+.hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+
+/* ---------- modal ---------- */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  z-index: 50;
+}
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px;
+  width: 100%;
+  max-width: 460px;
+}
+.modal h3 { margin: 0 0 8px; font-size: 16px; }
+.modal p { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+/* The window's own actions, separated from the content above them: without
+   the rule they sit flush against whatever the last section ended with, and
+   a closing sentence reads as if it belonged to the button. */
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* ---------- project detail ---------- */
+/* The browsing views (entities, microflows, nanoflows, pages) are grids of
+   cards — they get the whole window, not a reading-width column. A fixed cap
+   here left a third of an ultrawide monitor empty while the cards inside
+   stayed cramped; the grids' own auto-fill minmax already keeps a card from
+   stretching absurdly. */
+.content-wrap.wide { max-width: none; }
+.detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.detail-title h2 { margin: 0 0 2px; font-size: 18px; }
+.detail-title p { margin: 0; }
+
+/* role panel */
+.detail-head-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.role-inline { display: flex; align-items: center; gap: 7px; }
+/* Still used by the live-execution flow picker, which is a label + select in
+   a panel rather than in the header row. */
+.role-select-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.role-select-label { font-size: 12px; color: var(--muted); }
+.role-select {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.role-select:focus { outline: none; border-color: var(--accent); }
+
+/* secondary nav */
+.project-nav { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 14px; flex-wrap: wrap; }
+.nav-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  padding: 9px 14px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: -1px;
+}
+.nav-tab:hover { color: var(--text); }
+.nav-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.nav-tab-count {
+  background: var(--panel-2);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.nav-tab.active .nav-tab-count { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--text); }
+
+/* view controls */
+.view-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.sub-toggle { display: inline-flex; gap: 4px; }
+.filter-input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 11px;
+  font: inherit;
+  min-width: 220px;
+  flex: 0 1 260px;
+}
+.filter-input:focus { outline: none; border-color: var(--accent); }
+
+/* module chips */
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 11px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+/* A module chip carries its module's own hue, so the same colour identifies
+   that module in the chip row, the group heading and every card below. */
+.chip.on {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--mod) 55%, var(--border));
+  background: color-mix(in srgb, var(--mod) 12%, var(--panel-2));
+}
+.chip.on::before {
+  content: '';
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--mod);
+  margin-right: 7px;
+  vertical-align: middle;
+}
+.chip:hover { border-color: color-mix(in srgb, var(--mod) 70%, var(--border)); }
+.chip-action { color: var(--accent); }
+
+/* module groups */
+.module-group { margin-bottom: 22px; }
+.module-group-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.module-group-name { font-size: 13px; font-weight: 600; color: var(--mod); letter-spacing: 0.02em; }
+.module-group-count { font-size: 11px; color: var(--muted); }
+
+/* entity grid + cards */
+.entity-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.entity-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 13px;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.entity-card {
+  border-left: 3px solid color-mix(in srgb, var(--mod) 70%, transparent);
+}
+.entity-card:hover { border-color: color-mix(in srgb, var(--mod) 60%, var(--border)); border-left-color: var(--mod); }
+.entity-card-name { font-weight: 600; font-size: 14px; overflow-wrap: break-word; }
+.entity-card-sub { font-size: 11px; color: var(--muted); }
+.entity-card-badges { display: flex; gap: 5px; flex-wrap: wrap; }
+
+/* badges */
+.badge { display: inline-block; border-radius: 6px; padding: 2px 7px; font-size: 11px; font-weight: 600; }
+/* Access badges stay neutral. They say what a role may DO, which is not the
+   same channel as which module something is in — colouring them by module hue
+   made two different meanings share one colour. */
+.badge-read { background: color-mix(in srgb, var(--text) 12%, transparent); color: var(--text); }
+/* Neutral, like badge-read: these say what a role may DO. They used to be
+   amber, which now reads as the accent — one colour meaning two things. */
+.badge-cd { background: color-mix(in srgb, var(--text) 12%, transparent); color: var(--muted); }
+.badge-none { background: color-mix(in srgb, var(--muted) 20%, transparent); color: var(--muted); }
+
+/* map view — a module is a dashed frame around its entities, with its name
+   sitting in a break in that frame, and the frame is only as wide as the
+   entities it holds (app.js sets the span). Uniform panels in equal columns
+   read as a table of modules; this reads as modules laid out on a surface,
+   which is what a domain map is for. `dense` lets a narrow frame backfill a
+   gap a wide one left behind. */
+/* The map is a canvas you drag to pan (see enableMapPan). The viewport is a
+   bounded, scrollable window onto it; grab/grabbing cursors sell the gesture. */
+.map-viewport {
+  /* A starting height only — fitMapViewport() measures the real one after
+     mount, because the module chip row above it is one line for a small
+     project and three for a big one. */
+  height: calc(100vh - 230px);
+  overflow: auto;
+  cursor: grab;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  background: color-mix(in srgb, var(--panel) 35%, transparent);
+  overscroll-behavior: contain;
+}
+.map-viewport.is-panning { cursor: grabbing; user-select: none; }
+/* The sizer grows to the zoomed size so the viewport can scroll to every corner
+   when the grid inside it is scaled up; the grid itself is transform-scaled. */
+.map-zoom { position: relative; }
+.map-grid {
+  display: grid;
+  /* Fixed-width columns packed and centred, rather than 1fr tracks stretched to
+     the viewport: the module frames keep their natural size and the whole block
+     sits in the middle, the way the older tool's map centred its content. */
+  grid-template-columns: repeat(auto-fill, 220px);
+  justify-content: center;
+  grid-auto-flow: row dense;
+  align-items: start;
+  gap: 20px 14px;
+  margin-bottom: 8px;
+}
+.map-panel {
+  position: relative;
+  border: 1px dashed color-mix(in srgb, var(--mod) 50%, transparent);
+  border-radius: 10px;
+  padding: 15px 11px 11px;
+  background: color-mix(in srgb, var(--mod) 4%, transparent);
+  min-width: 0;
+}
+.map-panel-head {
+  position: absolute;
+  top: 0;
+  left: 11px;
+  transform: translateY(-50%);
+  background: var(--bg);
+  padding: 0 7px;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  max-width: calc(100% - 22px);
+}
+.map-panel-name {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--mod);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.map-panel-count { font-size: 10px; color: var(--muted); white-space: nowrap; flex: none; }
+.map-panel-body { display: grid; grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr)); gap: 9px; }
+.map-entity {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-top: 2px solid color-mix(in srgb, var(--mod) 80%, transparent);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.map-entity:hover { border-color: var(--accent); }
+.map-entity-top { display: flex; align-items: baseline; gap: 7px; }
+.map-entity-name { font-size: 12.5px; font-weight: 600; color: var(--mod); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-attrs { display: flex; flex-direction: column; gap: 1px; }
+.map-attr-row { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+/* Per-attribute access dot: green read+write, yellow read, red none — the
+   traffic-light cue lives on the attribute, the way MxSonar showed it. In the
+   everything-view there is no role to colour by, so the dot isn't rendered. */
+.map-attr-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; }
+.map-attr-dot-rw { background: #46b45c; }
+.map-attr-dot-r { background: #e0b23e; }
+.map-attr-dot-none { background: #d64545; }
+.map-attr-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: auto; }
+.map-attr-type { color: var(--muted); font-size: 10px; white-space: nowrap; flex: none; }
+.map-attr-more { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+/* .map-assoc-row and the .assoc-* ends are shared with the entity popup's
+   Relationships block (objects.js); the map's own flat list is gone. */
+.map-assoc-row { display: flex; align-items: center; gap: 10px; padding: 7px 14px; border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent); flex-wrap: wrap; }
+.map-assoc-row:last-child { border-bottom: none; }
+.assoc-end { font-size: 12px; }
+/* A relationship end that points at another entity in this model is a link —
+   click it to open that entity's popup and walk the domain model. */
+.assoc-link { border: none; background: none; padding: 0; font: inherit; font-size: 12px; color: var(--accent); cursor: pointer; }
+.assoc-link:hover { text-decoration: underline; }
+.assoc-self { color: var(--muted); }
+.assoc-arrow { color: var(--accent); font-weight: 700; }
+.assoc-type { margin-left: auto; font-size: 11px; color: var(--muted); }
+
+/* flow grid + cards */
+.flow-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.flow-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 3px solid color-mix(in srgb, var(--mod) 70%, transparent);
+  border-radius: 10px;
+  padding: 12px 13px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.flow-card:hover { border-color: color-mix(in srgb, var(--mod) 60%, var(--border)); border-left-color: var(--mod); }
+.flow-card-name { font-weight: 600; font-size: 14px; overflow-wrap: break-word; }
+.flow-card-meta { display: flex; align-items: center; gap: 6px; }
+.role-stack { display: flex; align-items: center; }
+.role-chip {
+  width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; color: #141414;
+  border: 1.5px solid var(--panel);
+  margin-left: -6px;
+}
+.role-chip:first-child { margin-left: 0; }
+.internal-chip {
+  width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.meta-spacer { flex: 1; }
+.input-badge { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
+.input-badge.has-inputs { color: var(--text); }
+.flow-card-badges { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; margin-top: auto; padding-top: 2px; }
+
+/* entity popup */
+.modal-wide { max-width: 620px; max-height: 82vh; overflow-y: auto; }
+/* The entity/flow popup specifically: its Data/Run tabs hold a data table
+   that can run to a dozen-plus columns, and 620px clipped it into a sliver
+   of horizontal scroll. Wide enough to show a real table, still capped so
+   it doesn't stretch edge-to-edge on an ultrawide monitor. */
+.modal-detail { max-width: 1200px; max-height: 86vh; overflow-y: auto; }
+.popup-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+.popup-head h3 { margin: 0 0 2px; }
+.popup-section { margin-top: 16px; }
+.popup-section h4 { margin: 0 0 8px; font-size: 13px; color: var(--mod); }
+/* The entity popup inherits its entity's module hue, so opening a card does
+   not lose track of where that entity came from. */
+.modal-mod { border-top: 3px solid var(--mod); }
+.kv { display: flex; flex-direction: column; gap: 2px; }
+.kv-row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 8px; border-radius: 6px; }
+.kv-row:nth-child(odd) { background: color-mix(in srgb, var(--panel-2) 50%, transparent); }
+.kv-key { font-size: 13px; }
+.kv-val { font-size: 12px; color: var(--muted); }
+.rule-card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+.rule-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rule-role { font-size: 13px; font-weight: 600; }
+/* One role per line rather than a wrapping run of chips: in a 240px side
+   column a wrapped chip row reads as one long name broken in half. The gap
+   under it exists because .modal p has no top margin, so without it the
+   sentence about the selected role sits flush against the last chip. */
+.rule-badges { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; margin-bottom: 10px; }
+.rule-xpath { margin-top: 8px; }
+.rule-xpath-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.rule-xpath-code {
+  display: block;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* The merged Attributes-&-access matrix: attributes down, one column per
+   applicable access rule across, the row-level XPath above each column. */
+.access-matrix-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 9px; }
+.access-matrix { border-collapse: collapse; width: 100%; font-size: 13px; }
+.access-matrix th, .access-matrix td {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.access-matrix thead th {
+  color: var(--muted);
+  font-weight: 600;
+  background: var(--panel-2);
+  white-space: nowrap;
+}
+/* A rule column's header carries the row-level rule under the role name, so
+   it is the one header that must be allowed to wrap — and needs enough width
+   that a real constraint does not turn into a one-word-per-line column. */
+.access-matrix thead th.am-rule-col { white-space: normal; min-width: 210px; }
+.access-matrix thead .con-line { margin-top: 5px; font-weight: 400; }
+.access-matrix .am-role { color: var(--text); font-weight: 600; }
+.access-matrix .am-cd { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+.access-matrix .am-attr { font-weight: 600; }
+/* Per-attribute access dot: green read+write, yellow read, red none — the
+   traffic-light cue on the attribute itself, the way MxSonar showed it. */
+.access-matrix .am-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: middle; flex: none; }
+.access-matrix .am-dot-rw { background: #46b45c; }
+.access-matrix .am-dot-r { background: #e0b23e; }
+.access-matrix .am-dot-none { background: #d64545; }
+.access-matrix .am-type { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: nowrap; }
+.access-matrix .am-rule-col { border-left: 1px solid var(--border); }
+.access-matrix .am-lvl { white-space: nowrap; }
+.access-matrix .am-lvl-rw { color: var(--text); }
+.access-matrix .am-lvl-r { color: color-mix(in srgb, var(--text) 78%, var(--muted)); }
+.access-matrix .am-lvl-none { color: var(--muted); }
+.access-matrix tbody tr:hover td { background: color-mix(in srgb, var(--panel-2) 40%, transparent); }
+
+/* The row-level rule. It lives in its own column's header (see
+   .access-matrix above); what is left here is the caption that introduces the
+   columns, plus the token styles the constraint itself is drawn with. */
+.con-heading { display: flex; align-items: baseline; gap: 8px; margin-bottom: 9px; flex-wrap: wrap; }
+.con-heading-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.con-heading-hint { font-size: 12px; color: var(--muted); }
+/* The constraint itself: tokens laid out inline with a small gap so the flex
+   gap does the spacing, no literal whitespace nodes needed. */
+.con-line { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 7px; font-size: 12.5px; }
+.con-chip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 6px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+.con-arrow { color: var(--accent); font-weight: 700; }
+/* The operator is set in the accent colour, the way the association arrow is —
+   so "=" reads as a relation, not punctuation. */
+.con-op { color: var(--accent); font-weight: 600; }
+.con-field { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: var(--text); }
+/* A value — the current-user token, a literal — as a pill. */
+.con-val {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 20px;
+  padding: 1px 9px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.con-text { color: var(--text); }
+
+/* Entity popup header: the name row with its Create/Delete flags, and the
+   in-popup role selector. */
+.popup-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.popup-role { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.popup-role-label { white-space: nowrap; }
+.popup-role-select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: var(--radius, 8px);
+  padding: 4px 8px;
+}
+.popup-role-select:focus { outline: none; border-color: var(--accent); }
+
+/* Create-a-temporary-object window: the access banner (green when the role may
+   create, a red block when it may not) above the fields. */
+.create-access-ok { font-size: 12.5px; color: #46b45c; background: color-mix(in srgb, #46b45c 12%, transparent); border: 1px solid color-mix(in srgb, #46b45c 40%, var(--border)); border-radius: 8px; padding: 7px 10px; margin-bottom: 12px; }
+/* The create-an-object window. Wide enough for a value, narrow enough to read
+   as a form: the label sits in its own fixed column instead of being pushed to
+   the far side of a 1200px row by `justify-content: space-between`. */
+.modal-create { max-width: 600px; max-height: 86vh; overflow-y: auto; }
+.modal-create .kv { gap: 4px; }
+.modal-create .kv-row { display: grid; grid-template-columns: 140px minmax(0, 1fr); align-items: center; gap: 10px; padding: 4px 8px; }
+.modal-create .kv-row input[type="text"] { width: 100%; }
+.modal-create h3 { margin-bottom: 2px; }
+.modal-create > p.muted { margin-bottom: 12px; }
+.create-note { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+.create-blocked { font-size: 13px; color: var(--text); background: color-mix(in srgb, #d64545 10%, transparent); border: 1px solid color-mix(in srgb, #d64545 40%, var(--border)); border-radius: 8px; padding: 11px 13px; }
+.create-blocked p { margin: 0 0 6px; }
+.create-blocked p:last-child { margin-bottom: 0; color: var(--muted); font-size: 12.5px; }
+
+/* ---------- live app panel ---------- */
+.nav-tab-live { margin-left: auto; }
+.nav-tab-live.active { border-bottom-color: var(--accent); }
+.live-h { margin: 0 0 8px; font-size: 15px; }
+/* The input takes the room, the button keeps its own width. Without this the
+   button is squeezed by the input's intrinsic size and "Look up" wraps onto
+   two lines. */
+.live-url-row { display: flex; gap: 8px; align-items: stretch; }
+.live-url-row > input { flex: 1 1 auto; min-width: 0; }
+.live-url-row > .btn { flex: none; white-space: nowrap; }
+.live-url-input {
+  flex: 1 1 auto;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 11px;
+  font: inherit;
+}
+.live-url-input:focus { outline: none; border-color: var(--accent); }
+
+.live-status { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 600; }
+.live-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.live-status-ok .live-dot { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.live-status-blocked .live-dot { background: var(--muted); }
+.card.live-ok { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.card.live-blocked { border-color: var(--border); }
+.card.live-ok .muted, .card.live-blocked .muted { margin: 10px 0 0; }
+
+/* ---------- spinner ---------- */
+.spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- scan section ---------- */
+.scan-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.scan-head-row { display: flex; justify-content: space-between; align-items: center; }
+.scan-h { margin: 0 0 6px; font-size: 14px; color: var(--accent); }
+.scan-steps { margin: 12px 0 12px; padding-left: 20px; color: var(--text); font-size: 13px; }
+.scan-steps li { margin-bottom: 6px; }
+.scan-script {
+  width: 100%;
+  height: 130px;
+  background: var(--bg);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  resize: vertical;
+  white-space: pre;
+}
+.scan-copy-row { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
+
+.scan-results { margin-top: 16px; }
+.scan-waiting { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; padding: 10px 0; }
+.scan-user { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+.scan-user-ok .live-dot { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.scan-user-guest { color: #e6c778; }
+.scan-user-guest .live-dot { background: #e0b23e; box-shadow: 0 0 0 3px color-mix(in srgb, #e0b23e 25%, transparent); }
+.scan-summary { margin: 0 0 14px; }
+.scan-groups { display: flex; flex-direction: column; gap: 14px; }
+.scan-group-head { font-size: 12px; font-weight: 600; color: var(--accent); margin-bottom: 6px; }
+.scan-row { display: flex; align-items: center; gap: 12px; padding: 7px 10px; border-radius: 7px; flex-wrap: wrap; }
+.scan-row:nth-child(odd) { background: color-mix(in srgb, var(--panel-2) 45%, transparent); }
+.scan-row-name { font-size: 13px; font-weight: 500; flex: 1 1 160px; }
+.scan-row-rows { font-size: 12px; color: var(--muted); }
+.scan-noaccess { margin-top: 16px; }
+.scan-noaccess summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.scan-noaccess-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.scan-noaccess-item { font-size: 11px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; }
+
+/* ---------- live execution ---------- */
+.scan-h-danger { color: var(--alarm); }
+.warn-text { color: #ffc9c9; font-size: 13px; }
+.ok-text { color: color-mix(in srgb, var(--accent) 80%, var(--text)); font-size: 13px; }
+.ack-row { display: flex; align-items: center; gap: 8px; margin: 14px 0; font-size: 14px; }
+.btn-danger {
+  background: var(--alarm);
+  border: 1px solid var(--alarm);
+  border-radius: 8px;
+  color: #2a0808;
+  font-weight: 600;
+  padding: 7px 13px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-danger:disabled { opacity: 0.45; cursor: default; }
+.exec-gate { }
+.exec-status-area { margin: 14px 0; }
+.exec-listener { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 600; }
+.exec-listener-ok { color: color-mix(in srgb, var(--accent) 80%, var(--text)); }
+.exec-listener-ok .live-dot { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.exec-listener-wait { color: var(--muted); font-weight: 400; }
+.exec-runner { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+.exec-runner .field { margin-top: 12px; }
+
+/* ---------- about (security review page) ---------- */
+.about-link { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.about-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.about-title { font-size: 18px; margin: 0 0 4px; }
+.about-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+}
+.about-toc-link {
+  font-size: 12px;
+  color: var(--muted);
+  text-decoration: none;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 11px;
+}
+.about-toc-link:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+.about-section {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-top: 14px;
+  scroll-margin-top: 84px; /* clears the sticky topbar when jumped to */
+}
+.about-h { margin: 0 0 10px; font-size: 14px; color: var(--accent); }
+.about-p { margin: 0 0 10px; max-width: 74ch; }
+.about-p:last-child { margin-bottom: 0; }
+.about-ul { margin: 0 0 4px; padding-left: 18px; }
+.about-ul li { margin-bottom: 6px; max-width: 74ch; }
+.about-note {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--alarm);
+  background: color-mix(in srgb, var(--alarm) 8%, transparent);
+  border-radius: 0 8px 8px 0;
+  font-size: 13px;
+  max-width: 74ch;
+}
+.about-kv { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+.about-kv-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 260px) 1fr;
+  gap: 14px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  align-items: baseline;
+}
+.about-kv-row:nth-child(odd) { background: color-mix(in srgb, var(--panel-2) 50%, transparent); }
+.about-kv-key { font-size: 13px; font-weight: 600; }
+.about-kv-val { font-size: 13px; color: var(--muted); }
+@media (max-width: 620px) {
+  .about-kv-row { grid-template-columns: 1fr; gap: 2px; }
+}
+
+/* ---------- guide (Getting started walkthrough) ---------- */
+/* Each step pairs the explanation with a mockup built from the real
+   component classes (file-drop, entity-card, popup-tab, data-table, …) — so
+   this is layout-only CSS. The look of any one mockup is defined once, on
+   the real screen it is borrowed from. */
+.guide-head { margin-bottom: 22px; }
+.guide-title { font-size: 18px; margin: 0 0 4px; }
+.guide-step {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) 1fr;
+  gap: 22px;
+  padding: 22px 0;
+  border-top: 1px solid var(--border);
+}
+.guide-step:first-of-type { border-top: none; padding-top: 6px; }
+.guide-num {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+.guide-step-title { margin: 4px 0 10px; font-size: 16px; }
+.guide-p { margin: 0 0 8px; color: var(--muted); font-size: 13px; max-width: 42ch; }
+.guide-p:last-child { margin-bottom: 0; }
+.guide-mock { display: flex; flex-direction: column; gap: 12px; }
+.guide-finding { display: flex; align-items: center; gap: 8px; }
+@media (max-width: 720px) {
+  .guide-step { grid-template-columns: 1fr; }
+}
+
+/* A reviewer usually wants this as an attachment. Printing is the only way
+   MxScout can produce one without gaining the ability to write files, so the
+   printed page is treated as a real output: ink-friendly, chrome removed,
+   sections kept whole across page breaks. */
+@media print {
+  :root { color-scheme: light; }
+  body { background: #fff; background-image: none; color: #000; }
+  .topbar, .sidebar, .about-toc, .about-print, .msg { display: none !important; }
+  .shell { display: block; }
+  .content-wrap { max-width: none; padding: 0; }
+  .about-title, .about-h, .about-kv-key, .about-kv-val, .muted { color: #000; }
+  .about-section {
+    background: none;
+    border: none;
+    border-top: 1px solid #999;
+    border-radius: 0;
+    padding: 10px 0 0;
+    margin-top: 14px;
+    break-inside: avoid;
+  }
+  .about-h { font-weight: 700; }
+  .about-kv-row:nth-child(odd) { background: #f2f2f2; }
+  .about-note { background: #f2f2f2; border-left: 3px solid #000; }
+}
+
+/* ---------- command palette ---------- */
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh 20px 20px;
+  z-index: 60;
+}
+.palette {
+  width: 100%;
+  max-width: 620px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.palette-input {
+  width: 100%;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  padding: 15px 17px;
+}
+.palette-input:focus { outline: none; }
+.palette-input::placeholder { color: var(--muted); }
+.palette-list { max-height: 46vh; overflow-y: auto; padding: 6px; }
+.palette-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  padding: 7px 11px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.palette-row:hover { background: var(--panel-2); }
+.palette-row.active { background: color-mix(in srgb, var(--accent) 15%, var(--panel-2)); box-shadow: inset 2px 0 0 var(--accent); }
+.palette-kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--mod);
+  min-width: 66px;
+  flex: none;
+}
+.palette-label { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-sub { font-size: 11px; color: var(--muted); margin-left: auto; flex: none; }
+.palette-empty { color: var(--muted); font-size: 13px; padding: 18px; margin: 0; }
+.palette-help {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  padding: 8px 14px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Sidebar entry point, so the shortcut is discoverable. */
+
+/* The module scope, standing in for the chip row it replaces. */
+.scope-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: color-mix(in srgb, var(--mod) 12%, var(--panel-2));
+  border: 1px solid color-mix(in srgb, var(--mod) 45%, var(--border));
+  border-radius: 999px;
+  padding: 4px 6px 4px 12px;
+}
+.scope-crumb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mod); }
+.scope-crumb-name { font-size: 12.5px; font-weight: 600; }
+.scope-crumb-clear {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 6px;
+  border-radius: 50%;
+}
+.scope-crumb-clear:hover { color: var(--text); background: var(--panel); }
+
+/* ---------- comments ---------- */
+/* Severity reads by WEIGHT, not hue: filled, outlined, dotted, plain. The
+   accent is amber, so a warning-coloured scale would make one colour mean two
+   things — and an intensity ramp has a second payoff, since it survives the
+   monochrome of a printed report. Every badge carries its word regardless. */
+.sev {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-radius: 5px;
+  padding: 2px 7px;
+  flex: none;
+}
+.sev-critical { background: var(--alarm); color: #180a0a; }
+.sev-high { border: 1px solid var(--alarm); color: var(--alarm); padding: 1px 6px; }
+.sev-medium { border: 1px solid var(--muted); color: var(--text); padding: 1px 6px; }
+.sev-medium::before { content: '•'; margin-right: 4px; color: var(--muted); }
+.sev-low { color: var(--muted); padding-left: 0; }
+
+.kind-badge {
+  display: inline-block;
+  min-width: 24px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 5px;
+  padding: 2px 5px;
+  background: color-mix(in srgb, var(--mod) 20%, transparent);
+  color: color-mix(in srgb, var(--mod) 80%, var(--text));
+  flex: none;
+}
+
+.comment-marker {
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+
+/* One row: search, a dropdown per axis, then the count. */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.filter-bar .filter-input { flex: 0 1 240px; min-width: 160px; }
+.filter-menu-wrap { position: relative; }
+.filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 11px;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.filter-btn:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+/* An active filter has to be obvious from across the row — it is the reason
+   the list below is shorter than the user expects. */
+.filter-btn.on {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel-2));
+}
+.filter-btn.open { border-color: var(--accent); }
+.filter-btn-caret { font-size: 9px; opacity: 0.75; }
+
+/* Closes the menu on any outside click without a document listener, which
+   would be attached to DOM that render() is about to replace. */
+.filter-backdrop { position: fixed; inset: 0; z-index: 40; }
+.filter-menu {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  z-index: 41;
+  min-width: 190px;
+  max-width: 280px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+  padding: 5px;
+}
+.filter-menu-list { max-height: 260px; overflow-y: auto; }
+.filter-menu-search {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 9px;
+  margin-bottom: 5px;
+}
+.filter-menu-search:focus { outline: none; border-color: var(--accent); }
+/* Used by BOTH a <label> (the multi-select rows) and a <button> (the date
+   menu). A button brings the browser's own chrome with it — grey slab, its
+   own font, its own width — so everything the UA would supply is reset here
+   rather than only where the label happened to look right. */
+.filter-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  font: inherit;
+  padding: 6px 9px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.filter-item:hover { background: var(--panel-2); color: var(--text); }
+.filter-item.on { color: var(--text); }
+.filter-item input { accent-color: var(--accent); margin: 0; }
+.filter-item-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mod); flex: none; }
+.filter-item-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filter-menu-empty { color: var(--muted); font-size: 12px; padding: 10px; margin: 0; }
+.filter-menu-clear {
+  width: 100%;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 7px;
+  margin-top: 4px;
+  cursor: pointer;
+  border-radius: 0 0 7px 7px;
+}
+.filter-menu-clear:hover { color: var(--text); background: var(--panel-2); }
+.filter-clear {
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 7px 4px;
+}
+.filter-clear:hover { text-decoration: underline; }
+.filter-count { margin-left: auto; font-size: 12px; color: var(--muted); }
+
+.comment-list { display: flex; flex-direction: column; gap: 10px; }
+.comment-row {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 3px solid color-mix(in srgb, var(--mod) 70%, transparent);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+/* Resolved comments are no longer greyed out: a dimmed row reads as
+   "filtered out but still here", which is confusing. Hiding is the filters'
+   job (the Status filter removes them outright); a shown row is shown fully.
+   The status is still visible in its own dropdown on the row. */
+.comment-row-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.comment-target {
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+.comment-target:hover { color: var(--accent); text-decoration: underline; }
+.comment-status { margin-left: auto; padding: 4px 8px; font-size: 12.5px; }
+/* Readable body text — the previous sizes were cramped. Long lines are capped
+   so the now-full-width page doesn't stretch a sentence across the screen. */
+.comment-problem { margin: 10px 0 0; font-size: 15px; line-height: 1.5; max-width: 95ch; }
+.comment-change { margin: 6px 0 0; font-size: 14px; line-height: 1.5; max-width: 95ch; color: color-mix(in srgb, var(--text) 78%, var(--muted)); }
+.comment-meta { margin-top: 9px; font-size: 12.5px; color: var(--muted); }
+.comment-history { margin-top: 5px; font-size: 12px; color: var(--muted); font-style: italic; }
+
+.popup-head-actions { display: flex; gap: 8px; align-items: center; flex: none; }
+/* The flow popup: the run panel and the access panel side by side, so
+   "what does this want" and "may I even set it off" are one glance rather
+   than two tabs to flip between. */
+.flow-cols { display: flex; gap: 20px; align-items: flex-start; }
+.flow-col-run { flex: 1 1 auto; min-width: 0; }
+.flow-col-side { flex: 0 0 240px; border-left: 1px solid var(--border); padding-left: 18px; }
+@media (max-width: 900px) {
+  .flow-cols { flex-direction: column; }
+  .flow-col-side { flex: 1 1 auto; border-left: none; padding-left: 0; border-top: 1px solid var(--border); padding-top: 12px; width: 100%; }
+}
+
+/* One row per flow parameter: what it wants on the left, what it currently
+   holds (or a box to type it into) on the right. */
+.param-table { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.param-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 9px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.param-row:last-child { border-bottom: none; }
+.param-row:nth-child(odd) { background: color-mix(in srgb, var(--panel-2) 45%, transparent); }
+.param-id { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
+.param-name { font-size: 13px; font-weight: 600; overflow-wrap: break-word; }
+.param-type { font-size: 11px; color: var(--muted); overflow-wrap: break-word; }
+.param-control { flex: 0 0 auto; display: flex; align-items: center; gap: 9px; min-width: 210px; justify-content: flex-end; }
+.param-control input, .param-control select { width: 100%; }
+.param-control input[type="text"], .param-control input[type="number"] {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+}
+.param-control input:focus { outline: none; border-color: var(--accent); }
+.param-choice { display: flex; align-items: center; gap: 9px; }
+.param-chosen { font-size: 12.5px; color: var(--accent); font-variant-numeric: tabular-nums; }
+
+/* Override an object's attribute values before the run. Sits under the chosen
+   object in the parameter row; collapsed by default so it never crowds a run
+   that doesn't need it. */
+.override-editor { width: 100%; min-width: 280px; margin-top: 8px; text-align: left; font-size: 12px; }
+.override-editor summary { cursor: pointer; color: var(--accent); font-size: 12px; padding: 2px 0; }
+.override-editor > p { margin: 6px 0; }
+.override-editor .kv-row { align-items: center; gap: 10px; }
+.override-editor .kv-key { white-space: nowrap; }
+
+/* The object picker stacks on top of the flow popup it was opened from. */
+.modal-backdrop-over { z-index: 60; background: rgba(0, 0, 0, 0.5); }
+.picker-count { font-size: 12px; color: var(--accent); }
+
+/* Guids the app itself touched — each a button that looks that id up. */
+.observed-list { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
+.observed-item {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 11px;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+}
+.observed-item:hover { border-color: var(--accent); }
+.observed-guid { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; color: var(--accent); }
+.observed-sub { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.popup-comments { display: flex; flex-direction: column; gap: 7px; }
+.popup-comment { display: flex; gap: 9px; align-items: baseline; }
+.popup-comment-text { font-size: 12.5px; }
+
+/* ---------- the comment editor ---------- */
+.editor-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 70;
+}
+.editor {
+  width: 100%;
+  max-width: 420px;
+  background: var(--panel);
+  border-left: 3px solid var(--mod);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.editor-head h3 { margin: 0; font-size: 15px; }
+.editor-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.editor-target { display: flex; align-items: center; gap: 9px; }
+.editor-target-name { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.editor-label { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+.editor-area {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 9px 11px;
+  resize: vertical;
+}
+.editor-area:focus { outline: none; border-color: var(--accent); }
+.attr-checks { display: flex; flex-wrap: wrap; gap: 6px; }
+.attr-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 4px 9px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.attr-check:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.editor-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* ---------- access codes ---------- */
+/* The code is read aloud, retyped and copied, so it gets room to breathe and a
+   font where 0 and O could not be confused even if the alphabet allowed it. */
+.code-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--panel-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin: 14px 0;
+}
+.code-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 17px;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  user-select: all;
+}
+.code-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ---------- comment markers, orphans, delivery history ---------- */
+.comment-marks { display: flex; gap: 6px; flex-wrap: wrap; width: 100%; margin-top: 7px; }
+.comment-mark {
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 5px;
+  padding: 1px 7px;
+  cursor: help;
+}
+.comment-mark.orphan { border-style: solid; border-color: color-mix(in srgb, var(--alarm) 45%, var(--border)); color: color-mix(in srgb, var(--alarm) 75%, var(--text)); }
+
+.orphan-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: color-mix(in srgb, var(--alarm) 9%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--alarm) 32%, var(--border));
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.history-block { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 12px; }
+.history-toggle {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 0;
+}
+.history-toggle:hover { color: var(--text); }
+.history-list { display: flex; flex-direction: column; gap: 2px; margin-top: 9px; }
+.history-row {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 5px 8px;
+  border-radius: 6px;
+}
+.history-row:nth-child(odd) { background: color-mix(in srgb, var(--panel-2) 50%, transparent); }
+.history-when { min-width: 168px; flex: none; }
+.history-what { color: var(--text); }
+.history-who { margin-left: auto; }
+
+/* ---------- the send dialog ---------- */
+.report-option {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 13px 15px;
+  margin-top: 12px;
+}
+.report-option-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.report-option p { margin: 8px 0 0; font-size: 12.5px; }
+
+/* ---------- entity popup: tabs ----------
+   Three questions in the order they get asked — what is this, who may see
+   which rows, what is actually in it. The active tab is marked by the module's
+   own colour rather than the accent, so the popup keeps saying which module
+   you are standing in even while you page through data. */
+.popup-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 16px 0 0;
+  border-bottom: 1px solid var(--border);
+}
+.popup-tab {
+  font: inherit;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  padding: 7px 12px;
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+}
+.popup-tab:hover { color: var(--text); background: var(--panel-2); }
+.popup-tab.is-active { color: var(--text); border-bottom-color: var(--mod); }
+.popup-h-second { margin-top: 18px !important; }
+
+/* ---------- entity popup: the Data tab ----------
+   Ten rows, a real count, live search, paging. The search box and the pager
+   sit outside the repainted region on purpose: a query per keystroke-batch
+   would otherwise rebuild the input the user is typing into. */
+.data-pane { margin-top: 14px; }
+.data-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.data-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 10px;
+}
+.data-search:focus { outline: none; border-color: var(--mod); }
+.data-search-in { font-size: 12px; flex: none; }
+.data-search-field { flex: none; max-width: 190px; }
+.data-summary { white-space: nowrap; font-size: 12px; }
+@media (max-width: 700px) {
+  .data-bar { flex-wrap: wrap; }
+  .data-search { flex: 1 1 100%; }
+}
+
+/* Wide tables scroll inside their own box — the popup itself must never
+   scroll sideways. */
+.data-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.data-table {
+  border-collapse: collapse;
+  width: 100%;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.data-table th {
+  text-align: left;
+  padding: 7px 10px;
+  white-space: nowrap;
+  color: var(--muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+}
+.data-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.data-table tr:last-child td { border-bottom: 0; }
+.data-table tbody tr:hover td { background: var(--panel-2); }
+/* The id column earns the accent: it is the one value the user copies out of
+   here, to paste into a flow's object parameter. */
+.data-id { color: var(--accent); }
+.data-null { color: var(--muted); }
+.data-empty { padding: 14px; margin: 0; }
+
+.data-pager { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.data-pager .btn[disabled] { opacity: 0.45; cursor: default; }
+
+.bridge-connected { padding-top: 4px; }
+
+/* The Run tab is the only place in MxScout that can change anything, so its
+   tab is marked — quietly, but it is marked. */
+.popup-tab-danger.is-active { border-bottom-color: var(--alarm); }
+
+/* Picking an object to run a flow with is a click on the row: the id is what
+   is being chosen and the row already shows it. */
+.data-pickable { cursor: pointer; }
+.data-pickable:hover td { background: var(--panel-2); }
+.data-table tbody tr.is-picked td {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.data-table tbody tr.is-picked td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+
+.flow-run-actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.flow-run-actions .btn[disabled] { opacity: 0.45; cursor: default; }
+
+/* ---------- version and changelog ----------
+   The version is a label, not a notification: MxScout never learns that a
+   newer one exists, so nothing here ever wears a badge or a dot. */
+.sidebar-version { font-variant-numeric: tabular-nums; }
+
+.changelog-h { margin: 18px 0 6px; }
+.changelog-h2 {
+  font-size: 15px;
+  color: var(--accent);
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+}
+.changelog-h3 { font-size: 13px; color: var(--text); }
+.changelog-h4 { font-size: 13px; color: var(--muted); }
+.changelog-list { margin: 6px 0; padding-left: 20px; }
+.changelog-list li { margin: 3px 0; }
+.changelog-body { max-height: 46vh; overflow-y: auto; padding: 0 6px 8px 0; }
+.changelog-wait { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+
+.inline-code {
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--panel-2);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+/* The one command a person actually types. Given room, because the whole
+   update story is "a human runs this". */
+.update-command {
+  display: block;
+  font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 7px;
+  padding: 8px 12px;
+  margin: 8px 0;
+  color: var(--text);
+  user-select: all;
+}
+.update-how p { margin: 6px 0; }
+
+/* The observation section's own button and empty result. Both exist so the
+   prose above them, the control, and what came back read as three things
+   instead of one paragraph that happens to contain a button. */
+.observed-actions { margin: 10px 0 4px; }
+.observed-empty {
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
