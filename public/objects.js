@@ -224,22 +224,43 @@
       ];
     }
 
-    function attrOnly(attrs) {
-      return el('div', { class: 'kv' }, attrs.map(function (a) {
+    // The associations this entity OWNS. In Studio Pro they are members of the
+    // entity exactly as its attributes are, and an access rule grants read or
+    // read+write on them the same way — so they belong in the same table, not
+    // only in Relationships below. Only the owned end is listed: an incoming
+    // association is a member of the entity at the other end, and this
+    // entity's rules say nothing about it.
+    function ownedAssocs() {
+      return (model.associations || []).filter(function (a) { return a && a.owner === qn; });
+    }
+    function assocTypeText(a) {
+      return '\u2192 ' + (a.other || '?');
+    }
+
+    function memberOnly(attrs, assocs) {
+      var rows = attrs.map(function (a) {
         return el('div', { class: 'kv-row' }, [
           el('span', { class: 'kv-key', text: a.name }),
           el('span', { class: 'kv-val', text: a.type + (a.length ? ' (' + a.length + ')' : '') })
         ]);
+      }).concat(assocs.map(function (a) {
+        return el('div', { class: 'kv-row' }, [
+          el('span', { class: 'kv-key', text: a.name }),
+          el('span', { class: 'kv-val', text: assocTypeText(a) })
+        ]);
       }));
+      return el('div', { class: 'kv' }, rows);
     }
 
-    // Best access this selection grants an attribute, across the shown rules:
+    // Best access this selection grants a member, across the shown rules:
     // 'rw' if any rule writes it, else 'r' if any reads it, else 'none'. Drives
-    // the per-attribute traffic-light dot — the cue Karol wanted on attributes.
-    function bestLevel(attrName, rules) {
+    // the per-member traffic-light dot — the cue Karol wanted on attributes,
+    // and now on associations, which carry their own level per rule ('map' is
+    // whichever of the two the row came from).
+    function bestLevel(name, rules, map) {
       var lvl = 'none';
       rules.forEach(function (r) {
-        var v = (r.attrAccess || {})[attrName];
+        var v = (r[map] || {})[name];
         if (v === 'rw') lvl = 'rw';
         else if (v === 'r' && lvl !== 'rw') lvl = 'r';
       });
@@ -261,12 +282,13 @@
       ]);
     }
 
-    // The attribute matrix: a row per attribute with a traffic-light dot for
-    // its access under the current selection, and a cell per applicable rule
-    // giving that rule's read / read+write level. The row-level rule and the
-    // Create/Delete flags moved out (above, and by the entity name).
-    function accessMatrix(attrs, rules) {
-      var headCells = [el('th', { class: 'am-h-attr', text: 'Attribute' }), el('th', { class: 'am-h-type', text: 'Type' })];
+    // The member matrix: a row per attribute AND per owned association, with a
+    // traffic-light dot for its access under the current selection, and a cell
+    // per applicable rule giving that rule's read / read+write level. The
+    // row-level rule and the Create/Delete flags moved out (above, and by the
+    // entity name).
+    function accessMatrix(attrs, assocs, rules) {
+      var headCells = [el('th', { class: 'am-h-attr', text: 'Member' }), el('th', { class: 'am-h-type', text: 'Type' })];
       rules.forEach(function (r) {
         // Role name, then directly under it the rows that rule lets it see.
         // Same .con-line as before — same tokens, same raw XPath on the
@@ -279,22 +301,40 @@
         ]));
       });
 
-      var bodyRows = attrs.map(function (a) {
-        var lvl = bestLevel(a.name, rules);
+      // One row builder for both kinds of member: they differ only in what the
+      // Type column says and which of the rule's two maps holds the level.
+      function memberRow(name, typeText, map) {
+        var lvl = bestLevel(name, rules, map);
         var cells = [
           el('td', { class: 'am-attr' }, [
             el('span', { class: 'am-dot am-dot-' + lvl, title: lvl === 'rw' ? 'read + write' : (lvl === 'r' ? 'read' : 'no access') }),
-            el('span', { text: a.name })
+            el('span', { text: name })
           ]),
-          el('td', { class: 'am-type', text: a.type + (a.length ? ' (' + a.length + ')' : '') })
+          el('td', { class: 'am-type', text: typeText })
         ];
         rules.forEach(function (r) {
-          var v = (r.attrAccess || {})[a.name];
+          var v = (r[map] || {})[name];
+          if (v === 'none') v = null;
           cells.push(el('td', { class: 'am-rule-col am-lvl am-lvl-' + (v || 'none'),
             text: v === 'rw' ? 'read + write' : (v === 'r' ? 'read' : '—') }));
         });
         return el('tr', {}, cells);
+      }
+
+      var bodyRows = attrs.map(function (a) {
+        return memberRow(a.name, a.type + (a.length ? ' (' + a.length + ')' : ''), 'attrAccess');
       });
+      if (assocs.length) {
+        // A labelled break rather than a second table: the associations are
+        // read against the SAME rule columns, and splitting the table would
+        // repeat every column header to say nothing new.
+        bodyRows.push(el('tr', { class: 'am-group' }, [
+          el('td', { class: 'am-group-cell', colspan: String(2 + rules.length), text: 'Associations' })
+        ]));
+        assocs.forEach(function (a) {
+          bodyRows.push(memberRow(a.name, assocTypeText(a), 'assocAccess'));
+        });
+      }
 
       return el('div', { class: 'access-matrix-wrap' }, [
         el('table', { class: 'access-matrix' }, [
@@ -313,24 +353,25 @@
         ]);
       }
       var attrs = entity.attributes || [];
+      var assocs = ownedAssocs();
       var rules = (entity.accessRules || []).filter(function (r) { return !set || set[r.moduleRole]; });
 
       // No "Attributes & access — as <role>" heading any more: the tab already
       // names it, and the role selector in the header says (and changes) which
       // role this is for.
       var kids = [];
-      if (!attrs.length) {
-        kids.push(el('p', { class: 'muted', text: 'No attributes.' }));
+      if (!attrs.length && !assocs.length) {
+        kids.push(el('p', { class: 'muted', text: 'No attributes and no associations.' }));
       } else if (!rules.length) {
         kids.push(el('p', { class: 'muted', text: set
-          ? (state.detail.role + ' has no access rule on this entity — these attributes exist, but this role cannot reach them.')
-          : 'No access rules are defined on this entity — these attributes have no role-based access configured.' }));
-        kids.push(attrOnly(attrs));
+          ? (state.detail.role + ' has no access rule on this entity — these members exist, but this role cannot reach them.')
+          : 'No access rules are defined on this entity — these members have no role-based access configured.' }));
+        kids.push(memberOnly(attrs, assocs));
       } else {
         // The caption, then the matrix that carries each rule in its own
         // column header.
         kids.push(constraintCaption());
-        kids.push(accessMatrix(attrs, rules));
+        kids.push(accessMatrix(attrs, assocs, rules));
       }
       return el('div', { class: 'popup-section' }, kids.concat(relationshipsBlock()));
     }

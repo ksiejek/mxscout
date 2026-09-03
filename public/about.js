@@ -90,6 +90,7 @@
           'The server binds 127.0.0.1. It is not reachable from another machine, and there is no option to make it listen on a wider interface.',
           'The server makes no outbound requests. It is a passive listener on loopback for the whole of its life.',
           'Requests to your Mendix application are made by the tester’s own browser tab, in their own already-authenticated session: mx.data.get to read rows, mx.data.action to run a flow, and one POST to that app’s own /xas/ endpoint (action retrieve_by_xpath, count: true) — the same call the Mendix client itself makes behind every paged data grid — purely to ask how many rows match. All three are same-origin to the application, carry that person’s own session and CSRF token, and read only. MxScout adds no access path: everything the snippet does is something that same person can do by clicking in the app.',
+          'A row that comes back is also asked, object by object, whether this session may write each of its values — isReadonlyAttr, the same question the Mendix client’s own input widgets ask before they allow editing. That is a question about an object already in hand: it sends nothing, fetches nothing extra, and writes nothing. It is asked per object because a rule’s XPath decides which rows it covers, so the same attribute can be writable on one row and read-only on the next — which is what the green in the Data table means.',
           'So no traffic leaves the machine except requests the tester’s browser would be making to the app under test anyway.'
         ] }
       ] },
@@ -197,7 +198,7 @@
           ['server/state.js', 'All server state — the session token, the one command in flight, and its answer. Nothing else is held anywhere.'],
           ['server/http-util.js', 'Body reading: the size cap and the JSON content-type gate.'],
           ['public/app.js', 'The shell: state, projects, the browsing views, and what each other file is given.'],
-          ['public/objects.js', 'The two object popups — an entity on Attributes & access (one matrix of attributes against the access rules that apply) / Data / Comments, a flow on Run (inputs and access side by side) / Comments.'],
+          ['public/objects.js', 'The two object popups — an entity on Attributes & access (one matrix of its members, attributes and the associations it owns, against the access rules that apply) / Data / Comments, a flow on Run (inputs and access side by side) / Comments.'],
           ['public/live.js', 'Everything about talking to a running application: the non-production guard the UI consults, the session, the connection, reading rows, and running a flow.'],
           ['public/bridge.js', 'The snippet pasted into the app tab, written as ordinary code and serialized when it is generated — so what the tester pastes is a file you can read here, not a string assembled at runtime.'],
           ['public/store.js', 'Every persistent read and write, and nothing else does storage. The browser’s own database — no disk, no server.'],

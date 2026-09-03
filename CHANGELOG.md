@@ -15,6 +15,30 @@ The version in `package.json` is the single source of truth. The About page
 reads it from the running server rather than from a constant, so it cannot
 claim a version it is not.
 
+## 1.1.0
+
+### Associations are members too, and write shows on the value
+
+- **Attributes & access** now lists the **associations the entity owns**
+  alongside its attributes, in the same matrix and under the same rule
+  columns. In Studio Pro an association is a member of the entity exactly as
+  an attribute is, and an access rule grants read or read+write on it the same
+  way — so it gets the same traffic-light dot and the same per-rule cell. Only
+  the owned end is listed: an incoming association is a member of the entity at
+  the other end, and this entity's rules say nothing about it. The column is
+  headed **Member** rather than Attribute.
+- A rule's **default member access** now reaches those associations. It always
+  covered them in Mendix; MxScout was applying it to attributes only, which
+  showed an association as "no access" on every entity that leaves its members
+  on the default.
+- In the **Data** tab, a value this session may **write** is shown in green,
+  **per cell**. The running application answers it, object by object
+  (`isReadonlyAttr` — the same question its own input widgets ask before
+  allowing an edit), so a rule's XPath deciding which rows it covers is
+  reflected honestly: the same field can be writable on one row and read-only
+  on the next. It sends nothing extra and writes nothing; a runtime that will
+  not answer simply leaves the table unmarked.
+
 ## 1.0.1
 
 ### Pages are browsable, not runnable

@@ -83,6 +83,38 @@
     return idx === -1 ? qualifiedName : qualifiedName.slice(idx + 1);
   }
 
+  // A rule's DefaultMemberAccessRights covers its ASSOCIATIONS as much as its
+  // attributes — in Studio Pro an association is a member of the entity like
+  // any attribute is, and an access rule grants read or read+write on it the
+  // same way. The attributes are expanded against the default while the rule
+  // is read; the associations cannot be, because an association is only known
+  // once every module has been read (a cross-module one is declared by the
+  // module at the other end). So it happens here, over the finished model, and
+  // only where the rule said nothing explicit about that association — an
+  // explicit 'none' from MemberAccesses stands. Exported so it can be tested
+  // on a plain model, without a .mpr.
+  function applyAssociationDefaults(model) {
+    var owned = new Map(); // owner qn -> [association name]
+    (model.associations || []).forEach(function (a) {
+      if (!a || !a.owner) return;
+      var list = owned.get(a.owner);
+      if (!list) { list = []; owned.set(a.owner, list); }
+      list.push(a.name);
+    });
+    (model.entities || []).forEach(function (e) {
+      var names = owned.get(e.qualifiedName);
+      if (!names) return;
+      (e.accessRules || []).forEach(function (rule) {
+        if (!rule || !rule.defaultAccess) return;
+        if (!rule.assocAccess) rule.assocAccess = {};
+        names.forEach(function (n) {
+          if (!Object.prototype.hasOwnProperty.call(rule.assocAccess, n)) rule.assocAccess[n] = rule.defaultAccess;
+        });
+      });
+    });
+    return model;
+  }
+
   function accessRightsToLetter(rights) {
     if (rights === 'ReadWrite') return 'rw';
     if (rights === 'ReadOnly') return 'r';
@@ -344,8 +376,12 @@
               var attrName = shortName(m.Attribute);
               if (letter) attrAccess[attrName] = letter; else delete attrAccess[attrName];
             } else if (m.Association) {
+              // Recorded as an explicit 'none' rather than dropped: the
+              // default below is applied to associations in a later pass, and
+              // that pass has to be able to tell "this rule says no" from
+              // "this rule says nothing".
               var assocName = shortName(m.Association);
-              if (letter) assocAccess[assocName] = letter; else delete assocAccess[assocName];
+              assocAccess[assocName] = letter || 'none';
             }
           });
 
@@ -353,6 +389,7 @@
           roles.forEach(function (role) {
             entity.accessRules.push({
               moduleRole: role,
+              defaultAccess: defaultAccess || null,
               attrAccess: Object.assign({}, attrAccess),
               assocAccess: Object.assign({}, assocAccess),
               xpathConstraint: xpathConstraint,
@@ -389,6 +426,8 @@
         });
       });
     });
+
+    applyAssociationDefaults(result);
 
     // An entity that EXTENDS another local entity never gets its own
     // Persistable flag (only a DomainModels$NoGeneralization carries one) —
@@ -482,5 +521,6 @@
     return sortModel(result);
   }
 
-  root.MxMpr = { blobToGuid: blobToGuid, payload: payload, idHex: idHex, buildModel: buildModel };
+  root.MxMpr = { blobToGuid: blobToGuid, payload: payload, idHex: idHex, buildModel: buildModel,
+    applyAssociationDefaults: applyAssociationDefaults };
 })(typeof self !== 'undefined' ? self : this);

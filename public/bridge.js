@@ -91,6 +91,10 @@
     function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
     var FONT = '13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
     var MONO = '12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace';
+    // The same green MxScout's own access matrix uses for read+write, so a
+    // writable value looks the same in this panel as it does in the app.
+    var WRITE_TEXT = '#8fe0a2';
+    var WRITE_LINE = '#46b45c';
 
     function btn(label, kind) {
       var base = 'font:' + FONT + ';padding:5px 11px;border-radius:7px;cursor:pointer;border:1px solid ' + P.border + ';';
@@ -389,6 +393,31 @@
         .catch(function () { done(null); });
     }
 
+    // Which of these values the app itself would let this session WRITE, asked
+    // per OBJECT and not per column. Two rows of one entity can fall under
+    // different access rules — a rule's XPath decides which rows it covers —
+    // so "can I write Status" is a property of the row, not of the column.
+    // The Mendix client already knows: isReadonlyAttr is what its own widgets
+    // ask before they let a field be edited, and the answer comes from the
+    // object the runtime returned under this session's rights. Nothing is
+    // written, and nothing extra is fetched: this is a question about an
+    // object already in hand. A runtime that does not expose it returns null,
+    // and the table then simply marks nothing.
+    function writableCells(obj, columns) {
+      if (!obj || typeof obj.isReadonlyAttr !== 'function') return null;
+      var objectReadOnly = attempt(function () {
+        return typeof obj.isObjectReadOnly === 'function' ? !!obj.isObjectReadOnly() : false;
+      });
+      var out = {};
+      (columns || []).forEach(function (c) {
+        var ro = attempt(function () { return obj.isReadonlyAttr(c); });
+        // undefined = the runtime would not answer for this member; say
+        // nothing rather than guess, since a wrong green is worse than none.
+        out[c] = ro === undefined ? null : (objectReadOnly ? false : !ro);
+      });
+      return out;
+    }
+
     function cellValue(obj, name) {
       try {
         var v = typeof obj.get === 'function' ? obj.get(name) : undefined;
@@ -419,6 +448,7 @@
             out.rows = list.slice(0, amount).map(function (o) {
               var row = { id: attempt(function () { return o.getGuid(); }) || null, cells: {} };
               (spec.columns || []).forEach(function (c) { row.cells[c] = cellValue(o, c); });
+              row.writable = writableCells(o, spec.columns);
               return row;
             });
             settle();
@@ -585,6 +615,7 @@
       }
       var row = { id: attempt(function () { return obj.getGuid(); }) || null, cells: {} };
       (cmd.columns || []).forEach(function (c) { row.cells[c] = cellValue(obj, c); });
+      row.writable = writableCells(obj, cmd.columns);
       post(CFG.origin + '/api/session/data', {
         token: CFG.token, commandId: cmd.id, ok: true, message: null,
         data: { rows: [row], offset: 0, amount: 1, total: 1, more: false, error: null }
@@ -849,16 +880,28 @@
           ';border-bottom:1px solid ' + P.border + ';font-weight:600;', c));
       });
       var tbody = add(table, mk('tbody', ''));
+      var anyWritable = false;
       out.rows.forEach(function (row) {
         var tr = add(tbody, mk('tr', ''));
         cols.forEach(function (c) {
           var v = c === 'id' ? row.id : row.cells[c];
+          // Green marks a value this session may write on THIS row — see
+          // writableCells: the answer is the runtime's, per object, because a
+          // rule's XPath decides which rows it covers.
+          var writable = c !== 'id' && row.writable && row.writable[c] === true;
+          if (writable) anyWritable = true;
           var td = add(tr, mk('td', 'padding:6px 10px;border-bottom:1px solid ' + P.border +
-            ';max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:' +
-            (v == null ? P.muted : P.text) + ';', v == null ? '—' : v));
+            ';max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' +
+            (writable ? 'background:rgba(70,180,92,0.12);color:' + WRITE_TEXT + ';'
+                      : 'color:' + (v == null ? P.muted : P.text) + ';'), v == null ? '—' : v));
           if (v != null) td.title = String(v);
         });
       });
+      if (anyWritable) {
+        var legend = add(host, mk('div', 'display:flex;align-items:center;gap:8px;margin-top:8px;font-size:11px;color:' + P.muted + ';'));
+        add(legend, mk('span', 'display:inline-block;width:10px;height:10px;border-radius:3px;background:rgba(70,180,92,0.35);border:1px solid ' + WRITE_LINE + ';'));
+        add(legend, mk('span', '', 'Green: this session may write that value on that row.'));
+      }
     }
 
     // A flow snippet in standalone mode: pick an id from the parameter
