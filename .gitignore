@@ -1,0 +1,22 @@
+node_modules/
+runtime/
+dist/
+*.log
+.DS_Store
+
+# Karol's own working notes — not part of the shipped app, kept local only.
+ROADMAP.md
+
+# The test suite: real and run before every commit, but not part of the
+# public download. Stays on disk; see CLAUDE.md's Tests section.
+test/
+
+# Anything that is about the project rather than part of it: the demo
+# recording and the scripts that produce it. Same treatment as ROADMAP.md.
+private/
+
+# Claude Code's own launch config — a local convenience, not the app.
+.claude/
+
+# Guidance for Claude Code working in this repo — not part of the app.
+CLAUDE.md
