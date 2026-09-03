@@ -104,7 +104,7 @@
           ['GET /api/session/ping', 'The bridge asks whether it can reach MxScout at all. Cross-origin, token-gated.'],
           ['GET /api/session/exec/poll', 'The bridge asks whether anything is waiting for it. Cross-origin, token-gated, dispatched at most once. Held open for up to 25 seconds rather than answering immediately, so the app tab reacts at once instead of on a timer.'],
           ['POST /api/session/exec/result', 'The bridge reports how a run went. Cross-origin, token-gated.'],
-          ['POST /api/session/data', 'The bridge returns one page of rows it read. Cross-origin, token-gated, rebuilt field by field on the server rather than forwarded.'],
+          ['POST /api/session/data', 'The bridge returns one page of rows it read, each with the ids, the values, and — per row — which of those values this session may write. Cross-origin, token-gated, rebuilt field by field on the server rather than forwarded: values are truncated to a fixed length and the write flags are kept only as true or false, only for columns that actually came back.'],
           ['GET /api/session/data', 'The UI collects that page. Same-origin only.']
         ] },
         { p: 'That is the complete list. Anything else under /api answers 404, and every other GET serves one of the static files in public/.' },
