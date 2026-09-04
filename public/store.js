@@ -24,20 +24,24 @@
   'use strict';
 
   var DB_NAME = 'mxscout';
-  var DB_VERSION = 1;
+  var DB_VERSION = 2;
 
-  // projects  — metadata only, so listing projects never parses a model
-  // models    — one record per project, written at import and never again
-  // findings  — one record PER COMMENT; this is the store that is hot
-  // exports   — one record per export, each holding a snapshot of what was
-  //             sent (see ROADMAP: this is what makes "not exported yet",
-  //             the delivery history and "changed since you sent it" work)
-  // settings  — small key/value pairs: the author identity, UI preferences
+  // projects   — metadata only, so listing projects never parses a model
+  // models     — one record per project, written at import and never again
+  // findings   — one record PER COMMENT; this is the store that is hot
+  // exports    — one record per export, each holding a snapshot of what was
+  //              sent (see ROADMAP: this is what makes "not exported yet",
+  //              the delivery history and "changed since you sent it" work)
+  // recordings — one record per project, holding the last imported
+  //              performance recording (see perf.js). Overwritten by the
+  //              next import; MxScout keeps one at a time, not a history.
+  // settings   — small key/value pairs: the author identity, UI preferences
   var STORES = {
     projects: { keyPath: 'id', indexes: [] },
     models: { keyPath: 'projectId', indexes: [] },
     findings: { keyPath: 'id', indexes: [['byProject', 'projectId'], ['byUpdated', 'updatedAt']] },
     exports: { keyPath: 'id', indexes: [['byProject', 'projectId']] },
+    recordings: { keyPath: 'projectId', indexes: [] },
     settings: { keyPath: 'key', indexes: [] }
   };
 
@@ -159,13 +163,14 @@
     }).then(function () { return project; });
   }
 
-  // Deleting a project takes its model, findings and export history with it,
-  // in one transaction. Orphaned findings pointing at a project that no
-  // longer exists would be invisible and permanent.
+  // Deleting a project takes its model, findings, export history and
+  // recording with it, in one transaction. Orphaned findings pointing at a
+  // project that no longer exists would be invisible and permanent.
   function deleteProjectDeep(projectId) {
-    return run(['projects', 'models', 'findings', 'exports'], 'readwrite', function (store) {
+    return run(['projects', 'models', 'findings', 'exports', 'recordings'], 'readwrite', function (store) {
       store('projects').delete(projectId);
       store('models').delete(projectId);
+      store('recordings').delete(projectId);
       ['findings', 'exports'].forEach(function (name) {
         var index = store(name).index('byProject');
         index.openKeyCursor(window.IDBKeyRange.only(projectId)).onsuccess = function (event) {

@@ -335,6 +335,15 @@
 
   // Deciding what a dropped file actually is, once, so no caller has to.
   function handlePickedFile(fileName, text, purpose, projectId) {
+    // A performance recording is never a project file — it always augments
+    // an already-open project's Performance tab, never creates or replaces
+    // one. Redirect rather than let it fall through to createProject's
+    // generic "not a shape MxScout understands".
+    if (window.MxPerf && window.MxPerf.looksLikeRecording(text)) {
+      setMessage('That looks like a performance recording, not a project file. Open the project first, then drop it under Performance.', 'error');
+      render();
+      return true;
+    }
     if (window.MxCrypto.looksLikePackage(text)) {
       var envelope;
       try { envelope = JSON.parse(text); }

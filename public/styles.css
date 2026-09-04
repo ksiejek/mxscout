@@ -1709,3 +1709,50 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
   font-size: 13px;
   line-height: 1.5;
 }
+
+/* ---------- performance: the timeline (waterfall) ---------- */
+/* Plain positioned HTML, not SVG — same choice the entities map makes for a
+   grid of real elements: every bar stays a clickable, focusable button
+   rather than a shape needing its own hit-testing. */
+.perf-timeline-card { padding: 16px 18px; }
+.perf-verdict { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+.perf-timeline { display: flex; flex-direction: column; gap: 10px; }
+.perf-lanes { display: flex; flex-direction: column; gap: 6px; }
+.perf-lane { position: relative; height: 24px; background: var(--panel-2); border-radius: 5px; }
+.perf-bar {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  min-width: 3px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+}
+.perf-bar-client { background: var(--accent); }
+.perf-bar-async { background: color-mix(in srgb, var(--accent) 55%, var(--text)); }
+.perf-bar-custom { background: var(--muted); }
+.perf-bar-other { background: color-mix(in srgb, var(--muted) 60%, var(--border)); }
+.perf-bar:hover { filter: brightness(1.15); }
+.perf-bar.is-selected { outline: 2px solid var(--text); outline-offset: 1px; }
+.perf-hint { margin: 4px 0 0; }
+.perf-detail {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--panel-2) 45%, transparent);
+}
+.perf-detail-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 8px; }
+.perf-detail-title { font-size: 13px; font-weight: 600; }
+.perf-frames { display: flex; flex-direction: column; gap: 4px; }
+.perf-frame {
+  font-size: 12px;
+  padding: 3px 0;
+  color: var(--muted);
+  border: none;
+  background: none;
+  text-align: left;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.perf-frame-link { color: var(--text); cursor: pointer; }
+.perf-frame-link:hover { color: var(--accent); }

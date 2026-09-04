@@ -315,6 +315,7 @@
         createObject: null,      // qualifiedName of a non-persistable entity whose "create" popup is open
         data: null,              // the page of live rows a Data tab is showing
         transient: null,         // non-persistable entity: looked-up/created objects this session
+        recording: null,         // the imported performance recording, if any (see perf.js)
         // 'all' shows everything regardless of role; otherwise a user-role name.
         // Default to the first role so a tester lands on a realistic, filtered
         // picture instead of the raw everything-view.
@@ -348,6 +349,9 @@
       // ones I have not sent yet" answerable. The view does not wait on
       // either: the model renders now and the lists fill in.
       window.MxComments.loadFindings(id).then(render);
+      window.MxPerf.loadRecording(id).then(function (recording) {
+        if (state.detail) { state.detail.recording = recording; render(); }
+      });
       store.byIndex('exports', 'byProject', id).then(function (rows) {
         state.exports = rows.sort(function (a, b) { return String(b.at).localeCompare(String(a.at)); });
         render();
@@ -616,6 +620,7 @@
     { key: 'microflows', label: 'Microflows', countKey: 'microflows' },
     { key: 'nanoflows', label: 'Nanoflows', countKey: 'nanoflows' },
     { key: 'pages', label: 'Pages', countKey: 'pages' },
+    { key: 'performance', label: 'Performance', countKey: null },
     { key: 'comments', label: 'Comments', countKey: null },
     { key: 'live', label: 'Live app', countKey: null, apart: true },
     { key: 'settings', label: 'Settings', countKey: null, apart: true }
@@ -1888,6 +1893,9 @@
     } else if (state.detail.view === 'live') {
       controls = null;
       body = window.MxLive.renderPanel(model, project);
+    } else if (state.detail.view === 'performance') {
+      controls = null;
+      body = window.MxPerf.renderPanel(model, project);
     } else if (state.detail.view === 'comments') {
       controls = null;
       body = window.MxComments.renderList(model);
@@ -1899,9 +1907,12 @@
     // The role selector only means something for the views that filter by
     // role; Comments and Settings are not among them — the app measured what
     // the signed-in session did, and re-labelling that with another role
-    // would be a claim MxScout cannot make.
+    // would be a claim MxScout cannot make. A performance recording is the
+    // same argument again: it reflects whichever real session ran it, not a
+    // role someone picks afterwards.
     var roleFilterApplies = state.detail.view !== 'comments' &&
-      state.detail.view !== 'settings';
+      state.detail.view !== 'settings' &&
+      state.detail.view !== 'performance';
     return el('div', { class: 'detail' }, [
       el('div', { class: 'detail-head' }, [
         title,
@@ -2017,7 +2028,7 @@
     var d = (state.about || state.guide || state.newProject.open) ? null : state.detail;
     var fullBleed = d && (
       d.view === 'microflows' || d.view === 'nanoflows' || d.view === 'pages' || d.view === 'entities' ||
-      d.view === 'comments'
+      d.view === 'comments' || d.view === 'performance'
     );
     var wrap = el('div', { class: 'content-wrap' + (fullBleed ? ' wide' : '') }, [body]);
     if (state.message) {
@@ -2252,6 +2263,11 @@
     el: el, state: state, api: api, render: render, setMessage: setMessage,
     saveProjectMeta: saveProjectMeta, findEntity: findEntity,
     moduleRoleSetFor: moduleRoleSetFor, moduleColor: moduleColor
+  });
+  window.MxPerf.init({
+    el: el, state: state, store: store, render: render, setMessage: setMessage,
+    downloadText: downloadText, pickModelFile: pickModelFile, readFileText: readFileText,
+    jumpToObject: jumpToObject, objectsOfSection: objectsOfSection
   });
   window.MxMprImport.init({
     el: el, state: state, store: store, render: render, setMessage: setMessage,
