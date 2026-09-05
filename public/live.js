@@ -1129,6 +1129,12 @@
     // the guard
     classifyAppUrl: classifyAppUrl,
     persistAppUrl: persistAppUrl,
+    // shared with perf.js's admin-port bridge: one session token covers both
+    // bridges, so neither can mint a fresh one out from under the other.
+    ensureSessionToken: ensureSession,
+    // shared with perf.js's admin-port bridge, so its floating badge is drawn
+    // in MxScout's own colours instead of a second, different-looking one.
+    currentPalette: currentPalette,
     // the connection
     renderPanel: renderLivePanel,
     renderConnect: renderBridgeSection,

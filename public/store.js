@@ -24,7 +24,7 @@
   'use strict';
 
   var DB_NAME = 'mxscout';
-  var DB_VERSION = 2;
+  var DB_VERSION = 3;
 
   // projects   — metadata only, so listing projects never parses a model
   // models     — one record per project, written at import and never again
@@ -32,16 +32,17 @@
   // exports    — one record per export, each holding a snapshot of what was
   //              sent (see ROADMAP: this is what makes "not exported yet",
   //              the delivery history and "changed since you sent it" work)
-  // recordings — one record per project, holding the last imported
-  //              performance recording (see perf.js). Overwritten by the
-  //              next import; MxScout keeps one at a time, not a history.
+  // recordings — one record PER performance recording (see perf.js): a
+  //              session captured through the admin-port bridge, with its own
+  //              start time. A project can hold many, browsed and deleted
+  //              individually — same shape as findings/exports.
   // settings   — small key/value pairs: the author identity, UI preferences
   var STORES = {
     projects: { keyPath: 'id', indexes: [] },
     models: { keyPath: 'projectId', indexes: [] },
     findings: { keyPath: 'id', indexes: [['byProject', 'projectId'], ['byUpdated', 'updatedAt']] },
     exports: { keyPath: 'id', indexes: [['byProject', 'projectId']] },
-    recordings: { keyPath: 'projectId', indexes: [] },
+    recordings: { keyPath: 'id', indexes: [['byProject', 'projectId'], ['byStarted', 'started']] },
     settings: { keyPath: 'key', indexes: [] }
   };
 
@@ -61,6 +62,15 @@
 
       req.onupgradeneeded = function (event) {
         var d = event.target.result;
+        // v2's `recordings` was keyed by projectId (one recording per
+        // project); v3 keys it by its own id so a project can hold many. An
+        // object store's keyPath cannot be changed in place, so the old
+        // store — at most one row per project, from Phase 1 — is dropped and
+        // recreated below rather than migrated. A one-time, one-machine loss
+        // of an already-imported recording, not a general migration.
+        if (event.oldVersion > 0 && event.oldVersion < 3 && d.objectStoreNames.contains('recordings')) {
+          d.deleteObjectStore('recordings');
+        }
         Object.keys(STORES).forEach(function (name) {
           if (d.objectStoreNames.contains(name)) return;
           var spec = STORES[name];
@@ -164,14 +174,13 @@
   }
 
   // Deleting a project takes its model, findings, export history and
-  // recording with it, in one transaction. Orphaned findings pointing at a
+  // recordings with it, in one transaction. Orphaned findings pointing at a
   // project that no longer exists would be invisible and permanent.
   function deleteProjectDeep(projectId) {
     return run(['projects', 'models', 'findings', 'exports', 'recordings'], 'readwrite', function (store) {
       store('projects').delete(projectId);
       store('models').delete(projectId);
-      store('recordings').delete(projectId);
-      ['findings', 'exports'].forEach(function (name) {
+      ['findings', 'exports', 'recordings'].forEach(function (name) {
         var index = store(name).index('byProject');
         index.openKeyCursor(window.IDBKeyRange.only(projectId)).onsuccess = function (event) {
           var cursor = event.target.result;

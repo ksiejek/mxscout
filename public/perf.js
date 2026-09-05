@@ -1,20 +1,32 @@
 /* MxScout — performance recording, read from the Mendix Runtime Admin port.
  *
- * MxScout's server never makes an outbound connection, and this browser tab
- * cannot reach another origin's admin port with a custom auth header either
- * (CORS blocks it). So there is exactly one compliant shape for this: a
- * PowerShell script, generated here and downloaded, that YOU run on the
- * machine hosting the Mendix app. It reads that app's admin password out of
- * its own process (nobody types it in, nobody stores it), polls the admin
- * port while you use the app, and writes a plain JSON file. MxScout only
- * ever reads that finished file — the collector and the browser never talk
- * to each other, and the MxScout server is not involved in any of this.
+ * MxScout's server never makes an outbound connection, and one browser tab
+ * cannot reach ANOTHER origin's admin port with a custom auth header either
+ * (CORS blocks it) — so the only compliant shape is the same one MxScout
+ * already uses for a running app (see public/bridge.js, public/live.js): a
+ * small script, generated here, pasted into a tab that IS on the admin
+ * port's own origin. That tab calls the admin API same-origin, and reports
+ * what it reads back to MxScout over its own outbound connection — the
+ * server never initiates anything, only receives (see server/routes/
+ * session.js's perf/poll and perf/sample). This module owns the UI side of
+ * that: getting the one thing the admin port needs that a session doesn't
+ * already carry (the password), generating the bridge script, and turning
+ * Start/Finish into a saved recording.
  *
  * What the admin port gives that ordinary network traffic never could: the
  * INTERNAL action stack behind a request — nested microflow calls, the
  * activity currently running, the XPath behind a retrieve — not just "a
  * request happened and took N ms". See ROADMAP step 46 for the research
  * that ruled out every other shape (a server-side poll, TRACE log parsing).
+ *
+ * Earlier (Phase 1) this worked differently: a PowerShell script did the
+ * whole recording itself and wrote a JSON file to drop in here. That still
+ * needed a fresh script run — and a file to carry around — for every single
+ * recording. This version keeps PowerShell for exactly one job it alone can
+ * do (reading M2EE_ADMIN_PASS out of the runtime process's own memory,
+ * proven in Phase 0) and nothing else: read it once per app run, paste it
+ * once, then Start/Finish as many recordings as you like through the pasted
+ * bridge tab.
  *
  * The recording also carries a second, unparsed block per sample (`stats`,
  * from the admin port's broader runtime-statistics action) alongside the
@@ -29,7 +41,7 @@
   'use strict';
 
   // Bound once, in init(). Named exactly as they were in app.js.
-  var el, state, store, render, setMessage, downloadText, pickModelFile, readFileText, jumpToObject, objectsOfSection;
+  var el, state, store, render, setMessage, downloadText, api, jumpToObject, objectsOfSection, newId, formatDate;
 
   function init(deps) {
     el = deps.el;
@@ -38,81 +50,47 @@
     render = deps.render;
     setMessage = deps.setMessage;
     downloadText = deps.downloadText;
-    pickModelFile = deps.pickModelFile;
-    readFileText = deps.readFileText;
+    api = deps.api;
     jumpToObject = deps.jumpToObject;
     objectsOfSection = deps.objectsOfSection;
+    newId = deps.newId;
+    formatDate = deps.formatDate;
   }
 
-  // ---------- the file format ----------
-  // A single canonical copy of both values: used to sniff and validate an
-  // imported file below, AND substituted into the generated collector script
-  // (see buildCollectorScript) so the two never drift apart by hand.
-  var TOOL = 'mxscout-perf-collector';
   var FORMAT_VERSION = 1;
   var DEFAULT_ADMIN_PORT = 8090;
   var DEFAULT_INTERVAL_MS = 50;
+  var STATUS_POLL_MS = 1000;
 
-  function looksLikeRecording(text) {
-    // Same trick as crypto.js's looksLikePackage: cheap enough to run on the
-    // first few hundred characters of a dropped file, before parsing it.
-    return String(text).slice(0, 400).indexOf('"tool":"' + TOOL + '"') !== -1;
+  // ---------- storage: one row per recording, many per project ----------
+  // Same shape as findings/exports: keyPath 'id', an index to list a
+  // project's rows and one to sort them by when they were captured.
+  function loadRecordings(projectId) {
+    return store.byIndex('recordings', 'byProject', projectId).then(function (rows) {
+      return rows.sort(function (a, b) { return String(b.started).localeCompare(String(a.started)); });
+    });
   }
+  function saveRecording(recording) { return store.put('recordings', recording); }
+  function deleteRecording(id) { return store.delete('recordings', id); }
 
-  function parseRecording(text) {
-    var parsed;
-    try { parsed = JSON.parse(text); }
-    catch (e) { return { ok: false, error: 'That file is not valid JSON.' }; }
-    if (!parsed || parsed.tool !== TOOL) {
-      return { ok: false, error: 'That file is not an MxScout performance recording.' };
-    }
-    if (typeof parsed.version !== 'number' || parsed.version > FORMAT_VERSION) {
-      return { ok: false, error: 'That recording was written by a newer MxScout (format version ' + parsed.version + '). Update MxScout and try again.' };
-    }
-    if (!Array.isArray(parsed.samples)) {
-      return { ok: false, error: 'That recording has no samples in it — it may be damaged.' };
-    }
-    return { ok: true, recording: parsed };
-  }
-
-  // ---------- storage ----------
-  // One recording per project, overwritten by the next import — a history of
-  // named recordings is a Phase 2+ question, not this one.
-  function loadRecording(projectId) {
-    return store.get('recordings', projectId).then(function (row) { return row ? row.recording : null; });
-  }
-
-  function saveRecording(projectId, recording) {
-    return store.put('recordings', {
-      projectId: projectId,
-      recording: recording,
-      importedAt: new Date().toISOString()
-    }).then(function () { return recording; });
-  }
-
-  // ---------- the collector script ----------
-  // Real, readable PowerShell — not assembled from fragments — the same
-  // argument the rest of MxScout makes for its own source: read it, there is
-  // nothing hidden in it. {{PLACEHOLDER}} values are substituted in
-  // buildCollectorScript below.
-  //
-  // The password-read technique (PEB -> ProcessParameters -> Environment
-  // block, via NtQueryInformationProcess + ReadProcessMemory) is the one
-  // proven working against a real Mendix runtime in ROADMAP step 46's Phase
-  // 0 — Studio Pro mints M2EE_ADMIN_PASS fresh per run and hands it to the
-  // runtime process as an environment variable, not a config file, not a
-  // command-line argument. The x64 struct offsets below are the ones public
-  // process-environment-reading tools commonly use; if a Windows update ever
-  // moves them, this script fails to find the password and says so, rather
-  // than reading whatever garbage happens to be at that address.
-  var COLLECTOR_TEMPLATE = [
-    '# MxScout performance collector — generated by MxScout, run by you.',
+  // ---------- the password-reveal script ----------
+  // Real, readable PowerShell — not assembled from fragments. This is now the
+  // script's ONLY job: find the runtime process, read M2EE_ADMIN_PASS out of
+  // its own environment (the PEB -> ProcessParameters -> Environment technique
+  // proven against a real Mendix runtime in ROADMAP step 46's Phase 0), print
+  // it, exit. It never polls the admin port and never writes a file — the
+  // password is typed into MxScout once, by hand, and lives from there only in
+  // this tab's memory and inside the one bridge script that gets pasted
+  // elsewhere (see admin-bridge.js).
+  var PASSWORD_SCRIPT_TEMPLATE = [
+    '# MxScout admin-password reveal — generated by MxScout, run by you.',
     '#',
     '# What this does: finds the Mendix Runtime process listening on the admin',
     '# port, reads its own M2EE_ADMIN_PASS out of its process environment (the',
-    '# value Studio Pro generates fresh per run — MxScout never sees it, and it',
-    '# is never written to the file this script produces), then polls the admin',
-    '# port while you use the app and writes a JSON file for MxScout to import.',
+    '# value Studio Pro generates fresh per run), prints it, and exits. It never',
+    '# polls the admin port and never writes anything to disk — paste the',
+    '# printed password into MxScout, which uses it only inside the one script',
+    '# you then paste into a browser tab on the admin port itself.',
     '#',
     '# Windows only. Run it on the machine hosting the Mendix app, as the same',
     '# user running that app (or an administrator) — reading another process\'s',
@@ -120,8 +98,7 @@
     '# admin) has by default.',
     '',
     'param(',
-    '  [int]$Port = {{ADMIN_PORT}},',
-    '  [int]$IntervalMs = {{INTERVAL_MS}}',
+    '  [int]$Port = {{ADMIN_PORT}}',
     ')',
     '',
     '$ErrorActionPreference = \'Stop\'',
@@ -204,104 +181,95 @@
     '  Write-Host "Could not read the admin password: $($_.Exception.Message)" -ForegroundColor Red',
     '  exit 1',
     '}',
-    'Write-Host "Admin password read from the runtime process\'s own memory. It will not be written to the output file."',
-    '',
-    '$AuthHeader = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($AdminPass))',
-    '$Headers = @{ \'X-M2EE-Authentication\' = $AuthHeader; \'Content-Type\' = \'application/json\' }',
-    '$Url = "http://localhost:$Port/"',
-    '',
-    'function Invoke-Admin($action) {',
-    '  $body = @{ action = $action; params = @{} } | ConvertTo-Json -Compress',
-    '  try { return Invoke-RestMethod -Uri $Url -Method Post -Headers $Headers -Body $body -ErrorAction Stop }',
-    '  catch { return $null }',
-    '}',
-    '',
-    '# ---------- record ----------',
-    '# Both admin actions are polled every tick, on the same auth, so a',
-    '# recording carries as much of what the admin port can say as possible:',
-    '# get_current_runtime_requests (the action stack this view reads) and',
-    '# runtime_statistics (thread pool / cache / connection pool / sessions —',
-    '# stored as-is, MxScout does not parse it yet).',
-    '$Samples = New-Object System.Collections.Generic.List[object]',
-    '$Started = Get-Date',
-    'Write-Host ""',
-    'Write-Host "Recording... use the app now. Press Q in this window to stop."',
-    'Write-Host ""',
-    '',
-    'while ($true) {',
-    '  if ([Console]::KeyAvailable) {',
-    '    $key = [Console]::ReadKey($true)',
-    '    if ($key.Key -eq \'Q\') { break }',
-    '  }',
-    '',
-    '  $requests = Invoke-Admin \'get_current_runtime_requests\'',
-    '  $stats = Invoke-Admin \'runtime_statistics\'',
-    '',
-    '  $hasRequests = $requests -and (($requests.PSObject.Properties | Measure-Object).Count -gt 0)',
-    '  if ($hasRequests -or $stats) {',
-    '    $elapsed = [int](((Get-Date) - $Started).TotalMilliseconds)',
-    '    $Samples.Add(@{ t = $elapsed; requests = $(if ($hasRequests) { $requests } else { @{} }); stats = $stats })',
-    '  }',
-    '',
-    '  Start-Sleep -Milliseconds $IntervalMs',
-    '}',
-    '',
-    '$Stopped = Get-Date',
-    '$Out = @{',
-    '  tool = \'{{TOOL}}\'',
-    '  version = {{FORMAT_VERSION}}',
-    '  intervalMs = $IntervalMs',
-    '  adminPort = $Port',
-    '  started = $Started.ToString(\'o\')',
-    '  stopped = $Stopped.ToString(\'o\')',
-    '  samples = $Samples',
-    '}',
-    '',
-    '$FileName = "mxscout-perf-$($Started.ToString(\'yyyyMMdd-HHmmss\')).json"',
-    '$Out | ConvertTo-Json -Depth 20 -Compress | Set-Content -Path $FileName -Encoding utf8',
     '',
     'Write-Host ""',
-    'Write-Host "Wrote $FileName — $($Samples.Count) samples. Drop it into MxScout\'s Performance tab."'
+    'Write-Host "Admin password — paste this into MxScout:"',
+    'Write-Host $AdminPass',
+    'Write-Host ""'
   ].join('\n');
 
-  function buildCollectorScript(cfg) {
+  function buildPasswordScript(cfg) {
     cfg = cfg || {};
     var port = cfg.adminPort || DEFAULT_ADMIN_PORT;
-    var interval = cfg.intervalMs || DEFAULT_INTERVAL_MS;
-    return COLLECTOR_TEMPLATE
-      .replace(/\{\{ADMIN_PORT\}\}/g, String(port))
-      .replace(/\{\{INTERVAL_MS\}\}/g, String(interval))
-      .replace(/\{\{TOOL\}\}/g, TOOL)
-      .replace(/\{\{FORMAT_VERSION\}\}/g, String(FORMAT_VERSION));
+    return PASSWORD_SCRIPT_TEMPLATE.replace(/\{\{ADMIN_PORT\}\}/g, String(port));
   }
 
-  // One button, no form: sensible defaults (the admin port Mendix always
-  // uses locally, a 50ms sample rate) rather than asking the user to fill in
-  // fields before they can start. Nothing here is uploaded — it is a plain
-  // browser download, same as any other file MxScout hands out.
-  function startRecording() {
-    downloadText(buildCollectorScript({}), 'mxscout-perf-collector.ps1', 'text/plain');
-  }
-
-  // ---------- bringing a finished recording in ----------
-  // Called from this module's own drop zone — never from the New Project /
-  // Replace Model flow. A recording always augments an ALREADY OPEN project;
-  // it never creates or replaces one, so it has no business in that dialog.
-  function handlePickedFile(fileName, text, projectId) {
-    var result = parseRecording(text);
-    if (!result.ok) { setMessage(result.error, 'error'); render(); return; }
-    saveRecording(projectId, result.recording).then(function () {
-      if (state.detail && state.activeId === projectId) {
-        state.detail.recording = result.recording;
-        selectedFor = projectId;
-        selectedRequestId = null;
-      }
-      setMessage('Performance recording imported.', 'ok');
-      render();
-    }, function (err) {
-      setMessage((err && err.message) || 'Could not save that recording.', 'error');
-      render();
+  // ---------- the bridge script (admin-bridge.js), generated per session ----------
+  function perfScriptFor(token, password) {
+    var p = state.detail.perf;
+    var key = token + ':' + password;
+    if (p.scriptKey === key && p.script) return p.script;
+    p.scriptKey = key;
+    p.script = window.MxAdminBridge.buildScript({
+      origin: window.location.origin, token: token, password: password, intervalMs: DEFAULT_INTERVAL_MS,
+      palette: window.MxLive.currentPalette()
     });
+    return p.script;
+  }
+
+  // ---------- status polling (is the bridge tab there, is it recording) ----------
+  var _statusPoll = null;
+  function stopStatusPolling() { if (_statusPoll) { clearInterval(_statusPoll); _statusPoll = null; } }
+  function startStatusPolling() { stopStatusPolling(); _statusPoll = setInterval(fetchStatus, STATUS_POLL_MS); fetchStatus(); }
+  function fetchStatus() {
+    if (!state.detail || !state.detail.perf) { stopStatusPolling(); return; }
+    fetch('/api/session/perf/status')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (s) {
+        if (!state.detail || !state.detail.perf || !s) return;
+        var was = !!state.detail.perf.status.connected;
+        state.detail.perf.status = s;
+        // Connecting or dropping changes what the whole card should show —
+        // an "open this in another tab" instruction has to become Start/Finish
+        // by itself, same reasoning as live.js's exec status.
+        if (!!s.connected !== was) { render(); return; }
+        updateStatusInPlace();
+      })
+      .catch(function () {});
+  }
+  function updateStatusInPlace() {
+    var host = document.getElementById('perf-status-area');
+    if (!host || !state.detail || !_currentProject) return;
+    while (host.firstChild) host.removeChild(host.firstChild);
+    var node = renderStatusArea(_currentProject);
+    if (node) host.appendChild(node);
+  }
+
+  // ---------- Start / Finish ----------
+  function startRecordingSession() {
+    state.detail.perf.recordingStartedAt = new Date().toISOString();
+    api('/api/session/perf/start', { method: 'POST' }).then(function () {
+      if (!_statusPoll) startStatusPolling();
+      fetchStatus();
+    }).catch(function (err) { setMessage((err && err.message) || 'Could not start recording.', 'error'); render(); });
+  }
+
+  function finishRecordingSession(project) {
+    api('/api/session/perf/stop', { method: 'POST' }).then(function (resp) {
+      var samples = resp.samples || [];
+      var p = state.detail.perf;
+      var recording = {
+        id: newId(),
+        projectId: project.id,
+        tool: 'mxscout-perf-recording',
+        version: FORMAT_VERSION,
+        intervalMs: DEFAULT_INTERVAL_MS,
+        adminUrl: p.result ? p.result.origin : null,
+        started: p.recordingStartedAt || new Date().toISOString(),
+        stopped: new Date().toISOString(),
+        samples: samples
+      };
+      return saveRecording(recording).then(function () { return loadRecordings(project.id); })
+        .then(function (rows) {
+          if (!state.detail || !state.detail.perf) return;
+          state.detail.perf.recordings = rows;
+          state.detail.perf.selectedId = recording.id;
+          selectedRequestId = null;
+          setMessage('Recording saved — ' + samples.length + ' sample' + (samples.length === 1 ? '' : 's') + '.', 'ok');
+          render();
+          fetchStatus();
+        });
+    }).catch(function (err) { setMessage((err && err.message) || 'Could not stop recording.', 'error'); render(); });
   }
 
   // ---------- aggregation ----------
@@ -425,9 +393,10 @@
 
   // ---------- rendering: the timeline ----------
   // Which request is open in the detail panel below the bars. Kept per
-  // project (not per recording) so switching projects — or replacing a
-  // recording — never shows a detail panel for a request that no longer
-  // exists in what is on screen.
+  // project (not per recording) so switching projects never shows a detail
+  // panel for a request that no longer exists in what is on screen; opening a
+  // DIFFERENT recording in the same project also resets it (see the list's
+  // Open handler below).
   var selectedFor = null;
   var selectedRequestId = null;
   function ensureSelectionScope(projectId) {
@@ -506,80 +475,194 @@
   function recordingSummary(recording) {
     var samples = (recording.samples || []).length;
     var parts = [samples + ' sample' + (samples === 1 ? '' : 's') + ' over ' + formatMs(totalDurationMs(recording))];
-    if (recording.adminPort) parts.push('admin port ' + recording.adminPort);
+    if (recording.adminUrl) parts.push(recording.adminUrl);
     return parts.join(' \u00b7 ');
   }
 
-  // ---------- rendering: bringing a recording in ----------
-  function dropZone(project) {
-    var drop = el('div', { class: 'file-drop' }, [
-      el('div', {}, [
-        el('div', {}, [el('strong', { text: 'Drop the recording JSON here' })]),
-        el('div', { class: 'muted', text: 'Or click to choose the file it wrote \u2014 nothing here is uploaded.' })
-      ])
-    ]);
-    function onFile(file) {
-      readFileText(file, function (fileName, text) { handlePickedFile(fileName, text, project.id); });
+  // ---------- rendering: connecting the admin port ----------
+  function renderAddressStep(project) {
+    var p = state.detail.perf;
+    var input = el('input', { type: 'text', class: 'live-url-input', placeholder: 'http://localhost:' + DEFAULT_ADMIN_PORT, value: p.adminUrl });
+    input.addEventListener('input', function () { p.adminUrl = input.value; });
+    function doCheck() {
+      var url = (p.adminUrl || '').trim() || ('http://localhost:' + DEFAULT_ADMIN_PORT);
+      p.adminUrl = url;
+      p.result = window.MxLive.classifyAppUrl(url);
+      render();
     }
-    drop.addEventListener('click', function () { pickModelFile(onFile, '.json,application/json'); });
-    drop.addEventListener('dragover', function (e) { e.preventDefault(); drop.classList.add('dragover'); });
-    drop.addEventListener('dragleave', function () { drop.classList.remove('dragover'); });
-    drop.addEventListener('drop', function (e) {
-      e.preventDefault();
-      drop.classList.remove('dragover');
-      var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      if (file) onFile(file);
-    });
-    return drop;
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') doCheck(); });
+    var blocked = p.result && p.result.verdict === 'block';
+    return el('div', { class: 'card' }, [
+      el('div', { class: 'scan-step-label', text: 'Step 1 of 3 \u2014 admin port address' }),
+      el('h3', { class: 'live-h', text: 'Performance recording' }),
+      el('p', { class: 'muted', text: 'MxScout reads deep performance data \u2014 nested microflow calls, retrieves, the activity actually running \u2014 through the Mendix Runtime\u2019s admin port. That is a different address than the app itself.' }),
+      el('label', { class: 'field' }, [
+        el('span', { text: 'Admin port address' }),
+        el('div', { class: 'live-url-row' }, [ input, el('button', { class: 'btn btn-primary', text: 'Check', onclick: doCheck }) ])
+      ]),
+      blocked ? el('p', { class: 'muted', text: 'MxScout can connect only to local, test and acceptance environments.' }) : null
+    ].filter(Boolean));
   }
 
-  function renderEmptyState(project) {
+  function renderPasswordStep() {
+    var p = state.detail.perf;
+    var input = el('input', { type: 'password', class: 'live-url-input', placeholder: 'Paste what the script printed', value: p.password });
+    input.addEventListener('input', function () { p.password = input.value; });
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && input.value) render(); });
     return el('div', { class: 'card' }, [
-      el('h3', { class: 'live-h', text: 'Performance recording' }),
-      el('p', { class: 'muted', text: 'MxScout\u2019s server makes no outbound connections, and this browser tab cannot reach the app\u2019s admin port either \u2014 so this is a script YOU run. It finds the app\u2019s admin password itself, records while you use the app, and writes a file you drop back here.' }),
-      el('div', { class: 'scan-copy-row' }, [
-        el('button', { class: 'btn btn-primary', text: 'Start recording', onclick: startRecording })
-      ]),
+      el('div', { class: 'scan-step-label', text: 'Step 2 of 3 \u2014 admin password' }),
+      el('h3', { class: 'live-h', text: 'Read the admin password' }),
+      el('p', { class: 'muted', text: 'The admin password is minted fresh every time the app starts, and lives only in that runtime process\u2019s own memory \u2014 MxScout cannot read it.' }),
       el('ol', { class: 'scan-steps' }, [
-        el('li', { text: 'Click \u201cStart recording\u201d \u2014 a PowerShell script downloads.' }),
-        el('li', { text: 'Run it on the machine hosting your Mendix app, as the user running the app (or an administrator).' }),
-        el('li', { text: 'Use the app: click around, run the flows you want measured.' }),
-        el('li', { text: 'Press Q in that window to stop \u2014 it writes a JSON file next to itself.' }),
-        el('li', { text: 'Drop that file below.' })
+        el('li', { text: 'Download the script below.' }),
+        el('li', { text: 'Run it in PowerShell, on the machine hosting the app. It only prints the password \u2014 it never sends or saves it anywhere.' }),
+        el('li', { text: 'Paste what it printed into the field below.' })
       ]),
-      dropZone(project)
+      el('div', { class: 'scan-copy-row' }, [
+        el('button', { class: 'btn btn-sm', text: 'Download the password-reveal script', onclick: function () {
+          downloadText(buildPasswordScript({}), 'mxscout-admin-password.ps1', 'text/plain');
+        } })
+      ]),
+      el('label', { class: 'field' }, [ el('span', { text: 'Admin password' }), input ]),
+      el('div', { class: 'scan-copy-row' }, [
+        el('button', { class: 'btn btn-primary', text: 'Continue', onclick: function () { if (input.value) render(); } })
+      ])
     ]);
   }
+
+  function renderStatusArea(project) {
+    var p = state.detail.perf;
+    var active = !!(p.status && p.status.active);
+    var sampleCount = (p.status && p.status.sampleCount) || 0;
+    var kids = [];
+    kids.push(el('div', { class: 'live-status live-status-ok' }, [
+      el('span', { class: 'live-dot' }),
+      el('span', { text: active ? ('Recording\u2026 ' + sampleCount + ' sample' + (sampleCount === 1 ? '' : 's') + ' so far.') : 'Connected to the admin port \u2014 idle.' })
+    ]));
+    kids.push(el('div', { class: 'scan-copy-row' }, [
+      active
+        ? el('button', { class: 'btn btn-danger', text: 'Finish recording', onclick: function () { finishRecordingSession(project); } })
+        : el('button', { class: 'btn btn-primary', text: 'Start recording', onclick: startRecordingSession })
+    ]));
+    return el('div', {}, kids);
+  }
+
+  function renderBridgeStep(project, token) {
+    var p = state.detail.perf;
+    if (!_statusPoll) startStatusPolling();
+    if (p.status && p.status.connected) {
+      return el('div', { class: 'card' }, [
+        el('h3', { class: 'live-h', text: 'Connected to the admin port' }),
+        el('div', { id: 'perf-status-area', class: 'exec-status-area' }, [renderStatusArea(project)])
+      ]);
+    }
+    var script = perfScriptFor(token, p.password);
+    var copyStatus = el('span', { class: 'muted' });
+    var copyBtn = el('button', {
+      class: 'btn btn-primary', text: 'Copy the code',
+      onclick: function () {
+        navigator.clipboard.writeText(script).then(
+          function () { copyStatus.textContent = 'Copied.'; },
+          function () { copyStatus.textContent = 'Could not copy automatically \u2014 select the text and copy it.'; }
+        );
+      }
+    });
+    return el('div', { class: 'card' }, [
+      el('div', { class: 'scan-step-label', text: 'Step 3 of 3 \u2014 connect the admin port' }),
+      el('h3', { class: 'live-h', text: 'Connect the admin port' }),
+      el('ol', { class: 'scan-steps' }, [
+        el('li', { text: 'Open ' + (p.result ? p.result.origin : p.adminUrl) + ' in another browser tab.' }),
+        el('li', { text: 'On that tab press F12, then open the Console.' }),
+        el('li', { text: 'Paste the code below and press Enter \u2014 a small badge appears in that tab.' }),
+        el('li', { text: 'Come back here \u2014 Start recording appears once it connects.' })
+      ]),
+      el('textarea', { class: 'scan-script', readonly: 'readonly', spellcheck: 'false', text: script || '' }),
+      el('div', { class: 'scan-copy-row' }, [copyBtn, copyStatus]),
+      el('div', { class: 'scan-waiting' }, [
+        el('span', { class: 'spinner' }),
+        el('span', { text: 'Waiting for the code to run in that tab\u2026' })
+      ])
+    ]);
+  }
+
+  function renderConnectCard(project) {
+    var p = state.detail.perf;
+    if (!p.result || p.result.verdict !== 'allow') return renderAddressStep(project);
+    if (!p.password) return renderPasswordStep();
+    if (!state.detail.live.token) {
+      window.MxLive.ensureSessionToken(function () { render(); });
+      return el('div', { class: 'scan-section' }, [el('span', { class: 'spinner' })]);
+    }
+    return renderBridgeStep(project, state.detail.live.token);
+  }
+
+  // ---------- rendering: the recordings list ----------
+  function renderRecordingsList(project) {
+    var p = state.detail.perf;
+    if (p.recordings === null) return null; // still loading — nothing to show yet
+    if (!p.recordings.length) return null;  // the connect card above says what to do
+    var rows = p.recordings.map(function (r) {
+      var isSelected = r.id === p.selectedId;
+      var openBtn = el('button', {
+        class: 'btn btn-sm', text: isSelected ? 'Close' : 'Open',
+        onclick: function () { p.selectedId = isSelected ? null : r.id; selectedRequestId = null; render(); }
+      });
+      var delBtn = el('button', {
+        class: 'btn btn-sm btn-danger-outline', text: 'Delete',
+        onclick: function () {
+          if (!confirm('Delete this recording? This cannot be undone.')) return;
+          deleteRecording(r.id).then(function () {
+            if (!state.detail || !state.detail.perf) return;
+            state.detail.perf.recordings = (state.detail.perf.recordings || []).filter(function (x) { return x.id !== r.id; });
+            if (state.detail.perf.selectedId === r.id) state.detail.perf.selectedId = null;
+            render();
+          }, function (err) { setMessage((err && err.message) || 'Could not delete that recording.', 'error'); render(); });
+        }
+      });
+      return el('div', { class: 'perf-recording-row' + (isSelected ? ' is-selected' : '') }, [
+        el('div', { class: 'perf-recording-info' }, [
+          el('span', { class: 'kv-key', text: formatDate(r.started) || 'unknown time' }),
+          el('span', { class: 'kv-val muted', text: recordingSummary(r) })
+        ]),
+        el('div', { class: 'perf-recording-actions' }, [openBtn, delBtn])
+      ]);
+    });
+    return el('div', { class: 'card' }, [
+      el('h3', { class: 'live-h', text: 'Recordings (' + p.recordings.length + ')' }),
+      el('div', { class: 'perf-recordings' }, rows)
+    ]);
+  }
+
+  // ---------- top level ----------
+  var _currentProject = null;
 
   function renderPanel(model, project) {
     ensureSelectionScope(project.id);
-    var recording = state.detail.recording;
-    if (!recording) return renderEmptyState(project);
+    _currentProject = project;
+    var p = state.detail.perf;
+    if (p.recordings === null && !p.recordingsLoading) {
+      p.recordingsLoading = true;
+      loadRecordings(project.id).then(function (rows) {
+        if (state.detail && state.detail.perf) { state.detail.perf.recordings = rows; state.detail.perf.recordingsLoading = false; render(); }
+      });
+    }
 
-    return el('div', {}, [
-      el('div', { class: 'card' }, [
-        el('div', { class: 'scan-head-row' }, [
-          el('h3', { class: 'live-h', text: 'Performance recording' }),
-          el('button', {
-            class: 'btn btn-sm', text: 'New recording\u2026',
-            onclick: function () { state.detail.recording = null; selectedRequestId = null; render(); }
-          })
-        ]),
-        el('p', { class: 'muted', text: recordingSummary(recording) }),
-        renderVerdict(recording)
-      ]),
-      el('div', { class: 'card perf-timeline-card' }, [renderTimeline(model, recording)])
-    ]);
+    var selected = (p.recordings || []).filter(function (r) { return r.id === p.selectedId; })[0] || null;
+    var kids = [renderConnectCard(project), renderRecordingsList(project)];
+    if (selected) {
+      kids.push(el('div', { class: 'card' }, [
+        el('h3', { class: 'live-h', text: 'Recording \u2014 ' + (formatDate(selected.started) || selected.id) }),
+        el('p', { class: 'muted', text: recordingSummary(selected) }),
+        renderVerdict(selected)
+      ]));
+      kids.push(el('div', { class: 'card perf-timeline-card' }, [renderTimeline(model, selected)]));
+    }
+    return el('div', {}, kids.filter(Boolean));
   }
 
   window.MxPerf = {
     init: init,
-    looksLikeRecording: looksLikeRecording,
-    parseRecording: parseRecording,
-    loadRecording: loadRecording,
-    saveRecording: saveRecording,
-    buildCollectorScript: buildCollectorScript,
-    handlePickedFile: handlePickedFile,
+    buildPasswordScript: buildPasswordScript,
     resolveFrame: resolveFrame,
     buildRequestRows: buildRequestRows,
     renderPanel: renderPanel

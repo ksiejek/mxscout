@@ -315,7 +315,18 @@
         createObject: null,      // qualifiedName of a non-persistable entity whose "create" popup is open
         data: null,              // the page of live rows a Data tab is showing
         transient: null,         // non-persistable entity: looked-up/created objects this session
-        recording: null,         // the imported performance recording, if any (see perf.js)
+        // Performance tab (see perf.js): the admin-port bridge's own
+        // connection state, deliberately separate from `live` above — this is
+        // a different origin (the admin port, not the app) and can be
+        // connected independently of it. `recordings` is null until the
+        // Performance tab is first opened (lazy, like the Data pane);
+        // `password` and `recordingStartedAt` are never persisted.
+        perf: {
+          adminUrl: '', result: null, password: '',
+          script: null, scriptKey: null, status: {},
+          recordings: null, recordingsLoading: false, selectedId: null,
+          recordingStartedAt: null
+        },
         // 'all' shows everything regardless of role; otherwise a user-role name.
         // Default to the first role so a tester lands on a realistic, filtered
         // picture instead of the raw everything-view.
@@ -349,9 +360,6 @@
       // ones I have not sent yet" answerable. The view does not wait on
       // either: the model renders now and the lists fill in.
       window.MxComments.loadFindings(id).then(render);
-      window.MxPerf.loadRecording(id).then(function (recording) {
-        if (state.detail) { state.detail.recording = recording; render(); }
-      });
       store.byIndex('exports', 'byProject', id).then(function (rows) {
         state.exports = rows.sort(function (a, b) { return String(b.at).localeCompare(String(a.at)); });
         render();
@@ -2266,8 +2274,9 @@
   });
   window.MxPerf.init({
     el: el, state: state, store: store, render: render, setMessage: setMessage,
-    downloadText: downloadText, pickModelFile: pickModelFile, readFileText: readFileText,
-    jumpToObject: jumpToObject, objectsOfSection: objectsOfSection
+    downloadText: downloadText, api: api,
+    jumpToObject: jumpToObject, objectsOfSection: objectsOfSection,
+    newId: newId, formatDate: formatDate
   });
   window.MxMprImport.init({
     el: el, state: state, store: store, render: render, setMessage: setMessage,

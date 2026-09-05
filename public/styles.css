@@ -815,20 +815,22 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 .scan-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
 .scan-head-row { display: flex; justify-content: space-between; align-items: center; }
 .scan-h { margin: 0 0 6px; font-size: 14px; color: var(--accent); }
+.scan-step-label { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); margin: 0 0 6px; }
 .scan-steps { margin: 12px 0 12px; padding-left: 20px; color: var(--text); font-size: 13px; }
 .scan-steps li { margin-bottom: 6px; }
 .scan-script {
   width: 100%;
   height: 130px;
-  background: var(--bg);
-  color: var(--muted);
+  background: color-mix(in srgb, var(--bg) 92%, black);
+  color: var(--text);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
+  font-size: 12px;
   resize: vertical;
   white-space: pre;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, .25);
 }
 .scan-copy-row { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
 
@@ -1756,3 +1758,13 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 }
 .perf-frame-link { color: var(--text); cursor: pointer; }
 .perf-frame-link:hover { color: var(--accent); }
+
+.perf-recordings { display: flex; flex-direction: column; gap: 2px; }
+.perf-recording-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 7px 8px; border-radius: 6px;
+}
+.perf-recording-row:nth-child(odd) { background: color-mix(in srgb, var(--panel-2) 50%, transparent); }
+.perf-recording-row.is-selected { box-shadow: inset 2px 0 0 var(--accent); }
+.perf-recording-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.perf-recording-actions { display: flex; gap: 6px; flex: none; }
