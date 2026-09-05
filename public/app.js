@@ -320,12 +320,14 @@
         // a different origin (the admin port, not the app) and can be
         // connected independently of it. `recordings` is null until the
         // Performance tab is first opened (lazy, like the Data pane);
-        // `password` and `recordingStartedAt` are never persisted.
+        // `password` is never persisted. The recording's own start time comes
+        // from the server (see perf.js's finishRecordingSession), not from
+        // anything tracked here.
         perf: {
           adminUrl: '', result: null, password: '',
           script: null, scriptKey: null, status: {},
           recordings: null, recordingsLoading: false, selectedId: null,
-          recordingStartedAt: null
+          _finishing: false
         },
         // 'all' shows everything regardless of role; otherwise a user-role name.
         // Default to the first role so a tester lands on a realistic, filtered
@@ -688,10 +690,17 @@
       // by weight and indentation the eye has to reconstruct.
       if (!isActive) return el('div', { class: 'tree-node' }, [row]);
 
-      var sections = PROJECT_SECTIONS.map(function (section) {
+      var sections = PROJECT_SECTIONS.map(function (section, i) {
         var count = sectionCount(project, section);
+        // The extra gap marks where a new GROUP starts, not every "apart"
+        // row individually — Live app and Settings are one group, and
+        // giving Settings its own gap too (since it is also `apart`) on top
+        // of the one already separating the group from Comments made both
+        // rows read as oddly over-padded compared to the rest of the list.
+        var prev = PROJECT_SECTIONS[i - 1];
+        var apart = section.apart && !(prev && prev.apart);
         return el('button', {
-          class: 'tree-section' + (state.detail.view === section.key ? ' active' : '') + (section.apart ? ' apart' : ''),
+          class: 'tree-section' + (state.detail.view === section.key ? ' active' : '') + (apart ? ' apart' : ''),
           onclick: function () { goToSection(section.key); }
         }, [
           el('span', { text: section.label }),
@@ -2274,7 +2283,7 @@
   });
   window.MxPerf.init({
     el: el, state: state, store: store, render: render, setMessage: setMessage,
-    downloadText: downloadText, api: api,
+    api: api,
     jumpToObject: jumpToObject, objectsOfSection: objectsOfSection,
     newId: newId, formatDate: formatDate
   });

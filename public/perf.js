@@ -41,7 +41,7 @@
   'use strict';
 
   // Bound once, in init(). Named exactly as they were in app.js.
-  var el, state, store, render, setMessage, downloadText, api, jumpToObject, objectsOfSection, newId, formatDate;
+  var el, state, store, render, setMessage, api, jumpToObject, objectsOfSection, newId, formatDate;
 
   function init(deps) {
     el = deps.el;
@@ -49,7 +49,6 @@
     store = deps.store;
     render = deps.render;
     setMessage = deps.setMessage;
-    downloadText = deps.downloadText;
     api = deps.api;
     jumpToObject = deps.jumpToObject;
     objectsOfSection = deps.objectsOfSection;
@@ -217,12 +216,24 @@
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (s) {
         if (!state.detail || !state.detail.perf || !s) return;
-        var was = !!state.detail.perf.status.connected;
-        state.detail.perf.status = s;
+        var p = state.detail.perf;
+        var wasConnected = !!p.status.connected;
+        var wasActive = !!p.status.active;
+        p.status = s;
+        // The admin tab's own record/stop icon can flip this without either
+        // button here ever being clicked — the recording still has to be
+        // drained and saved, and only THIS page can do that (the recording
+        // lands in its IndexedDB), so notice the drop and finish it exactly
+        // as if Finish had been pressed. The _finishing guard is what stops
+        // this from also firing a second time while that call is in flight.
+        if (wasActive && !s.active && !p._finishing) {
+          finishRecordingSession(_currentProject);
+          return;
+        }
         // Connecting or dropping changes what the whole card should show —
         // an "open this in another tab" instruction has to become Start/Finish
         // by itself, same reasoning as live.js's exec status.
-        if (!!s.connected !== was) { render(); return; }
+        if (!!s.connected !== wasConnected) { render(); return; }
         updateStatusInPlace();
       })
       .catch(function () {});
@@ -236,8 +247,12 @@
   }
 
   // ---------- Start / Finish ----------
+  // The start time comes back from the SERVER's own status/stop responses
+  // (state.js stamps it the moment either side actually starts recording),
+  // not from a timestamp taken here — Start can just as well be triggered by
+  // the admin tab's own record icon, and this page would otherwise have no
+  // honest value to put in a recording it did not see begin.
   function startRecordingSession() {
-    state.detail.perf.recordingStartedAt = new Date().toISOString();
     api('/api/session/perf/start', { method: 'POST' }).then(function () {
       if (!_statusPoll) startStatusPolling();
       fetchStatus();
@@ -245,9 +260,17 @@
   }
 
   function finishRecordingSession(project) {
+    if (!project) return;
+    var p = state.detail.perf;
+    p._finishing = true;
     api('/api/session/perf/stop', { method: 'POST' }).then(function (resp) {
+      // This stop already happened, server-side, by the time this runs — mark
+      // it here too, or fetchStatus()'s own trailing call below reads the
+      // stale cached `active: true` from before, sees a false "external"
+      // true-to-false transition, and finishes THIS SAME stop a second time
+      // (an extra, empty recording right after the real one).
+      if (state.detail && state.detail.perf) state.detail.perf.status.active = false;
       var samples = resp.samples || [];
-      var p = state.detail.perf;
       var recording = {
         id: newId(),
         projectId: project.id,
@@ -255,12 +278,13 @@
         version: FORMAT_VERSION,
         intervalMs: DEFAULT_INTERVAL_MS,
         adminUrl: p.result ? p.result.origin : null,
-        started: p.recordingStartedAt || new Date().toISOString(),
+        started: (p.status && p.status.startedAt) || new Date().toISOString(),
         stopped: new Date().toISOString(),
         samples: samples
       };
       return saveRecording(recording).then(function () { return loadRecordings(project.id); })
         .then(function (rows) {
+          p._finishing = false;
           if (!state.detail || !state.detail.perf) return;
           state.detail.perf.recordings = rows;
           state.detail.perf.selectedId = recording.id;
@@ -269,7 +293,11 @@
           render();
           fetchStatus();
         });
-    }).catch(function (err) { setMessage((err && err.message) || 'Could not stop recording.', 'error'); render(); });
+    }).catch(function (err) {
+      p._finishing = false;
+      setMessage((err && err.message) || 'Could not stop recording.', 'error');
+      render();
+    });
   }
 
   // ---------- aggregation ----------
@@ -506,23 +534,30 @@
 
   function renderPasswordStep() {
     var p = state.detail.perf;
+    var script = buildPasswordScript({});
     var input = el('input', { type: 'password', class: 'live-url-input', placeholder: 'Paste what the script printed', value: p.password });
     input.addEventListener('input', function () { p.password = input.value; });
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && input.value) render(); });
+    var copyStatus = el('span', { class: 'muted' });
+    var copyBtn = el('button', {
+      class: 'btn btn-primary', text: 'Copy the code',
+      onclick: function () {
+        navigator.clipboard.writeText(script).then(
+          function () { copyStatus.textContent = 'Copied.'; },
+          function () { copyStatus.textContent = 'Could not copy automatically \u2014 select the text and copy it.'; }
+        );
+      }
+    });
     return el('div', { class: 'card' }, [
       el('div', { class: 'scan-step-label', text: 'Step 2 of 3 \u2014 admin password' }),
       el('h3', { class: 'live-h', text: 'Read the admin password' }),
       el('p', { class: 'muted', text: 'The admin password is minted fresh every time the app starts, and lives only in that runtime process\u2019s own memory \u2014 MxScout cannot read it.' }),
       el('ol', { class: 'scan-steps' }, [
-        el('li', { text: 'Download the script below.' }),
-        el('li', { text: 'Run it in PowerShell, on the machine hosting the app. It only prints the password \u2014 it never sends or saves it anywhere.' }),
+        el('li', { text: 'Copy the code below, and run it in PowerShell on the machine hosting the app. It only prints the password \u2014 it never sends or saves it anywhere.' }),
         el('li', { text: 'Paste what it printed into the field below.' })
       ]),
-      el('div', { class: 'scan-copy-row' }, [
-        el('button', { class: 'btn btn-sm', text: 'Download the password-reveal script', onclick: function () {
-          downloadText(buildPasswordScript({}), 'mxscout-admin-password.ps1', 'text/plain');
-        } })
-      ]),
+      el('textarea', { class: 'scan-script', readonly: 'readonly', spellcheck: 'false', text: script || '' }),
+      el('div', { class: 'scan-copy-row' }, [copyBtn, copyStatus]),
       el('label', { class: 'field' }, [ el('span', { text: 'Admin password' }), input ]),
       el('div', { class: 'scan-copy-row' }, [
         el('button', { class: 'btn btn-primary', text: 'Continue', onclick: function () { if (input.value) render(); } })

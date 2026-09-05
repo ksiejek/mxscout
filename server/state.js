@@ -58,6 +58,7 @@ function wakeCommandWaiters() {
 // be connected — or not — independently of one another.
 let perfActive = false;
 let perfSamples = [];        // { t, requests, stats }[], cleared on start() and on stop()
+let perfStartedAt = null;    // when the CURRENT recording began — set once, by whichever side started it
 let perfLastPollAt = null;
 const PERF_SAMPLES_MAX = 50000; // a generous cap; older samples drop first
 const perfWaiters = new Set();
@@ -69,7 +70,18 @@ function wakePerfWaiters() {
   waiters.forEach((fn) => { try { fn(); } catch (e) { /* a dead response is not our problem */ } });
 }
 function getPerfActive() { return perfActive; }
-function startPerfRecording() { perfActive = true; perfSamples = []; wakePerfWaiters(); }
+function startPerfRecording() {
+  perfActive = true;
+  perfSamples = [];
+  perfStartedAt = new Date().toISOString();
+  wakePerfWaiters();
+}
+// Flips the desired state to "stop" WITHOUT touching the buffer — used when
+// the admin-bridge tab's own Stop icon asks for this (see perf/request
+// below). Only MxScout's page can turn samples into a saved recording (they
+// live in ITS IndexedDB), so the buffer has to wait for that page's own
+// stopPerfRecording() call, whichever side flipped the flag.
+function requestStopPerfRecording() { perfActive = false; wakePerfWaiters(); }
 // Hands back everything collected and empties the buffer in one step — the
 // caller (the UI, stopping a recording) gets exactly what it needs to build a
 // file, and a sample that lands a moment later (see isPerfActive guard in the
@@ -78,6 +90,7 @@ function stopPerfRecording() {
   perfActive = false;
   const samples = perfSamples;
   perfSamples = [];
+  perfStartedAt = null;
   wakePerfWaiters();
   return samples;
 }
@@ -86,6 +99,7 @@ function addPerfSample(sample) {
   if (perfSamples.length > PERF_SAMPLES_MAX) perfSamples.splice(0, perfSamples.length - PERF_SAMPLES_MAX);
 }
 function getPerfSampleCount() { return perfSamples.length; }
+function getPerfStartedAt() { return perfStartedAt; }
 function getPerfLastPollAt() { return perfLastPollAt; }
 function touchPerfPoll() { perfLastPollAt = new Date().toISOString(); }
 
@@ -99,6 +113,7 @@ function startSession() {
   lastCommandPollAt = null;
   perfActive = false;
   perfSamples = [];
+  perfStartedAt = null;
   perfLastPollAt = null;
   // Release any request parked by the PREVIOUS session's bridge. Without this
   // its waiter sits in the set for the rest of the long-poll window, and
@@ -143,6 +158,7 @@ function clearSession() {
   lastCommandPollAt = null;
   perfActive = false;
   perfSamples = [];
+  perfStartedAt = null;
   perfLastPollAt = null;
   wakeCommandWaiters();
   wakePerfWaiters();
@@ -155,8 +171,8 @@ module.exports = {
   getQueryResult, setQueryResult,
   getLastCommandPollAt, touchCommandPoll,
   addCommandWaiter, heldPollCount,
-  getPerfActive, startPerfRecording, stopPerfRecording,
-  addPerfSample, getPerfSampleCount,
+  getPerfActive, startPerfRecording, requestStopPerfRecording, stopPerfRecording,
+  addPerfSample, getPerfSampleCount, getPerfStartedAt,
   addPerfWaiter, perfHeldPollCount,
   getPerfLastPollAt, touchPerfPoll
 };

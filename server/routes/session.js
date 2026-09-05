@@ -563,12 +563,37 @@ async function handlePerfSample(req, res) {
 // Same-origin: the MxScout UI asking whether the admin-bridge tab is there,
 // and whether it is actively recording. `connected` is computed exactly like
 // the exec bridge's listenerConnected — a bridge parked on a held-open poll
-// has not gone away.
+// has not gone away. `startedAt` is the server's own record of when the
+// CURRENT recording began, so the UI reports the true start time regardless
+// of which side (its own Start button, or the admin tab's own record icon)
+// triggered it.
 function handlePerfStatus(req, res) {
   const lastPollAt = state.getPerfLastPollAt();
   const connected = state.perfHeldPollCount() > 0 ||
     (!!lastPollAt && (Date.now() - new Date(lastPollAt).getTime()) < LISTENER_STALE_MS);
-  sendJson(res, 200, { connected, active: state.getPerfActive(), sampleCount: state.getPerfSampleCount() });
+  sendJson(res, 200, {
+    connected, active: state.getPerfActive(),
+    sampleCount: state.getPerfSampleCount(), startedAt: state.getPerfStartedAt()
+  });
+}
+
+// Cross-origin, token in body — lets the admin-bridge tab's own record/stop
+// icon ask for the same state change the MxScout UI's Start/Finish buttons
+// make, without also trying to drain the sample buffer itself: only
+// MxScout's page can turn samples into a saved recording (they live in ITS
+// IndexedDB), so a request to stop just flips the flag, and the actual
+// draining still happens through the same-origin perf/stop below — called
+// automatically by the page once it notices (see perf.js's status polling).
+async function handlePerfRequest(req, res) {
+  setCors(req, res);
+  const body = await readJsonBody(req);
+  if (!tokenMatches(body.token)) {
+    sendJson(res, 403, { error: 'Invalid or missing token.' });
+    return;
+  }
+  if (body.active) state.startPerfRecording();
+  else state.requestStopPerfRecording();
+  sendJson(res, 200, { ok: true, active: state.getPerfActive() });
 }
 
 // Same-origin. Starting clears whatever the buffer held before (a previous
@@ -592,5 +617,5 @@ module.exports = {
   handleReportQueryResult, handleGetQueryResult,
   handleSetCommand, handleClearCommand, handleGetCommandStatus,
   handleCommandPoll, handleReportCommandResult,
-  handlePerfPoll, handlePerfSample, handlePerfStatus, handlePerfStart, handlePerfStop
+  handlePerfPoll, handlePerfSample, handlePerfStatus, handlePerfStart, handlePerfStop, handlePerfRequest
 };

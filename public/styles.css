@@ -782,6 +782,8 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 .live-url-row > .btn { flex: none; white-space: nowrap; }
 .live-url-input {
   flex: 1 1 auto;
+  width: 100%;
+  box-sizing: border-box;
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
@@ -790,6 +792,10 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
   font: inherit;
 }
 .live-url-input:focus { outline: none; border-color: var(--accent); }
+/* A field label right after a code-copy row (the password step) needs a
+   bit more air than the default .field margin gives it, or the label reads
+   as crowded against the row above instead of introducing its own input. */
+.scan-copy-row + .field { margin-top: 14px; }
 
 .live-status { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 600; }
 .live-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }

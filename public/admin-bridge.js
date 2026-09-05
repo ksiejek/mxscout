@@ -94,14 +94,37 @@
     function showBadge() {
       badge = panel(P.accent);
       add(badge, logoMark());
-      var txt = add(badge, mk('span', '', 'Connected — idle'));
-      var x = add(badge, mk('span', 'cursor:pointer;opacity:.6;padding-left:4px;', '✕'));
+      var txt = add(badge, mk('span', 'flex:1 1 auto;', 'Connected — idle'));
+      // A record/stop icon right here, so a recording can be started and
+      // finished without switching back to the MxScout window at all — it
+      // asks the server for the same state change the Start/Finish buttons
+      // there make (see requestToggle), and the badge itself updates the
+      // moment the next poll confirms it.
+      var toggle = add(badge, mk('span',
+        'cursor:pointer;font-size:15px;line-height:1;padding:0 3px;color:' + P.accent + ';', '⏺'));
+      toggle.title = 'Start recording';
+      toggle.addEventListener('click', requestToggle);
+      var x = add(badge, mk('span', 'cursor:pointer;opacity:.6;padding-left:2px;', '✕'));
       x.addEventListener('click', function () { running = false; if (tickTimer) clearInterval(tickTimer); badge.parentNode.removeChild(badge); badge = null; });
       document.body.appendChild(badge);
       badge.__txt = txt;
+      badge.__toggle = toggle;
       return badge;
     }
     function setBadgeText(text) { if (badge && badge.__txt) badge.__txt.textContent = text; }
+    function setToggleState(isRecording) {
+      if (!badge || !badge.__toggle) return;
+      badge.__toggle.textContent = isRecording ? '⏹' : '⏺';
+      badge.__toggle.title = isRecording ? 'Stop recording' : 'Start recording';
+      badge.__toggle.style.color = isRecording ? P.alarm : P.accent;
+    }
+    // Only ASKS for the change — the actual flip (and, for a stop, the
+    // MxScout page draining what was collected into a saved recording) comes
+    // back through the normal poll loop below, same as if the Start/Finish
+    // button in MxScout had been clicked instead.
+    function requestToggle() {
+      post(CFG.origin + '/api/session/perf/request', { token: CFG.token, active: !recording }).catch(function () {});
+    }
 
     // ---------- talking to the admin API on OUR OWN origin ----------
     // base64(UTF-8 password) in X-M2EE-Authentication — the same protocol the
@@ -137,20 +160,46 @@
     var running = true;
     var recording = false;
     var tickTimer = null;
+    var tickInFlight = false; // never let a new round of admin calls start before the last one settled
     var startedAt = 0;
     var sampleCount = 0;
+    var adminFailStreak = 0; // consecutive rounds where BOTH admin calls failed — not "nothing running", the calls themselves didn't answer
 
     function nowMs() {
       return (window.performance && typeof performance.now === 'function') ? performance.now() : Date.now();
     }
 
+    // A real admin port can easily take longer to answer than CFG.intervalMs
+    // (the default is 50ms, and runtime_statistics in particular can be
+    // heavier than that). setInterval does not know or care — left alone, it
+    // fires a fresh round every tick regardless of whether the previous one
+    // is still in flight, which piles up concurrent requests without bound
+    // until every one of them queues, times out, and reports nothing. That is
+    // "always 0 samples" from the OUTSIDE, even though data is really there —
+    // tickInFlight makes a slow admin port sample slower instead of not at
+    // all.
     function tick() {
-      if (!recording) return;
+      if (!recording || tickInFlight) return;
+      tickInFlight = true;
       var pending = 2, requests = null, stats = null;
-      function settle() { if (--pending === 0) report(); }
+      function settle() { if (--pending === 0) { report(); tickInFlight = false; } }
       invokeAdmin('get_current_runtime_requests', function (r) { requests = r; settle(); });
       invokeAdmin('runtime_statistics', function (r) { stats = r; settle(); });
       function report() {
+        if (!recording) return; // Stop landed while this round was still in flight
+        // Both null means the admin calls themselves did not answer (wrong
+        // password, wrong port, a network error) — genuinely different from
+        // "the app is idle right now", which runtime_statistics still answers
+        // for. Surface it after a few in a row, not the first — one blip is
+        // normal, ten straight is a real problem worth naming.
+        if (requests === null && stats === null) {
+          adminFailStreak++;
+          if (adminFailStreak === 10) {
+            setBadgeText('Recording… ' + sampleCount + ' samples — the admin port isn’t answering (check the password)');
+          }
+          return;
+        }
+        adminFailStreak = 0;
         var hasRequests = requests && typeof requests === 'object' && Object.keys(requests).length > 0;
         if (!hasRequests && !stats) return; // nothing worth a sample this tick
         post(CFG.origin + '/api/session/perf/sample', {
@@ -168,11 +217,15 @@
       if (tickTimer) return;
       startedAt = nowMs();
       sampleCount = 0;
+      adminFailStreak = 0;
+      tickInFlight = false;
+      setToggleState(true);
       setBadgeText('Recording… 0 samples');
       tickTimer = setInterval(tick, CFG.intervalMs);
     }
     function stopTicking() {
       if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+      setToggleState(false);
       setBadgeText('Connected — idle');
     }
 

@@ -119,12 +119,16 @@ const routes = [
   { method: 'GET', pattern: /^\/api\/session\/data$/, handler: sessionRoutes.handleGetQueryResult },
   // The performance recorder's own bridge (see routes/session.js) — a SECOND
   // bridge tab, pasted on the admin port's own origin rather than the app's.
-  // Poll and sample are cross-origin and token-gated, same reasoning as the
-  // exec bridge above; start/stop/status are the MxScout UI, same-origin.
+  // Poll, sample and request are cross-origin and token-gated, same reasoning
+  // as the exec bridge above; start/stop/status are the MxScout UI, same-origin.
   { method: 'OPTIONS', pattern: /^\/api\/session\/perf\/poll$/, handler: sessionRoutes.handlePreflight, crossOrigin: true },
   { method: 'GET', pattern: /^\/api\/session\/perf\/poll$/, handler: sessionRoutes.handlePerfPoll, crossOrigin: true },
   { method: 'OPTIONS', pattern: /^\/api\/session\/perf\/sample$/, handler: sessionRoutes.handlePreflight, crossOrigin: true },
   { method: 'POST', pattern: /^\/api\/session\/perf\/sample$/, handler: sessionRoutes.handlePerfSample, crossOrigin: true },
+  // The admin-bridge tab's own record/stop icon, asking for the same state
+  // change the MxScout UI's Start/Finish buttons make (see handlePerfRequest).
+  { method: 'OPTIONS', pattern: /^\/api\/session\/perf\/request$/, handler: sessionRoutes.handlePreflight, crossOrigin: true },
+  { method: 'POST', pattern: /^\/api\/session\/perf\/request$/, handler: sessionRoutes.handlePerfRequest, crossOrigin: true },
   { method: 'GET', pattern: /^\/api\/session\/perf\/status$/, handler: sessionRoutes.handlePerfStatus },
   { method: 'POST', pattern: /^\/api\/session\/perf\/start$/, handler: sessionRoutes.handlePerfStart },
   { method: 'POST', pattern: /^\/api\/session\/perf\/stop$/, handler: sessionRoutes.handlePerfStop }

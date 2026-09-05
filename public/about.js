@@ -92,7 +92,7 @@
           'The server makes no outbound requests. It is a passive listener on loopback for the whole of its life.',
           'Requests to your Mendix application are made by the tester’s own browser tab, in their own already-authenticated session: mx.data.get to read rows, mx.data.action to run a flow, and one POST to that app’s own /xas/ endpoint (action retrieve_by_xpath, count: true) — the same call the Mendix client itself makes behind every paged data grid — purely to ask how many rows match. All three are same-origin to the application, carry that person’s own session and CSRF token, and read only. MxScout adds no access path: everything the snippet does is something that same person can do by clicking in the app.',
           'A row that comes back is also asked, object by object, whether this session may write each of its values — isReadonlyAttr, the same question the Mendix client’s own input widgets ask before they allow editing. That is a question about an object already in hand: it sends nothing, fetches nothing extra, and writes nothing. It is asked per object because a rule’s XPath decides which rows it covers, so the same attribute can be writable on one row and read-only on the next — which is what the green in the Data table means.',
-          'The admin-port tab (public/admin-bridge.js), pasted only while recording performance, makes requests to that same origin — the admin port it is already open on — carrying an auth header built from the password typed into MxScout, and reports what comes back to the MxScout server. It reads two administrative actions on a fixed interval and nothing else: no application data, no rows, no flow runs.',
+          'The admin-port tab (public/admin-bridge.js), pasted only while recording performance, makes requests to that same origin — the admin port it is already open on — carrying an auth header built from the password typed into MxScout, and reports what comes back to the MxScout server. It reads two administrative actions on a fixed interval and nothing else: no application data, no rows, no flow runs. Its own record/stop icon can ask MxScout to start or stop a recording, the same request the Start/Finish buttons in MxScout’s own window make.',
           'So no traffic leaves the machine except requests the tester’s own browser tabs make, to addresses the tester chose, in sessions the tester already holds.'
         ] }
       ] },
@@ -110,12 +110,13 @@
           ['GET /api/session/data', 'The UI collects that page. Same-origin only.'],
           ['GET /api/session/perf/poll', 'The admin-port bridge asks whether MxScout wants it recording right now. Cross-origin, token-gated. Held open until that changes or 25 seconds pass, same reasoning as the exec poll above.'],
           ['POST /api/session/perf/sample', 'The admin-port bridge reports one sample — what the admin port said was running, and the raw, not-yet-parsed statistics block (see “Where the data lives”). Cross-origin, token-gated, bounded in size; ignored outright once recording has stopped.'],
-          ['GET /api/session/perf/status', 'The UI asks whether that bridge is connected and recording, and how many samples it has. Same-origin only.'],
+          ['POST /api/session/perf/request', 'The admin-port bridge’s own record/stop icon, asking to start or stop recording — the same change the UI’s Start/Finish buttons make. Cross-origin, token-gated. A stop only flips the flag; only the UI’s own perf/stop call below ever drains or clears the buffer, since only this page can save a recording into its IndexedDB.'],
+          ['GET /api/session/perf/status', 'The UI asks whether that bridge is connected and recording, how many samples it has, and when the current recording began. Same-origin only.'],
           ['POST /api/session/perf/start', 'Tells the bridge to start recording and clears whatever a previous recording left behind. Same-origin only.'],
-          ['POST /api/session/perf/stop', 'Tells the bridge to stop, and returns everything it collected so the UI can save it. Same-origin only.']
+          ['POST /api/session/perf/stop', 'Tells the bridge to stop, and returns everything it collected so the UI can save it. Same-origin only — called by the UI itself even when a stop was requested from the admin tab’s own icon.']
         ] },
         { p: 'That is the complete list. Anything else under /api answers 404, and every other GET serves one of the static files in public/.' },
-        { p: 'Each of the six cross-origin ones also answers OPTIONS — the browser’s own preflight, which carries no token because a preflight cannot carry one: it sets the CORS headers, returns 204, and reaches nothing else. So the route table in server/index.js shows twelve cross-origin entries where this page names six endpoints; the other six are those preflights, and getting past one still leaves the real request needing the token.' },
+        { p: 'Each of the seven cross-origin ones also answers OPTIONS — the browser’s own preflight, which carries no token because a preflight cannot carry one: it sets the CORS headers, returns 204, and reaches nothing else. So the route table in server/index.js shows fourteen cross-origin entries where this page names seven endpoints; the other seven are those preflights, and getting past one still leaves the real request needing the token.' },
         { note: 'Rows read out of your application pass through the server on their way from the app tab to the MxScout window, and are held in memory only until the next request replaces them. They are never written to disk and never logged — the log records how many rows came back, never what was in them.' }
       ] },
 
@@ -141,14 +142,14 @@
           'X-Content-Type-Options: nosniff, X-Frame-Options: DENY and Referrer-Policy: no-referrer on every response.',
           'Static files come from one directory, behind a path-traversal guard.',
           'Request bodies are capped at 64 MB and must carry Content-Type: application/json — which also closes the classic HTML-form CSRF trick that skips the browser’s preflight.',
-          'Every route is same-origin only, except the four the app’s own tab must reach. Those are gated on a 128-bit random session token instead.',
+          'Every route is same-origin only, except the seven the app’s own tab or the admin-port tab must reach. Those are gated on a 128-bit random session token instead.',
           'Anything a browser script sends back is treated as hostile input: the server rebuilds it field by field, bounded in length and count, rather than storing the shape it was handed.'
         ] }
       ] },
 
-      { id: 'token', title: 'Why four endpoints accept cross-origin requests', blocks: [
-        { p: 'The bridge is a snippet the tester pastes into the console of the app’s own tab — so everything it sends back to MxScout necessarily comes from that app’s origin, not from ours. Binding to loopback stops the rest of the network, but not another tab on the same machine.' },
-        { p: 'So those four endpoints are gated on a token instead of on the Origin header. The MxScout UI mints a fresh random token immediately before generating a snippet; the snippet carries it and echoes it back, and only a request presenting the current token is accepted. Reconnecting invalidates every snippet generated before it, and a superseded snippet is told so and stops rather than retrying. A website the user happens to have open cannot guess the value, and therefore cannot plant fabricated data or steer a run.' }
+      { id: 'token', title: 'Why seven endpoints accept cross-origin requests', blocks: [
+        { p: 'The bridge is a snippet the tester pastes into the console of the app’s own tab, or of the admin port’s — so everything it sends back to MxScout necessarily comes from that tab’s origin, not from ours. Binding to loopback stops the rest of the network, but not another tab on the same machine.' },
+        { p: 'So those seven endpoints are gated on a token instead of on the Origin header. The MxScout UI mints a fresh random token immediately before generating a snippet; the snippet carries it and echoes it back, and only a request presenting the current token is accepted. Reconnecting invalidates every snippet generated before it, and a superseded snippet is told so and stops rather than retrying. A website the user happens to have open cannot guess the value, and therefore cannot plant fabricated data or steer a run.' }
       ] },
 
       { id: 'prod', title: 'The non-production guard', blocks: [
@@ -209,7 +210,7 @@
           ['public/live.js', 'Everything about talking to a running application: the non-production guard the UI consults, the session, the connection, reading rows, and running a flow.'],
           ['public/perf.js', 'The performance recording: the tiny PowerShell script that only reveals the admin password, the admin-port bridge script it hands out, Start/Finish, and rendering a saved recording as a timeline. Never talks to a running app or its admin port itself — only the pasted bridge does that.'],
           ['public/bridge.js', 'The snippet pasted into the app tab, written as ordinary code and serialized when it is generated — so what the tester pastes is a file you can read here, not a string assembled at runtime.'],
-          ['public/admin-bridge.js', 'The second bridge: same idea as bridge.js, pasted into a tab on the admin port’s own origin instead. Smaller, because the admin port has no UI to fall back into — it only reports samples while MxScout has told it to record.'],
+          ['public/admin-bridge.js', 'The second bridge: same idea as bridge.js, pasted into a tab on the admin port’s own origin instead, and drawing the same palette-driven badge. Smaller, because the admin port has no UI to fall back into — it reports samples while MxScout has told it to record, and its own record/stop icon can ask for that itself.'],
           ['public/store.js', 'Every persistent read and write, and nothing else does storage. The browser’s own database — no disk, no server.'],
           ['public/crypto.js', 'The package format and the access code. WebCrypto only — no hand-written cryptography, no library.'],
           ['public/transfer.js', 'How a project leaves this browser and how one arrives: the whitelist of what may travel, the dialogs, and the merge back into storage.'],
