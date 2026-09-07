@@ -1769,6 +1769,38 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 .perf-frame-link:hover { color: var(--accent); }
 
 /* ---------- performance: the connect strip ---------- */
+/* ---------- the three setup steps ----------
+   All three stay on screen the whole time, so the tester can see where they
+   are and what is left; only the current one is expanded. A done step keeps
+   its number's place but shows a tick and the value it produced. */
+.perf-steps { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; }
+.perf-step { border-top: 1px solid var(--border); padding: 10px 0; }
+.perf-step:first-child { border-top: 0; padding-top: 4px; }
+.perf-step-head { display: flex; align-items: baseline; gap: 11px; }
+.perf-step-mark {
+  flex: none; width: 20px; height: 20px; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--panel-2); color: var(--muted);
+  font-size: 11px; font-weight: 600; line-height: 18px; text-align: center;
+  align-self: center;
+}
+.perf-step-title { font-size: 13px; color: var(--muted); }
+.perf-step-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.perf-step-head .btn { margin-left: auto; }
+.perf-step.is-current .perf-step-mark { border-color: var(--accent); color: #08120f; background: var(--accent); }
+.perf-step.is-current .perf-step-title { color: var(--text); font-weight: 600; }
+.perf-step.is-done .perf-step-mark {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--accent); background: transparent;
+}
+.perf-step.is-done .perf-step-value { color: var(--text); }
+.perf-step.is-todo { opacity: 0.5; }
+.perf-step-body { padding: 12px 0 2px 31px; }
+.perf-step-body .scan-script { margin-top: 4px; }
+
 .perf-connect-strip { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .perf-connect-addr { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
 .perf-connect-strip .btn { margin-left: auto; }

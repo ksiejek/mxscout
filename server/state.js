@@ -97,6 +97,12 @@ function startPerfRecording() {
   perfSamples = [];
   perfStartedAt = new Date().toISOString();
 }
+// Flips the desired state to "stop" WITHOUT touching the buffer — this is
+// what the record button on the app tab's badge asks for. Only MxScout's own
+// page can turn samples into a saved recording (they live in ITS IndexedDB),
+// so the buffer has to wait for that page's stopPerfRecording() call below,
+// whichever side flipped the flag.
+function requestStopPerfRecording() { perfActive = false; }
 // Hands back everything collected and empties the buffer in one step — the
 // caller (the UI, stopping a recording) gets exactly what it needs to build a
 // recording, and a sample that lands a moment later cannot be appended to a
@@ -188,6 +194,6 @@ module.exports = {
   addCommandWaiter, heldPollCount,
   setAdminConnection, clearAdminConnection, isAdminConnected,
   getAdminConnection, getAdminPassword,
-  getPerfActive, startPerfRecording, stopPerfRecording,
+  getPerfActive, startPerfRecording, requestStopPerfRecording, stopPerfRecording,
   addPerfSample, getPerfSampleCount, getPerfStartedAt
 };

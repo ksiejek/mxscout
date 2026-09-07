@@ -202,11 +202,22 @@
         if (!state.detail || !state.detail.perf || !s) return;
         var p = state.detail.perf;
         var wasConnected = !!p.status.connected;
+        var wasActive = !!p.status.active;
         var wasKnown = !!p.statusKnown;
         p.status = s;
         p.statusKnown = true;
+        // The record button on the app tab's badge can stop a recording
+        // without either button here being clicked — and only THIS page can
+        // turn the samples into a saved recording, since they land in its
+        // IndexedDB. So notice the drop and finish it exactly as if Finish had
+        // been pressed. The _finishing guard is what stops this from firing a
+        // second time while that call is in flight.
+        if (wasActive && !s.active && !p._finishing) {
+          finishRecordingSession(_currentProject);
+          return;
+        }
         // Connecting or dropping changes what the whole card should show — the
-        // two connect steps have to become Start/Finish by themselves, same
+        // setup steps have to become the ready strip by themselves, same
         // reasoning as live.js's exec status. The first answer counts as a
         // change too: until it lands, this page does not yet know whether the
         // server is already connected from before a reload.
@@ -555,87 +566,110 @@
     return parts.join(' \u00b7 ');
   }
 
-  // ---------- rendering: connecting the admin port ----------
-  // A browser cannot honestly scan for open ports \u2014 the only source of truth
-  // is the Mendix convention itself: locally, the admin API listens on the
-  // app's own port + 10. Reusing the app URL already on file (persisted from
-  // the Live app tab) turns that convention into a real, filled-in
-  // suggestion instead of a rule the user has to remember and apply by hand.
-  function suggestedAdminPort(project) {
+
+  // ---------- rendering: setting up a recording ----------
+  // Three steps, done once per app run, and all three stay on screen the whole
+  // time. The earlier version swapped one card's contents for the next step,
+  // which read as three unrelated screens: Karol, seeing it — "user musi
+  // dokładnie wiedzieć, jakie kroki ma zrobić, co gdzie i kiedy". So a finished
+  // step collapses to a single line carrying the value it produced, the
+  // current one is the only one expanded, and each says plainly WHERE its work
+  // happens — in PowerShell, in MxScout, or in the app's own console.
+  //
+  // Which step is current is derived from real state, never from a counter
+  // this page increments: the admin connection is the server's (it survives a
+  // reload), and whether the app tab is connected is the live bridge's. So
+  // reopening this tab lands on the step actually left to do.
+
+  // A browser cannot honestly scan for open ports — the only source of truth
+  // is the Mendix convention itself: the admin API listens on the app's own
+  // port + 10. Reusing the app URL already on file (persisted from the Live
+  // app tab) turns that convention into a filled-in suggestion instead of a
+  // rule the user has to remember and apply by hand.
+  function suggestedAdminUrl(project) {
     var raw = (project && project.appUrl) || (state.detail.live && state.detail.live.url) || '';
-    if (!raw) return null;
+    if (!raw) return 'http://localhost:' + DEFAULT_ADMIN_PORT;
     try {
-      var withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw) ? raw : ('https://' + raw);
+      var withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw) ? raw : ('http://' + raw);
       var u = new URL(withScheme);
-      // Only an app running on THIS machine has an admin port MxScout can
-      // reach \u2014 the server dials loopback and nothing else (see
-      // server/admin-port.js). A remote app URL is a real, useful suggestion
-      // for the Live app tab and a dead end here, so it makes none.
-      var host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-      if (host !== 'localhost' && host !== '127.0.0.1' && host !== '::1') return null;
       var appPort = u.port ? parseInt(u.port, 10) : (u.protocol === 'https:' ? 443 : 80);
-      return appPort + 10;
-    } catch (e) { return null; }
+      return u.protocol + '//' + u.host.replace(/:\d+$/, '') + ':' + (appPort + 10);
+    } catch (e) { return 'http://localhost:' + DEFAULT_ADMIN_PORT; }
   }
 
-  function renderPortStep(project) {
+  // What the strip shows as the address: what the server actually connected
+  // to, not what was typed at it.
+  function adminLabel(p) {
+    var s = p.status || {};
+    if (!s.port) return '';
+    var host = s.host === '::1' ? '[::1]' : (s.host || 'localhost');
+    return 'http://' + host + ':' + s.port;
+  }
+
+  // One row of the checklist. `state` is 'done' | 'current' | 'todo'; only a
+  // current row gets a body.
+  function stepRow(index, opts) {
+    var kids = [
+      el('div', { class: 'perf-step-head' }, [
+        el('span', { class: 'perf-step-mark', text: opts.state === 'done' ? '✓' : String(index) }),
+        el('span', { class: 'perf-step-title', text: opts.title }),
+        el('span', { class: 'perf-step-value', text: opts.value || '' }),
+        opts.action || null
+      ].filter(Boolean))
+    ];
+    if (opts.state === 'current' && opts.body) kids.push(el('div', { class: 'perf-step-body' }, [opts.body]));
+    return el('div', { class: 'perf-step is-' + opts.state }, kids);
+  }
+
+  // ---------- step 1: where the admin port is ----------
+  function adminAddressBody(project) {
     var p = state.detail.perf;
-    var suggestion = suggestedAdminPort(project);
-    var input = el('input', {
-      type: 'text', class: 'live-url-input', inputmode: 'numeric',
-      placeholder: String(suggestion || DEFAULT_ADMIN_PORT),
-      value: p.port == null ? '' : String(p.port)
-    });
+    var suggestion = suggestedAdminUrl(project);
+    var input = el('input', { type: 'text', class: 'live-url-input', placeholder: suggestion, value: p.adminUrl || '' });
+    input.addEventListener('input', function () { p.adminUrl = input.value; });
     var problem = el('p', { class: 'muted' });
     function doCheck() {
-      var raw = (input.value || '').trim() || String(suggestion || DEFAULT_ADMIN_PORT);
-      // A whole URL pasted in here is the obvious mistake to make, since this
-      // field used to take one \u2014 take the port out of it rather than refuse.
-      var m = /(\d{1,5})\s*\/?$/.exec(raw);
-      var port = m ? parseInt(m[1], 10) : NaN;
-      if (!(port >= 1 && port <= 65535)) {
-        problem.textContent = 'That is not a port number. The admin port is a number like ' + (suggestion || DEFAULT_ADMIN_PORT) + '.';
+      var url = (p.adminUrl || '').trim() || suggestion;
+      var res = window.MxLive.classifyAppUrl(url);
+      if (res.verdict !== 'allow') {
+        problem.textContent = res.verdict === 'block'
+          ? 'MxScout connects only to local, test and acceptance environments.'
+          : 'Enter an address like ' + suggestion + '.';
         return;
       }
-      p.port = port;
+      p.adminUrl = res.origin;
+      p.urlOk = true;
       render();
     }
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') doCheck(); });
-    return el('div', { class: 'card' }, [
-      el('div', { class: 'scan-step-label', text: 'Step 1 of 2 \u2014 admin port' }),
-      el('h3', { class: 'live-h', text: 'Performance recording' }),
-      el('p', { class: 'muted', text: 'MxScout reads deep performance data \u2014 nested microflow calls, retrieves, the activity actually running \u2014 through the Mendix Runtime\u2019s admin port. That is a different port than the app itself.' }),
+    return el('div', {}, [
+      el('p', { class: 'muted', text: 'MxScout reads nested microflow calls, retrieves and the activity actually running through the Mendix Runtime’s admin port. That is a different address than the app itself — commonly the app’s own port + 10.' }),
       el('label', { class: 'field' }, [
-        el('span', { text: 'Admin port on this machine' }),
-        el('div', { class: 'live-url-row' }, [ input, el('button', { class: 'btn btn-primary', text: 'Continue', onclick: doCheck }) ])
+        el('span', { text: 'Admin port address' }),
+        el('div', { class: 'live-url-row' }, [input, el('button', { class: 'btn btn-primary', text: 'Continue', onclick: doCheck })])
       ]),
       problem,
-      el('p', { class: 'muted', text: suggestion
-        ? ('Mendix commonly runs the admin API on the app\u2019s own port + 10 \u2014 the app URL on file suggests ' + suggestion + '.')
-        : 'Mendix commonly runs the admin API on the app\u2019s own port + 10 (locally: 8080 \u2192 8090). Nothing can scan for it \u2014 this is a convention to try, not a lookup.' }),
-      el('p', { class: 'muted', text: 'The app has to be running on this same machine. MxScout will not reach out past it \u2014 see About & security.' })
+      el('p', { class: 'muted', text: 'Suggested from the app URL on file: ' + suggestion + '. Nothing can scan for it — this is a convention to try, not a lookup.' })
     ]);
   }
 
-  // Step 2, and the only place a password is ever typed into MxScout. It goes
-  // straight to /api/session/perf/connect, which verifies it against the
-  // admin port before keeping it \u2014 so "connected" below always means the
-  // runtime really answered, never just that a field was filled in. It is
-  // held in the server's memory for the session and in this page's until the
-  // step is left; nothing writes it anywhere.
-  function renderPasswordStep(project) {
+  // ---------- step 2: the password, and the only place one is typed ----------
+  // It goes straight to /api/session/perf/connect, which checks it against the
+  // admin port before keeping it — so a green step 2 always means the runtime
+  // really answered, never that a field was filled in.
+  function adminPasswordBody() {
     var p = state.detail.perf;
-    var script = buildPasswordScript({ adminPort: p.port });
+    var script = buildPasswordScript({ adminPort: portOf(p.adminUrl) });
     var input = el('input', { type: 'password', class: 'live-url-input', placeholder: 'Paste what the script printed', value: p.password || '' });
     input.addEventListener('input', function () { p.password = input.value; });
     var copyStatus = el('span', { class: 'muted' });
     var problem = el('p', { class: 'muted' });
     var copyBtn = el('button', {
-      class: 'btn btn-primary', text: 'Copy the code',
+      class: 'btn', text: 'Copy the code',
       onclick: function () {
         navigator.clipboard.writeText(script).then(
           function () { copyStatus.textContent = 'Copied.'; },
-          function () { copyStatus.textContent = 'Could not copy automatically \u2014 select the text and copy it.'; }
+          function () { copyStatus.textContent = 'Could not copy automatically — select the text and copy it.'; }
         );
       }
     });
@@ -643,11 +677,11 @@
     function doConnect() {
       if (!input.value) { problem.textContent = 'Paste the password the script printed first.'; return; }
       connectBtn.disabled = true;
-      problem.textContent = 'Checking the admin port\u2026';
+      problem.textContent = 'Checking the admin port…';
       api('/api/session/perf/connect', {
-        method: 'POST', body: JSON.stringify({ port: p.port, password: input.value })
+        method: 'POST', body: JSON.stringify({ url: p.adminUrl, password: input.value })
       }).then(function () {
-        // The password has done its job \u2014 the server holds the one copy that
+        // The password has done its job — the server holds the one copy that
         // matters now, so this page stops holding its own.
         p.password = '';
         p.statusKnown = false;
@@ -659,52 +693,94 @@
     }
     connectBtn.addEventListener('click', doConnect);
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') doConnect(); });
-    return el('div', { class: 'card' }, [
-      el('div', { class: 'scan-step-label', text: 'Step 2 of 2 \u2014 admin password' }),
-      el('h3', { class: 'live-h', text: 'Read the admin password' }),
-      el('p', { class: 'muted', text: 'The admin password is minted fresh every time the app starts, and lives only in that runtime process\u2019s own memory \u2014 nothing can read it but the machine it runs on.' }),
+    return el('div', {}, [
+      el('p', { class: 'muted', text: 'The admin password is minted fresh every time the app starts, and lives only in that runtime process’s own memory — nothing can read it but the machine running it.' }),
       el('ol', { class: 'scan-steps' }, [
-        el('li', { text: 'Copy the code below, and run it in PowerShell on this machine. It only prints the password \u2014 it never sends or saves it anywhere.' }),
-        el('li', { text: 'Paste what it printed into the field below and press Connect.' })
+        el('li', { text: 'Run this in PowerShell, on the machine hosting the app. It only prints the password — it never sends or saves it anywhere.' }),
+        el('li', { text: 'Paste what it printed below, and press Connect.' })
       ]),
       el('textarea', { class: 'scan-script', readonly: 'readonly', spellcheck: 'false', text: script || '' }),
       el('div', { class: 'scan-copy-row' }, [copyBtn, copyStatus]),
-      el('label', { class: 'field' }, [ el('span', { text: 'Admin password' }), input ]),
+      el('label', { class: 'field' }, [el('span', { text: 'Admin password' }), input]),
       el('div', { class: 'scan-copy-row' }, [
         connectBtn,
-        el('button', { class: 'btn btn-sm btn-ghost', text: 'Back', onclick: function () { p.port = null; p.password = ''; render(); } })
+        el('button', { class: 'btn btn-sm btn-ghost', text: 'Back', onclick: function () { p.urlOk = false; p.password = ''; render(); } })
       ]),
       problem
     ]);
   }
 
-  // Makes the server forget the password, and drops back to Step 1. Only
+  function portOf(url) {
+    try { var u = new URL(url); return u.port ? parseInt(u.port, 10) : DEFAULT_ADMIN_PORT; }
+    catch (e) { return DEFAULT_ADMIN_PORT; }
+  }
+
+  // ---------- step 3: the app tab ----------
+  // The SAME snippet the Live app tab hands out — not a second one. Pasting it
+  // connects the app for reading data AND puts the record button on its badge
+  // (see public/bridge.js), which is the point: the tester is in the app while
+  // they record, so that is where Start and Finish belong. A project already
+  // connected through Live app has nothing to do here at all.
+  function appTabBody(project) {
+    if (!state.detail.live.token) {
+      window.MxLive.ensureSessionToken(function () { render(); });
+      return el('div', { class: 'scan-section' }, [el('span', { class: 'spinner' })]);
+    }
+    var script = window.MxLive.appBridgeScript(state.detail.live.token, null);
+    var appUrl = (project && project.appUrl) || (state.detail.live && state.detail.live.url) || 'the app';
+    var copyStatus = el('span', { class: 'muted' });
+    var copyBtn = el('button', {
+      class: 'btn btn-primary', text: 'Copy the code',
+      onclick: function () {
+        navigator.clipboard.writeText(script).then(
+          function () { copyStatus.textContent = 'Copied.'; },
+          function () { copyStatus.textContent = 'Could not copy automatically — select the text and copy it.'; }
+        );
+      }
+    });
+    return el('div', {}, [
+      el('p', { class: 'muted', text: 'This is the same code the Live app tab uses — one snippet, not a second one. Pasting it also puts a record button on the badge in that tab, so you can start and finish a recording without coming back here.' }),
+      el('ol', { class: 'scan-steps' }, [
+        el('li', { text: 'Open ' + appUrl + ' in another browser tab, signed in as the user you want to record.' }),
+        el('li', { text: 'Press F12 there, and open the Console.' }),
+        el('li', { text: 'Paste the code below and press Enter — a badge appears in that tab’s bottom-right corner, with a ⏺ on it.' })
+      ]),
+      el('textarea', { class: 'scan-script', readonly: 'readonly', spellcheck: 'false', text: script || '' }),
+      el('div', { class: 'scan-copy-row' }, [copyBtn, copyStatus]),
+      el('div', { class: 'scan-waiting' }, [
+        el('span', { class: 'spinner' }),
+        el('span', { text: 'Waiting for the code to run in that tab…' })
+      ])
+    ]);
+  }
+
+  // Makes the server forget the password and drops back to step 1. Only
   // offered while idle: mid-recording, Finish is the one way out, so the
   // buffer always gets drained into a saved recording rather than abandoned.
   // This is also the only way the password leaves memory before the process
   // does, which is why it is a button and not just a navigation step.
   function disconnectAdminPort() {
     var p = state.detail.perf;
-    p.port = null; p.password = ''; p.status = {}; p.statusKnown = false;
+    p.adminUrl = ''; p.urlOk = false; p.password = '';
+    p.status = {}; p.statusKnown = false;
     api('/api/session/perf/disconnect', { method: 'POST' })
       .catch(function () {})
       .then(function () { fetchStatus(); render(); });
   }
 
-  // The connected/idle-or-recording state, collapsed to one line \u2014 this is
-  // what the dashboard shows instead of a full card once the bridge is up,
-  // per ROADMAP step 46 Phase 2 ("nagrania s\u0105 tre\u015bci\u0105 strony"). Kept as its
-  // own function (rather than inlined) because fetchStatus() re-renders just
-  // this node in place on most polls, via #perf-status-area below, instead of
-  // a full render() that would otherwise fire once a second while recording.
+  // The ready state, once all three steps are green: one line that says what
+  // the recorder is doing and offers the same Start/Finish the app tab's badge
+  // does. Kept as its own function because fetchStatus() repaints just this
+  // node in place on most polls, via #perf-status-area, instead of a full
+  // render() firing once a second while recording.
   function renderStatusArea(project) {
     var p = state.detail.perf;
     var active = !!(p.status && p.status.active);
     var sampleCount = (p.status && p.status.sampleCount) || 0;
     var trouble = p.status && p.status.trouble;
     var label = active
-      ? ('Recording\u2026 ' + sampleCount + ' sample' + (sampleCount === 1 ? '' : 's') + ' so far.')
-      : 'Connected to the admin port \u2014 idle.';
+      ? ('Recording… ' + sampleCount + ' sample' + (sampleCount === 1 ? '' : 's') + ' so far.')
+      : 'Ready — record from the app’s badge, or here.';
     return el('div', {}, [
       el('div', { class: 'perf-connect-strip' }, [
         el('div', { class: 'live-status ' + (active ? 'live-status-recording' : 'live-status-ok') }, [
@@ -724,36 +800,52 @@
     ].filter(Boolean));
   }
 
-  // What the strip shows as the address. The server picked the loopback
-  // literal that actually answered, so this reports what it connected to
-  // rather than what was typed.
-  function adminLabel(p) {
-    var s = p.status || {};
-    if (!s.port) return '';
-    var host = s.host === '::1' ? '[::1]' : (s.host || '127.0.0.1');
-    return 'http://' + host + ':' + s.port;
-  }
-
-  function renderConnectedCard(project) {
-    return el('div', { class: 'card', id: 'perf-status-area' }, [renderStatusArea(project)]);
-  }
-
-  // The connection lives in the SERVER now, not in this page, so the first
-  // thing to do is ask what it already has: a reload \u2014 or opening this tab
-  // for the second time today \u2014 should find the admin port still connected
-  // rather than send the user back through PowerShell for nothing.
   function renderConnectArea(project) {
     var p = state.detail.perf;
     if (!_statusPoll) startStatusPolling();
     if (!p.statusKnown) {
       return el('div', { class: 'card scan-section' }, [
         el('span', { class: 'spinner' }),
-        el('span', { class: 'muted', text: 'Checking the admin port\u2026' })
+        el('span', { class: 'muted', text: 'Checking the admin port…' })
       ]);
     }
-    if (p.status && p.status.connected) return renderConnectedCard(project);
-    if (!p.port) return renderPortStep(project);
-    return renderPasswordStep(project);
+    var adminDone = !!(p.status && p.status.connected);
+    var appDone = window.MxLive.connected();
+    if (adminDone && appDone) {
+      return el('div', { class: 'card', id: 'perf-status-area' }, [renderStatusArea(project)]);
+    }
+
+    // Which step is open: the first one not yet done. Step 1 counts as done
+    // once the admin port is connected — the server knows the address then,
+    // and re-asking for it would be theatre.
+    var current = !p.urlOk && !adminDone ? 1 : (!adminDone ? 2 : 3);
+    function stateOf(n) { return current === n ? 'current' : (n < current ? 'done' : 'todo'); }
+
+    return el('div', { class: 'card' }, [
+      el('h3', { class: 'live-h', text: 'Set up performance recording' }),
+      el('p', { class: 'muted', text: 'Three steps, once per app run. After that, record as often as you like.' }),
+      el('div', { class: 'perf-steps' }, [
+        stepRow(1, {
+          state: stateOf(1), title: 'Admin port address',
+          value: adminDone ? adminLabel(p) : (p.urlOk ? p.adminUrl : ''),
+          action: (stateOf(1) === 'done' && !adminDone)
+            ? el('button', { class: 'btn btn-sm btn-ghost', text: 'Change', onclick: function () { p.urlOk = false; render(); } })
+            : null,
+          body: adminAddressBody(project)
+        }),
+        stepRow(2, {
+          state: stateOf(2), title: 'Admin password',
+          value: adminDone ? 'connected' : '',
+          action: adminDone ? el('button', { class: 'btn btn-sm btn-ghost', text: 'Disconnect', onclick: disconnectAdminPort }) : null,
+          body: stateOf(2) === 'current' ? adminPasswordBody() : null
+        }),
+        stepRow(3, {
+          state: stateOf(3), title: 'The app tab',
+          value: appDone ? 'connected' : '',
+          body: stateOf(3) === 'current' ? appTabBody(project) : null
+        })
+      ])
+    ]);
   }
 
   // ---------- rendering: the recordings dashboard ----------
@@ -956,6 +1048,11 @@
     ensureSelectionScope(project.id);
     _currentProject = project;
     var p = state.detail.perf;
+    // Step 3 asks whether the APP tab is connected, and that fact belongs to
+    // the live bridge's own poller — which otherwise only runs while the Live
+    // app panel is open. Start it here too, or this tab would show "waiting
+    // for the code" forever next to a bridge that connected a second ago.
+    window.MxLive.startPolling();
     if (p.recordings === null && !p.recordingsLoading) {
       p.recordingsLoading = true;
       loadRecordings(project.id).then(function (rows) {

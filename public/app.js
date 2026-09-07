@@ -325,7 +325,7 @@
         // either can be up without the other. `recordings` is null until the
         // Performance tab is first opened (lazy, like the Data pane).
         perf: {
-          port: null, password: '', status: {}, statusKnown: false,
+          adminUrl: '', urlOk: false, password: '', status: {}, statusKnown: false,
           recordings: null, recordingsLoading: false, selectedId: null,
           tab: 'overview', _finishing: false
         },

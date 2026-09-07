@@ -15,10 +15,10 @@ sets the bar for everything in it: only safe, non-invasive mechanisms, so a
 security team has nothing to object to. No npm dependencies at all, no
 installer, no administrator rights, no background service, nothing written to
 disk, no telemetry, no CDN, and a listener bound to loopback only. The server
-opens exactly one kind of outbound connection — to a Mendix Runtime admin port
-on the same machine, over loopback, asking two read-only actions, and only
-while you are recording performance. Nothing MxScout does reaches past this
-machine. A feature that cannot be built inside those limits does not get
+opens exactly one kind of outbound connection — to the admin port of the app
+under test, at an address that passed the same non-production guard as the app
+itself, asking two read-only actions, and only while you are recording
+performance. A feature that cannot be built inside those limits does not get
 built.
 
 **About & security** in the top bar is the page that explains all of it — the
@@ -73,10 +73,9 @@ the machine's own Node, so a folder that has been given a runtime once can be
 copied to a machine that has none.
 
 That download is the only thing MxScout ever writes outside the browser, and it
-happens in the launcher — the server process still writes nothing, and still
-reaches nothing beyond this machine. **About & security** says so in those
-words, and spells out the one loopback connection the performance recorder
-makes.
+happens in the launcher — the server process still writes nothing. **About &
+security** says so in those words, and spells out the one outbound connection
+the performance recorder makes and what bounds it.
 
 ## Projects
 
@@ -352,9 +351,9 @@ it cannot claim a version it is not — and opens a panel with the changelog tha
 ships inside that copy.
 
 **MxScout does not check whether a newer version exists.** Not on startup, not
-behind a button, not at all. A version check would mean connecting to somewhere
-other than this machine, and the promise that nothing MxScout does reaches past
-loopback is the single sentence a security review remembers; inside a corporate
+behind a button, not at all. A version check would mean reaching out to the
+internet, and the promise that MxScout only ever connects to the app you are
+testing is the single sentence a security review remembers; inside a corporate
 network the check would usually fail anyway; and MxScout has no write access to its own directory and should not
 have any.
 

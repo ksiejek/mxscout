@@ -14,11 +14,13 @@
  * That is a deliberate, narrow break of an invariant this project wrote on
  * its own About page, so the break is written down in code, not just in prose:
  *
- *   - The host is NOT taken from the caller. It is a loopback literal from
- *     LOOPBACK_HOSTS, so there is no name to resolve and no way to point this
- *     at anything but this machine. The caller supplies a port and nothing
- *     else.
- *   - The action is NOT taken from the caller either — only the two names in
+ *   - The address goes through the SAME non-production guard as every other
+ *     address MxScout will talk to (isAllowedHost below — this server's own
+ *     copy of public/live.js's classifyAppUrl, deliberately duplicated
+ *     because this is the copy that actually decides whether a socket opens).
+ *     Local and clearly non-production hosts only; a production-looking
+ *     address is refused here even if the UI somehow asked for it.
+ *   - The action is NOT taken from the caller — only the two names in
  *     ALLOWED_ACTIONS get through. This matters more than it looks: the same
  *     admin API also answers `shutdown` and `set_log_level`. A generic proxy
  *     here would be an SSRF gadget wired straight into the runtime's kill
@@ -43,10 +45,26 @@
 
 const http = require('http');
 
-// Loopback literals, tried in this order at connect time. Literals only: a
-// name would go through the resolver, and a resolver is exactly the thing
-// that could send this somewhere other than this machine.
-const LOOPBACK_HOSTS = ['127.0.0.1', '::1'];
+// This server's own copy of the non-production guard — the same rule and the
+// same word list as public/live.js's classifyAppUrl and the copy baked into
+// the pasted bridge. Duplicated on purpose: this is the copy that decides
+// whether a socket is opened, so it must not depend on some caller having run
+// another one first. Fail-closed — anything not recognised as local or
+// clearly non-production is refused.
+const NONPROD_TOKENS = {
+  dev: 1, development: 1, test: 1, testing: 1, tst: 1,
+  accept: 1, acceptance: 1, acc: 1, acp: 1, accp: 1,
+  sandbox: 1, staging: 1, stage: 1, uat: 1, qa: 1, local: 1
+};
+function isAllowedHost(host) {
+  host = String(host || '').toLowerCase().replace(/^\[|\]$/g, '');
+  if (!host) return false;
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1' ||
+      host.slice(-6) === '.local' || host.slice(-10) === '.localhost') return true;
+  const tokens = host.split(/[.\-]/);
+  for (let i = 0; i < tokens.length; i++) { if (NONPROD_TOKENS[tokens[i]]) return true; }
+  return false;
+}
 
 // The complete list of what MxScout is allowed to ask the runtime. Both are
 // read-only. Adding a third name here is a change to what the About page
@@ -68,7 +86,7 @@ function authHeader(password) {
 // they all mean "no data this round", and at connect time verify() below asks
 // a sharper question.
 function invoke(host, port, password, action) {
-  if (!ALLOWED_ACTIONS.has(action)) return Promise.resolve(null);
+  if (!ALLOWED_ACTIONS.has(action) || !isAllowedHost(host)) return Promise.resolve(null);
   return new Promise((resolve) => {
     const body = JSON.stringify({ action, params: {} });
     let settled = false;
@@ -103,20 +121,15 @@ function invoke(host, port, password, action) {
 }
 
 // Connect-time check, and the only place that reports WHY something failed.
-// Resolves to { ok: true, host } or { ok: false, reason }, where reason is
-// one of 'unreachable' | 'password' | 'not-admin-port' — the three things
-// that actually go wrong, each of which needs different words in the UI.
-// Both loopback addresses are tried because a Mendix runtime on Windows may
-// be listening on either.
-async function verify(port, password) {
-  let sawSomething = false;
-  for (const host of LOOPBACK_HOSTS) {
-    const probe = await probeOnce(host, port, password);
-    if (probe === 'ok') return { ok: true, host };
-    if (probe === 'password') return { ok: false, reason: 'password' };
-    if (probe === 'not-admin-port') { sawSomething = true; continue; }
-  }
-  return { ok: false, reason: sawSomething ? 'not-admin-port' : 'unreachable' };
+// Resolves to { ok: true, host, port } or { ok: false, reason }, where reason
+// is one of 'blocked' | 'unreachable' | 'password' | 'not-admin-port' — the
+// four things that actually go wrong, each needing different words in the UI.
+// 'blocked' is the non-production guard refusing before any socket exists.
+async function verify(host, port, password) {
+  if (!isAllowedHost(host)) return { ok: false, reason: 'blocked' };
+  const probe = await probeOnce(host, port, password);
+  if (probe === 'ok') return { ok: true, host, port };
+  return { ok: false, reason: probe };
 }
 
 // Distinguishes the failures verify() reports, which invoke() deliberately
@@ -238,7 +251,7 @@ function isSampling() { return !!timer; }
 function getTrouble() { return trouble; }
 
 module.exports = {
-  LOOPBACK_HOSTS, ALLOWED_ACTIONS,
+  ALLOWED_ACTIONS, isAllowedHost,
   invoke, verify,
   startSampling, stopSampling, isSampling, getTrouble
 };

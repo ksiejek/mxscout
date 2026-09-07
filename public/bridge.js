@@ -150,6 +150,7 @@
 
     function teardown() {
       running = false;
+      if (perfTimer) { clearTimeout(perfTimer); perfTimer = null; }
       if (shell && shell.__back && shell.__back.parentNode) shell.__back.parentNode.removeChild(shell.__back);
       shell = null;
       if (badge && badge.parentNode) badge.parentNode.removeChild(badge);
@@ -588,16 +589,67 @@
       badge = mk('div', 'position:fixed;bottom:16px;right:16px;z-index:2147483647;display:flex;align-items:center;' +
         'gap:8px;background:' + P.panel + ';color:' + P.text + ';font:' + FONT + ';padding:8px 12px;' +
         'border:1px solid ' + P.border + ';border-left:3px solid ' + P.accent + ';border-radius:9px;' +
-        'box-shadow:0 8px 24px rgba(0,0,0,.45);max-width:300px;');
+        'box-shadow:0 8px 24px rgba(0,0,0,.45);max-width:340px;');
       add(badge, logoMark());
-      var txt = add(badge, mk('span', '', 'Connected as ' + (session.user || 'unknown') + (session.guest ? ' (guest)' : '')));
-      var x = add(badge, mk('span', 'cursor:pointer;opacity:.6;padding-left:4px;', '✕'));
+      var txt = add(badge, mk('span', 'flex:1 1 auto;', 'Connected as ' + (session.user || 'unknown') + (session.guest ? ' (guest)' : '')));
+      // The record control. The tester is IN this tab while they exercise the
+      // app, so this is where starting and stopping a performance recording
+      // belongs — going back to MxScout's window to press Start, then coming
+      // here to click around, then back again to press Finish, is the thing
+      // this removes. Hidden until MxScout says an admin port is connected:
+      // without one there is nothing to record, and a dead button that never
+      // explains itself is worse than no button.
+      var rec = add(badge, mk('span', 'cursor:pointer;font-size:15px;line-height:1;padding:0 3px;display:none;color:' + P.accent + ';', '⏺'));
+      rec.title = 'Start recording performance';
+      rec.addEventListener('click', function () { requestRecording(!perfActive); });
+      var x = add(badge, mk('span', 'cursor:pointer;opacity:.6;padding-left:2px;', '✕'));
       x.addEventListener('click', teardown);
       document.body.appendChild(badge);
       badge.__txt = txt;
+      badge.__rec = rec;
+      badge.__idle = txt.textContent;
+      perfPoll();
       return txt;
     }
     function setBadge(t) { if (badge && badge.__txt) badge.__txt.textContent = t; }
+
+    // ---------- the performance recorder, as seen from this tab ----------
+    // This tab does NOT read the admin port — it cannot, and MxScout's server
+    // does it instead (see server/admin-port.js). All that happens here is
+    // showing what the recorder is doing and asking it to start or stop.
+    var perfActive = false;
+    var perfTimer = null;
+    function paintRecordControl(s) {
+      if (!badge || !badge.__rec) return;
+      var rec = badge.__rec;
+      rec.style.display = s.connected ? '' : 'none';
+      rec.textContent = s.active ? '⏹' : '⏺';
+      rec.title = s.active ? 'Finish recording' : 'Start recording performance';
+      rec.style.color = s.active ? P.alarm : P.accent;
+      // Only speak while recording — the rest of the time this badge belongs
+      // to the live-app bridge and should say what that is doing.
+      if (s.active) {
+        setBadge(s.trouble ? s.trouble
+          : 'Recording… ' + s.sampleCount + ' sample' + (s.sampleCount === 1 ? '' : 's'));
+      } else if (perfActive) {
+        setBadge(badge.__idle); // just stopped — hand the line back
+      }
+      perfActive = s.active;
+    }
+    function perfPoll() {
+      if (!running) return;
+      fetch(CFG.origin + '/api/session/perf/poll?token=' + encodeURIComponent(CFG.token))
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (s) { if (s) paintRecordControl(s); })
+        .catch(function () {})
+        .then(function () { if (running) perfTimer = setTimeout(perfPoll, 1000); });
+    }
+    function requestRecording(active) {
+      post(CFG.origin + '/api/session/perf/request', { token: CFG.token, active: active })
+        .then(function (r) { return r.ok ? null : r.json(); })
+        .then(function (err) { if (err && err.error) setBadge(err.error); })
+        .catch(function () {});
+    }
 
     // lookup/create report through the SAME channel a query's rows do — one
     // row (or none, on error) is exactly that shape already, whether it came

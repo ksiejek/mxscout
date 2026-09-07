@@ -497,10 +497,54 @@ async function handleReportCommandResult(req, res) {
 const DEFAULT_INTERVAL_MS = 50;
 
 const CONNECT_MESSAGES = {
-  unreachable: (port) => 'Nothing answered on port ' + port + ' of this machine. Is the app running, and is that its admin port?',
+  blocked: (where) => 'MxScout connects only to local, test and acceptance environments — ' + where + ' is not one of them.',
+  unreachable: (where) => 'Nothing answered at ' + where + '. Is the app running, and is that its admin port?',
   password: () => 'The admin port refused that password. Studio Pro mints a new one every time the app starts — run the script again and paste what it prints now.',
-  'not-admin-port': (port) => 'Something is listening on port ' + port + ', but it did not answer like a Mendix admin port. Check the port number.'
+  'not-admin-port': (where) => 'Something is listening at ' + where + ', but it did not answer like a Mendix admin port. Check the address.'
 };
+
+// The admin port is named by URL, like every other address in MxScout — the
+// app's own URL is entered the same way, and a port on its own turned out to
+// be the odd one out. Parsed here rather than trusted: the caller sends text,
+// this decides what host and port that actually is, and admin-port.js's own
+// guard decides whether it may be reached at all.
+function parseAdminUrl(raw) {
+  let text = String(raw || '').trim();
+  if (!text) return null;
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(text)) text = 'http://' + text;
+  let parsed;
+  try { parsed = new URL(text); } catch (e) { return null; }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  const host = parsed.hostname.replace(/^\[|\]$/g, '');
+  const port = parsed.port ? Number(parsed.port) : (parsed.protocol === 'https:' ? 443 : 80);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  return { host, port, origin: parsed.protocol + '//' + parsed.host };
+}
+
+// Start and stop are reachable from two places — MxScout's own window and the
+// record button on the app tab's badge — so the actual work lives here once
+// rather than in each route. Only the DRAINING is different: a recording
+// becomes a saved recording in MxScout's IndexedDB, which none of this can
+// reach, so a stop asked for from the app tab just stops, and the MxScout
+// page collects the samples when it notices (see perf.js's status polling).
+function beginRecording() {
+  const conn = state.getAdminConnection();
+  state.startPerfRecording();
+  adminApi.startSampling({
+    host: conn.host,
+    port: conn.port,
+    password: state.getAdminPassword(),
+    intervalMs: DEFAULT_INTERVAL_MS,
+    onSample: (sample) => state.addPerfSample(sample)
+  });
+}
+// Halts the admin-port calls and marks the recording stopped, but leaves the
+// buffer alone — see state.js's requestStopPerfRecording for why the draining
+// is MxScout's page's job and nobody else's.
+function haltSampling() {
+  adminApi.stopSampling();
+  state.requestStopPerfRecording();
+}
 
 // Verifies before it stores: a password that does not work is never kept, so
 // "connected" in the UI means the runtime really answered, not that a form
@@ -508,26 +552,26 @@ const CONNECT_MESSAGES = {
 // nothing it sends back contains it.
 async function handlePerfConnect(req, res) {
   const body = await readJsonBody(req);
-  const port = Number(body.port);
+  const target = parseAdminUrl(body.url);
   const password = typeof body.password === 'string' ? body.password : '';
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    sendJson(res, 400, { error: 'That is not a valid port number.' });
+  if (!target) {
+    sendJson(res, 400, { error: 'That is not an address MxScout can read. It looks like http://localhost:8090.' });
     return;
   }
   if (!password) {
     sendJson(res, 400, { error: 'The admin password is missing.' });
     return;
   }
-  const result = await adminApi.verify(port, password);
+  const result = await adminApi.verify(target.host, target.port, password);
   if (!result.ok) {
     state.clearAdminConnection();
     const message = CONNECT_MESSAGES[result.reason] || CONNECT_MESSAGES.unreachable;
-    sendJson(res, 502, { error: message(port), reason: result.reason });
+    sendJson(res, 502, { error: message(target.origin), reason: result.reason });
     return;
   }
-  state.setAdminConnection(result.host, port, password);
-  console.log('perf: connected to the admin port on ' + result.host + ':' + port);
-  sendJson(res, 200, { ok: true, host: result.host, port });
+  state.setAdminConnection(result.host, result.port, password);
+  console.log('perf: connected to the admin port at ' + target.origin);
+  sendJson(res, 200, { ok: true, host: result.host, port: result.port });
 }
 
 // Forgets the password, and stops anything still running on it. There is no
@@ -547,15 +591,7 @@ function handlePerfStart(req, res) {
     sendJson(res, 409, { error: 'Not connected to an admin port yet.' });
     return;
   }
-  const conn = state.getAdminConnection();
-  state.startPerfRecording();
-  adminApi.startSampling({
-    host: conn.host,
-    port: conn.port,
-    password: state.getAdminPassword(),
-    intervalMs: DEFAULT_INTERVAL_MS,
-    onSample: (sample) => state.addPerfSample(sample)
-  });
+  beginRecording();
   sendJson(res, 200, { ok: true });
 }
 
@@ -564,9 +600,58 @@ function handlePerfStart(req, res) {
 // the recording's samples, ready for the UI to wrap in its envelope and save
 // to IndexedDB, which is still the only place a recording is ever stored.
 function handlePerfStop(req, res) {
-  adminApi.stopSampling();
+  haltSampling();
   const samples = state.stopPerfRecording();
   sendJson(res, 200, { ok: true, samples });
+}
+
+// ---------- the app tab's record button ----------
+// The tester is IN the app while they record, so the record control belongs
+// on the badge already sitting in that tab (see public/bridge.js) rather than
+// only in MxScout's window. Both routes below are cross-origin — that badge
+// runs on the app's origin, not ours — and both are token-gated, exactly like
+// the exec bridge's own poll and result.
+
+// A plain status read, not a long poll: the badge only DISPLAYS what the
+// recorder is doing (the server drives the sampling itself now), so it wants
+// a current answer every second or so, not a request held open until
+// something changes. `connected` is what tells the badge whether to offer a
+// record button at all — with no admin port there is nothing to record.
+function handlePerfPoll(req, res) {
+  setCors(req, res);
+  if (!tokenMatches(req.query.get('token'))) {
+    sendJson(res, 403, { error: 'Invalid or missing token — reconnect in MxScout for a fresh snippet.' });
+    return;
+  }
+  sendJson(res, 200, {
+    connected: state.isAdminConnected(),
+    active: state.getPerfActive(),
+    sampleCount: state.getPerfSampleCount(),
+    trouble: adminApi.getTrouble()
+  });
+}
+
+// Start or stop, asked for from the app tab. Starting does the same thing the
+// UI's own Start does. Stopping only halts the sampling — the samples stay in
+// the buffer until MxScout's own page collects them through perf/stop above,
+// because only that page can save a recording into its IndexedDB.
+async function handlePerfRequest(req, res) {
+  setCors(req, res);
+  const body = await readJsonBody(req);
+  if (!tokenMatches(body.token)) {
+    sendJson(res, 403, { error: 'Invalid or missing token.' });
+    return;
+  }
+  if (body.active) {
+    if (!state.isAdminConnected()) {
+      sendJson(res, 409, { error: 'Connect the admin port in MxScout first.' });
+      return;
+    }
+    beginRecording();
+  } else {
+    haltSampling();
+  }
+  sendJson(res, 200, { ok: true, active: state.getPerfActive() });
 }
 
 // What the UI polls while a recording runs. `trouble` carries the recorder's
@@ -592,5 +677,6 @@ module.exports = {
   handleSetCommand, handleClearCommand, handleGetCommandStatus,
   handleCommandPoll, handleReportCommandResult,
   handlePerfConnect, handlePerfDisconnect,
-  handlePerfStatus, handlePerfStart, handlePerfStop
+  handlePerfStatus, handlePerfStart, handlePerfStop,
+  handlePerfPoll, handlePerfRequest
 };

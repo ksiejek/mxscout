@@ -123,16 +123,25 @@ const routes = [
   { method: 'OPTIONS', pattern: /^\/api\/session\/data$/, handler: sessionRoutes.handlePreflight, crossOrigin: true },
   { method: 'POST', pattern: /^\/api\/session\/data$/, handler: sessionRoutes.handleReportQueryResult, crossOrigin: true },
   { method: 'GET', pattern: /^\/api\/session\/data$/, handler: sessionRoutes.handleGetQueryResult },
-  // The performance recorder (see routes/session.js and admin-port.js). Every
-  // one of these is SAME-ORIGIN: the recorder no longer has a bridge tab of
-  // its own, because the server now reads the admin port itself. `connect` is
-  // the one route in MxScout that receives a password, and the one that
-  // triggers this server's only outbound connection.
+  // The performance recorder (see routes/session.js and admin-port.js). The
+  // recorder has no bridge tab of its own — the server reads the admin port
+  // itself — so these are same-origin, with one exception below: the record
+  // button on the APP tab's badge, which necessarily calls from the app's
+  // origin and is token-gated like the rest of that bridge. `connect` is the
+  // one route in MxScout that receives a password, and the one that triggers
+  // this server's only outbound connection.
   { method: 'POST', pattern: /^\/api\/session\/perf\/connect$/, handler: sessionRoutes.handlePerfConnect },
   { method: 'POST', pattern: /^\/api\/session\/perf\/disconnect$/, handler: sessionRoutes.handlePerfDisconnect },
   { method: 'GET', pattern: /^\/api\/session\/perf\/status$/, handler: sessionRoutes.handlePerfStatus },
   { method: 'POST', pattern: /^\/api\/session\/perf\/start$/, handler: sessionRoutes.handlePerfStart },
-  { method: 'POST', pattern: /^\/api\/session\/perf\/stop$/, handler: sessionRoutes.handlePerfStop }
+  { method: 'POST', pattern: /^\/api\/session\/perf\/stop$/, handler: sessionRoutes.handlePerfStop },
+  // The app tab's own record button: reads what the recorder is doing, and
+  // asks it to start or stop. Cross-origin and token-gated — the badge runs
+  // on the app's origin, same as the exec bridge beside it.
+  { method: 'OPTIONS', pattern: /^\/api\/session\/perf\/poll$/, handler: sessionRoutes.handlePreflight, crossOrigin: true },
+  { method: 'GET', pattern: /^\/api\/session\/perf\/poll$/, handler: sessionRoutes.handlePerfPoll, crossOrigin: true },
+  { method: 'OPTIONS', pattern: /^\/api\/session\/perf\/request$/, handler: sessionRoutes.handlePreflight, crossOrigin: true },
+  { method: 'POST', pattern: /^\/api\/session\/perf\/request$/, handler: sessionRoutes.handlePerfRequest, crossOrigin: true }
 ];
 
 const server = http.createServer((req, res) => {

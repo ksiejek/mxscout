@@ -17,33 +17,40 @@ claim a version it is not.
 
 ## 1.2.0
 
-### The performance recorder connects to the admin port itself
+### Record performance from the app, without pasting anything on the admin port
 
-Recording performance no longer asks you to paste a script into a browser tab
-open on the Mendix admin port. Enter the port, paste the password the
-PowerShell script prints, press Connect, and record. The connection survives a
-page reload, so the password is entered once per app run rather than once per
-sitting.
+Recording performance used to mean pasting a second script into a browser tab
+opened on the Mendix admin port. That is gone. MxScout's own server reads the
+admin port now, and the record button lives on the badge already sitting in
+the app's tab — so you start and finish a recording where you are actually
+clicking, without switching windows.
+
+Setting it up is three steps, shown as a checklist that stays on screen so you
+can see what is done and what is left:
+
+1. The admin port address, as a URL like `http://localhost:8090`.
+2. The password, read by the small PowerShell script MxScout hands you. Press
+   Connect and MxScout checks it against the port before keeping it.
+3. The app tab — the same snippet the Live app tab already uses, not a second
+   one. Once it is pasted, its badge grows a ⏺.
+
+The connection is held by the server, so it survives a page reload: the
+password is a once-per-app-run step, not once per sitting.
 
 This is a deliberate, narrow change to what MxScout promised, and **About &
 security** now has a section of its own about it — *Reading a running app's
-admin port*. In short: the server makes one kind of outbound connection, to a
-loopback address it chooses rather than one you supply, asking two read-only
-actions and no third, only while a recording is running, and only ever on this
-machine. The admin password is checked before it is kept, held in the server
-process's memory for the session, written nowhere, and returned by no endpoint;
-Disconnect forgets it.
+admin port*. In short: the server makes one kind of outbound connection, to an
+address that passed the same non-production guard as the app itself, asking two
+read-only actions and no third, only while a recording is running. The admin
+password is checked before it is kept, held in the server process's memory for
+the session, written nowhere, and returned by no endpoint; Disconnect forgets
+it.
 
-The recorder's three cross-origin endpoints are gone with the pasted bridge, so
-four endpoints accept cross-origin requests now instead of seven — all four
-belonging to the app-tab bridge, which is unchanged.
-
-- The admin port is entered as a port number, not a URL, and only ports on this
-  machine can be reached.
-- Connecting says what actually went wrong: nothing listening, wrong password,
-  or something that is not a Mendix admin port.
-- If the port stops answering mid-recording, the recorder says so instead of
-  saving an empty recording.
+- Connecting says what actually went wrong: a production address, nothing
+  listening, a wrong password, or something that is not a Mendix admin port.
+- If the port stops answering mid-recording, both the app's badge and MxScout
+  say so, instead of saving an empty recording.
+- Stopping from the app tab saves the recording in MxScout and opens it.
 
 ## 1.1.0
 
