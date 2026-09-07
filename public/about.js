@@ -39,7 +39,7 @@
           ['Licence', 'GPL-3.0-or-later — the complete source is readable, unminified, with no build step between it and what runs'],
           ['Runtime', 'Node.js, standard library only (http, fs, path, crypto, url)'],
           ['Third-party dependencies', 'None. package.json declares no dependencies; there is no node_modules, no lockfile and no npm install step'],
-          ['Size', 'About 14,300 lines across 26 files — small enough to read end to end'],
+          ['Size', 'About 14,800 lines across 26 files — small enough to read end to end'],
           ['Install footprint', 'A folder. No installer, no administrator rights, no system service, no scheduled task, no registry or autostart entry, no PATH change'],
           ['Starting it', 'A script in that folder: start.sh, or MxScout.cmd / MxScout.command for a double-click. It runs Node.js on the files already there and opens the browser on 127.0.0.1. On a machine with no Node.js installed, and only after the person typing yes to the question, the launcher downloads the official Node build from nodejs.org into ./runtime — one folder, deleted like any other, no installer and no administrator rights. That is the only thing MxScout ever writes outside the browser, it happens in the launcher and never in the server process, and it never happens without being asked. Answering no, or having no network, leaves the folder untouched'],
           ['Runs as', 'The user who starts it, with that user’s permissions. Nothing is elevated'],
@@ -51,9 +51,9 @@
         { p: 'These are not settings. They are properties of the code, and each one is the absence of a capability rather than a switch that could be turned back on.' },
         { ul: [
           'No database connection of any kind — no driver, no connection string, no credentials. MxScout cannot read your app’s database.',
-          'Never asks for, stores or transmits a password, an API key or a session cookie.',
+          'Never asks for, stores or transmits an API key or a session cookie. It asks for exactly one password — the Mendix admin port’s, which the runtime mints fresh every time the app starts — and only when you choose to record performance. It is held in the server process’s memory for that session, never written to disk, never logged, never returned by any endpoint, and dropped the moment you disconnect or stop MxScout.',
           'No .mpr parsing on the server, and no Studio Pro or CLI tool involved anywhere. A picked Mendix project folder is read and decoded entirely in the browser, in a Web Worker — see “Reading a Mendix project folder” below.',
-          'The server process opens no outbound connections at all. It fetches nothing, downloads nothing, phones no home and checks for no updates. (The launcher script is a different process, and the one thing it can fetch — a Node.js runtime, only when the machine has none and only when told to — is described under “Starting it” above.)',
+          'The server process opens exactly one kind of outbound connection, and only while you are recording performance: to a Mendix Runtime admin port on this same machine, over loopback, asking two read-only actions. It has no other reason to connect and no code that could — see “Reading a running app’s admin port” below for what bounds it. It fetches nothing else, downloads nothing, phones no home and checks for no updates. (The launcher script is a different process, and the one thing it can fetch — a Node.js runtime, only when the machine has none and only when told to — is described under “Starting it” above.)',
           'No telemetry, no analytics, no crash reporting, no licence check.',
           'No external assets — no CDN, no web fonts, no remote images. The UI renders correctly on a machine with no internet access.',
           'No cookies, no accounts, no login.',
@@ -69,7 +69,7 @@
           ['Live-execution state', 'The same memory: one armed command and its result.'],
           ['Server logs', 'Your terminal, stdout only. Counts, entity and flow names, ok/failed. Never row data, never object ids, never the session token.'],
           ['Packages you send', 'A file the browser downloads, encrypted with a code MxScout shows once and never stores. See “The encrypted package” below.'],
-          ['A performance recording', 'The browser’s own database, same as the model — never the server. Each recording is captured through a small script pasted into a browser tab open on the Mendix Runtime’s admin port itself — a different origin than the app, so that tab talks to it same-origin and reports what it reads back to MxScout; the server never connects to the admin port and is never the one asking it anything. The one thing that tab needs and a browser cannot get on its own — the admin password, minted fresh per run and readable only from that runtime process’s own memory — comes from a second, tiny PowerShell script you run once and paste in by hand. That password reaches nowhere else: not MxScout’s server, not IndexedDB, not any log — it lives only in this tab’s memory and inside the one script pasted into the admin port’s own tab, for as long as that tab stays open.'],
+          ['A performance recording', 'The browser’s own database, same as the model. While a recording runs, its samples sit in the server’s memory and are handed to the browser when you stop — a recording is never written to disk by the server, and never leaves this machine. The Mendix admin password it needs is read by a tiny PowerShell script you run once per app run, and pasted in by hand; MxScout cannot read it itself. From there it lives in the server process’s memory for this session and nowhere else — not in the browser’s database, not in any file, not in any log, and no endpoint gives it back. Disconnecting, or stopping MxScout, is the end of it.'],
           ['Comments', 'The same database. They are the one thing here nobody can regenerate, which is why the export reminder matters.'],
           ['Nothing else', 'MxScout asks the browser to keep that database from being evicted (navigator.storage.persist). That is a request about storage the browser already holds — it grants no new access and reaches nothing outside the page.']
         ] },
@@ -86,15 +86,28 @@
       ] },
 
       { id: 'network', title: 'Network behaviour', blocks: [
-        { p: 'Four parties can be involved: the MxScout server on loopback, the MxScout tab in the browser, the tab where the tester already has the app under test open, and — only while recording performance — a second tab open on that app’s admin port.' },
+        { p: 'Three parties can be involved: the MxScout server on loopback, the MxScout tab in the browser, and the tab where the tester already has the app under test open. While a performance recording is running, the server also talks to the Mendix Runtime’s admin port on this same machine.' },
         { ul: [
           'The server binds 127.0.0.1. It is not reachable from another machine, and there is no option to make it listen on a wider interface.',
-          'The server makes no outbound requests. It is a passive listener on loopback for the whole of its life.',
+          'The server is a passive listener on loopback except for one thing: while a performance recording is running, it calls the Mendix Runtime’s admin port on this same machine. Nothing else in the server can open a connection.',
           'Requests to your Mendix application are made by the tester’s own browser tab, in their own already-authenticated session: mx.data.get to read rows, mx.data.action to run a flow, and one POST to that app’s own /xas/ endpoint (action retrieve_by_xpath, count: true) — the same call the Mendix client itself makes behind every paged data grid — purely to ask how many rows match. All three are same-origin to the application, carry that person’s own session and CSRF token, and read only. MxScout adds no access path: everything the snippet does is something that same person can do by clicking in the app.',
           'A row that comes back is also asked, object by object, whether this session may write each of its values — isReadonlyAttr, the same question the Mendix client’s own input widgets ask before they allow editing. That is a question about an object already in hand: it sends nothing, fetches nothing extra, and writes nothing. It is asked per object because a rule’s XPath decides which rows it covers, so the same attribute can be writable on one row and read-only on the next — which is what the green in the Data table means.',
-          'The admin-port tab (public/admin-bridge.js), pasted only while recording performance, makes requests to that same origin — the admin port it is already open on — carrying an auth header built from the password typed into MxScout, and reports what comes back to the MxScout server. It reads two administrative actions on a fixed interval and nothing else: no application data, no rows, no flow runs. Its own record/stop icon can ask MxScout to start or stop a recording, the same request the Start/Finish buttons in MxScout’s own window make.',
-          'So no traffic leaves the machine except requests the tester’s own browser tabs make, to addresses the tester chose, in sessions the tester already holds.'
+          'Those admin-port calls (server/admin-port.js, the only file in MxScout that can open a socket) go to a loopback address — a literal 127.0.0.1 or ::1, never a name, so there is nothing to resolve and no way to point them at another machine. The port number is the only part you supply. They ask two read-only actions, get_current_runtime_requests and runtime_statistics, and no third one is reachable: the action name is checked against that list rather than passed through, which is what stops this from becoming a way to reach the same API’s shutdown and log-level actions. Nothing runs unless a recording is running.',
+          'So no traffic leaves the machine at all: the tester’s own browser tabs reach addresses the tester chose, in sessions the tester already holds, and the server’s one outbound connection cannot leave loopback.'
         ] }
+      ] },
+
+      { id: 'adminport', title: 'Reading a running app’s admin port', blocks: [
+        { p: 'This is the one place MxScout connects outward, so it is written out in full rather than summarised. It exists because the Mendix Runtime’s admin port is the only source of what a performance recording is for: the internal action stack behind a request — which microflow called which, the activity running at that instant, the XPath behind a retrieve. Network traffic does not carry it and the log does not either.' },
+        { p: 'A browser tab cannot read that port. The admin API needs a custom authentication header, which makes every call a preflighted cross-origin request, and the port answers no CORS at all. MxScout used to work around that by having you paste a script into a browser tab open on the admin port itself. That worked, and asking someone to paste a script into a console is not obviously the safer thing to be doing, so it is gone: the server makes the call now, under limits written into the code rather than into this page.' },
+        { ul: [
+          'The address is a loopback literal — 127.0.0.1 or ::1 — chosen by MxScout, not supplied. There is no hostname anywhere in it, so there is nothing for a resolver to point elsewhere. You supply a port number and nothing else.',
+          'Two actions are permitted, both read-only: get_current_runtime_requests and runtime_statistics. The name is matched against that pair rather than forwarded, which is what keeps this from being a route to the same API’s shutdown and log-level actions.',
+          'Nothing connects unless a recording is running. Between recordings there is no timer and no socket.',
+          'Every endpoint involved is same-origin. Another tab on this machine cannot start a recording, cannot read one, and cannot reach the admin port through MxScout.',
+          'The password is checked against the port before it is kept, held in the server process’s memory for the session, and returned by nothing. Disconnect forgets it; so does stopping MxScout.'
+        ] },
+        { note: 'This replaced an earlier promise that the server made no outbound connections at all. The sentence was true and is now narrower, which is why it is stated in one place with its limits rather than repeated as a slogan. server/admin-port.js is about two hundred lines and is the whole of it.' }
       ] },
 
       { id: 'endpoints', title: 'Every endpoint, and who may reach it', blocks: [
@@ -108,15 +121,14 @@
           ['POST /api/session/exec/result', 'The bridge reports how a run went. Cross-origin, token-gated.'],
           ['POST /api/session/data', 'The bridge returns one page of rows it read, each with the ids, the values, and — per row — which of those values this session may write. Cross-origin, token-gated, rebuilt field by field on the server rather than forwarded: values are truncated to a fixed length and the write flags are kept only as true or false, only for columns that actually came back.'],
           ['GET /api/session/data', 'The UI collects that page. Same-origin only.'],
-          ['GET /api/session/perf/poll', 'The admin-port bridge asks whether MxScout wants it recording right now. Cross-origin, token-gated. Held open until that changes or 25 seconds pass, same reasoning as the exec poll above.'],
-          ['POST /api/session/perf/sample', 'The admin-port bridge reports one sample — what the admin port said was running, and the raw, not-yet-parsed statistics block (see “Where the data lives”). Cross-origin, token-gated, bounded in size; ignored outright once recording has stopped.'],
-          ['POST /api/session/perf/request', 'The admin-port bridge’s own record/stop icon, asking to start or stop recording — the same change the UI’s Start/Finish buttons make. Cross-origin, token-gated. A stop only flips the flag; only the UI’s own perf/stop call below ever drains or clears the buffer, since only this page can save a recording into its IndexedDB.'],
-          ['GET /api/session/perf/status', 'The UI asks whether that bridge is connected and recording, how many samples it has, and when the current recording began. Same-origin only.'],
-          ['POST /api/session/perf/start', 'Tells the bridge to start recording and clears whatever a previous recording left behind. Same-origin only.'],
-          ['POST /api/session/perf/stop', 'Tells the bridge to stop, and returns everything it collected so the UI can save it. Same-origin only — called by the UI itself even when a stop was requested from the admin tab’s own icon.']
+          ['POST /api/session/perf/connect', 'The one endpoint in MxScout that receives a password. You give it a port number; it tries the two loopback addresses, checks the password against the admin port before keeping anything, and answers only which address answered. A password that does not work is never stored. Same-origin only.'],
+          ['POST /api/session/perf/disconnect', 'Forgets that password and stops anything running on it. This is how the password leaves memory before MxScout does. Same-origin only.'],
+          ['GET /api/session/perf/status', 'The UI asks whether the admin port is connected and recording, how many samples there are, when the recording began, and whether the port has stopped answering. Never includes the password. Same-origin only.'],
+          ['POST /api/session/perf/start', 'Starts the sampling loop and clears whatever a previous recording left behind. Refused if no admin port is connected. Same-origin only.'],
+          ['POST /api/session/perf/stop', 'Stops the loop and returns everything it collected, so the UI can save it into the browser’s own database. Same-origin only.']
         ] },
         { p: 'That is the complete list. Anything else under /api answers 404, and every other GET serves one of the static files in public/.' },
-        { p: 'Each of the seven cross-origin ones also answers OPTIONS — the browser’s own preflight, which carries no token because a preflight cannot carry one: it sets the CORS headers, returns 204, and reaches nothing else. So the route table in server/index.js shows fourteen cross-origin entries where this page names seven endpoints; the other seven are those preflights, and getting past one still leaves the real request needing the token.' },
+        { p: 'Each of the four cross-origin ones also answers OPTIONS — the browser’s own preflight, which carries no token because a preflight cannot carry one: it sets the CORS headers, returns 204, and reaches nothing else. So the route table in server/index.js shows eight cross-origin entries where this page names four endpoints; the other four are those preflights, and getting past one still leaves the real request needing the token.' },
         { note: 'Rows read out of your application pass through the server on their way from the app tab to the MxScout window, and are held in memory only until the next request replaces them. They are never written to disk and never logged — the log records how many rows came back, never what was in them.' }
       ] },
 
@@ -142,14 +154,14 @@
           'X-Content-Type-Options: nosniff, X-Frame-Options: DENY and Referrer-Policy: no-referrer on every response.',
           'Static files come from one directory, behind a path-traversal guard.',
           'Request bodies are capped at 64 MB and must carry Content-Type: application/json — which also closes the classic HTML-form CSRF trick that skips the browser’s preflight.',
-          'Every route is same-origin only, except the seven the app’s own tab or the admin-port tab must reach. Those are gated on a 128-bit random session token instead.',
+          'Every route is same-origin only, except the four the app’s own tab must reach. Those are gated on a 128-bit random session token instead.',
           'Anything a browser script sends back is treated as hostile input: the server rebuilds it field by field, bounded in length and count, rather than storing the shape it was handed.'
         ] }
       ] },
 
-      { id: 'token', title: 'Why seven endpoints accept cross-origin requests', blocks: [
-        { p: 'The bridge is a snippet the tester pastes into the console of the app’s own tab, or of the admin port’s — so everything it sends back to MxScout necessarily comes from that tab’s origin, not from ours. Binding to loopback stops the rest of the network, but not another tab on the same machine.' },
-        { p: 'So those seven endpoints are gated on a token instead of on the Origin header. The MxScout UI mints a fresh random token immediately before generating a snippet; the snippet carries it and echoes it back, and only a request presenting the current token is accepted. Reconnecting invalidates every snippet generated before it, and a superseded snippet is told so and stops rather than retrying. A website the user happens to have open cannot guess the value, and therefore cannot plant fabricated data or steer a run.' }
+      { id: 'token', title: 'Why four endpoints accept cross-origin requests', blocks: [
+        { p: 'The bridge is a snippet the tester pastes into the console of the app’s own tab — so everything it sends back to MxScout necessarily comes from that tab’s origin, not from ours. Binding to loopback stops the rest of the network, but not another tab on the same machine.' },
+        { p: 'So those four endpoints are gated on a token instead of on the Origin header. The MxScout UI mints a fresh random token immediately before generating a snippet; the snippet carries it and echoes it back, and only a request presenting the current token is accepted. Reconnecting invalidates every snippet generated before it, and a superseded snippet is told so and stops rather than retrying. A website the user happens to have open cannot guess the value, and therefore cannot plant fabricated data or steer a run.' }
       ] },
 
       { id: 'prod', title: 'The non-production guard', blocks: [
@@ -185,7 +197,7 @@
       { id: 'updates', title: 'Versions and updates', blocks: [
         { p: 'MxScout does not check whether a newer version exists. Not on startup, not behind a button, not at all. Three reasons, in order of weight:' },
         { ul: [
-          'A version check is an outbound connection, and the promise above — that the server process opens none, ever — is the single sentence a review remembers. It is worth more than the convenience.',
+          'A version check would mean connecting to somewhere other than this machine, and the promise above — that nothing MxScout does reaches past loopback — is the single sentence a review remembers. It is worth more than the convenience.',
           'Inside a corporate network the check would usually fail anyway, so an automatic one would mostly greet the user with an error MxScout caused itself.',
           'MxScout has no write access to its own directory and should not have any. An application that downloads and overwrites its own files is the pattern most often blocked, and rightly.'
         ] },
@@ -203,14 +215,14 @@
         { kv: [
           ['server/index.js', 'The whole HTTP server: loopback bind, security headers, the same-origin gate, the route table, static files.'],
           ['server/routes/session.js', 'Every endpoint listed above, with its validation.'],
-          ['server/state.js', 'All server state — the session token, the one command in flight and its answer, and the performance recorder’s own connected/recording flag and sample buffer. Nothing else is held anywhere.'],
+          ['server/state.js', 'All server state — the session token, the one command in flight and its answer, the admin-port connection including the password, and the recording’s sample buffer. Every one of them is a module variable in one process, and nothing else is held anywhere.'],
           ['server/http-util.js', 'Body reading: the size cap and the JSON content-type gate.'],
           ['public/app.js', 'The shell: state, projects, the browsing views, and what each other file is given.'],
           ['public/objects.js', 'The two object popups — an entity on Attributes & access (one matrix of its members, attributes and the associations it owns, against the access rules that apply) / Data / Comments, a flow on Run (inputs and access side by side) / Comments.'],
           ['public/live.js', 'Everything about talking to a running application: the non-production guard the UI consults, the session, the connection, reading rows, and running a flow.'],
-          ['public/perf.js', 'The performance recording: the tiny PowerShell script that only reveals the admin password, the admin-port bridge script it hands out, Start/Finish, a dashboard of saved recordings, and an analyzer (Overview / Timeline tabs) for one of them. Never talks to a running app or its admin port itself — only the pasted bridge does that.'],
+          ['public/perf.js', 'The performance recording, browser side: the tiny PowerShell script that only reveals the admin password, the two connect steps, Start/Finish, a dashboard of saved recordings, and an analyzer (Overview / Timeline tabs) for one of them. It never talks to the admin port itself — it cannot, and the reason is in “Reading a running app’s admin port” above.'],
           ['public/bridge.js', 'The snippet pasted into the app tab, written as ordinary code and serialized when it is generated — so what the tester pastes is a file you can read here, not a string assembled at runtime.'],
-          ['public/admin-bridge.js', 'The second bridge: same idea as bridge.js, pasted into a tab on the admin port’s own origin instead, and drawing the same palette-driven badge. Smaller, because the admin port has no UI to fall back into — it reports samples while MxScout has told it to record, and its own record/stop icon can ask for that itself.'],
+          ['server/admin-port.js', 'The only file in MxScout that can open an outbound connection, and the shortest way to check every claim on this page about that: the loopback-only address list, the two-action allowlist, and the sampling loop that runs while a recording does.'],
           ['public/store.js', 'Every persistent read and write, and nothing else does storage. The browser’s own database — no disk, no server.'],
           ['public/crypto.js', 'The package format and the access code. WebCrypto only — no hand-written cryptography, no library.'],
           ['public/transfer.js', 'How a project leaves this browser and how one arrives: the whitelist of what may travel, the dialogs, and the merge back into storage.'],
@@ -231,14 +243,14 @@
 
       { id: 'faq', title: 'Questions a review usually asks', blocks: [
         { kv: [
-          ['Does it need internet access?', 'No. It works on a machine with no route out, apart from reaching the app under test — which is the tester’s own browser doing that, not MxScout.'],
+          ['Does it need internet access?', 'No. It works on a machine with no route out. The app under test is reached by the tester’s own browser, and the one connection MxScout itself makes — to a Mendix admin port while recording performance — cannot leave this machine.'],
           ['Does it need administrator rights?', 'No. It is started by the user and runs with that user’s permissions.'],
           ['Does it open a port other machines can reach?', 'No. It listens on TCP 4288 on the loopback interface only.'],
-          ['Does it handle credentials?', 'No. It never sees a password, a token or a session cookie. It relies on a session the tester has already established in their own browser.'],
+          ['Does it handle credentials?', 'One, and only if you record performance: the Mendix admin port’s password, which the runtime mints fresh every time the app starts. You paste it in; it stays in the server process’s memory for that session, is never written down anywhere, and no endpoint returns it. Everything else relies on a session the tester has already established in their own browser — MxScout never sees an application password, a token or a session cookie.'],
           ['Can it reach production?', 'It refuses by design (see the guard above), and that refusal is repeated inside every generated script. It is a guardrail against accidents, not a control against intent.'],
-          ['What could leak if the machine were compromised?', 'Only what is already in that browser: the model, the comments and any saved performance recordings in its own database, and — if a page of data was just read, or a performance recording is in progress — at most a hundred rows, or that recording’s samples, in the server process’s memory, cleared on the next request or on Finish. Nothing is on disk and nothing is sent anywhere.'],
+          ['What could leak if the machine were compromised?', 'Only what is already in that browser: the model, the comments and any saved performance recordings in its own database, and — if a page of data was just read, or a performance recording is in progress — at most a hundred rows, or that recording’s samples, in the server process’s memory, cleared on the next request or on Finish. While an admin port is connected, its password is in that memory too, until you disconnect. Nothing is on disk and nothing is sent anywhere. All of it is already readable by anyone who has that machine and that browser profile.'],
           ['Can it modify our application?', 'Only through running a flow, above: one the tester opens and runs in their own session, with their own rights, on a non-production environment, after two explicit confirmations that name the flow and the object. Reading data cannot write: a read request carries no object parameters and there is no path that turns one into a run.'],
-          ['Is the code auditable?', 'Yes. No dependencies, no minification, no bundler, no obfuscation — around 14,300 readable lines under GPL-3.0-or-later.'],
+          ['Is the code auditable?', 'Yes. No dependencies, no minification, no bundler, no obfuscation — around 14,800 readable lines under GPL-3.0-or-later.'],
           ['Does it read files from my disk?', 'Only a Mendix project folder you explicitly pick, and only in the browser tab — the .mpr file and its BSON documents are parsed client-side, in a Web Worker (see “Reading a Mendix project folder” above). The MxScout server process never sees that folder or any file in it.'],
           ['Is any of it tested?', 'Yes \u2014 an automated suite runs before every commit, needing no dependencies either: Node\u2019s standard library and the Chromium already on the machine, nothing else. It covers the environment guard (including that its two copies still agree), the whole bridge in a real browser, the encrypted package and every way it must refuse, and the round trip of sending a review out and importing it back. The suite itself is not part of this public download, the same reasoning as not shipping a working log \u2014 but nothing here reaches this branch without passing it first.'],
           ['What happens when it is closed?', 'The process exits and its memory goes with it. Projects stay in the browser’s own database until the user deletes them or clears site data.'],

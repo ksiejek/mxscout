@@ -315,17 +315,17 @@
         createObject: null,      // qualifiedName of a non-persistable entity whose "create" popup is open
         data: null,              // the page of live rows a Data tab is showing
         transient: null,         // non-persistable entity: looked-up/created objects this session
-        // Performance tab (see perf.js): the admin-port bridge's own
-        // connection state, deliberately separate from `live` above — this is
-        // a different origin (the admin port, not the app) and can be
-        // connected independently of it. `recordings` is null until the
-        // Performance tab is first opened (lazy, like the Data pane);
-        // `password` is never persisted. The recording's own start time comes
-        // from the server (see perf.js's finishRecordingSession), not from
-        // anything tracked here.
+        // Performance tab (see perf.js): what THIS PAGE knows about the
+        // admin-port connection, which the server actually owns — `status`
+        // and `statusKnown` are answers from /api/session/perf/status, and
+        // `port`/`password` are only what is being typed on the way there.
+        // The password is never persisted and is dropped from here the
+        // moment the server accepts it. Deliberately separate from `live`
+        // below: the admin port and the app are different connections and
+        // either can be up without the other. `recordings` is null until the
+        // Performance tab is first opened (lazy, like the Data pane).
         perf: {
-          adminUrl: '', result: null, password: '',
-          script: null, scriptKey: null, status: {},
+          port: null, password: '', status: {}, statusKnown: false,
           recordings: null, recordingsLoading: false, selectedId: null,
           tab: 'overview', _finishing: false
         },

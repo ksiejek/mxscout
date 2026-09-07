@@ -13,10 +13,16 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const HOST = '127.0.0.1'; // never bind wider than loopback — same rule as MxSonar
 const PORT = Number(process.env.MXSCOUT_PORT) || 4288;
 
-// MxScout has no database, no filesystem browsing and no outbound network
-// calls of its own — the model lives in the browser's own storage. The one
-// piece of server state is the current live session (see state.js): the
-// browser mints a token, the snippet pasted into the TARGET app answers
+// MxScout has no database and no filesystem browsing — the model lives in the
+// browser's own storage. It makes exactly ONE kind of outbound connection,
+// and only while a performance recording is running: to a Mendix Runtime
+// admin port on this same machine, over loopback, asking two read-only
+// actions and nothing else. That is the whole of it, it is enforced in code
+// rather than by convention, and server/admin-port.js is the only file that
+// can open a socket — see its header for why it exists and what bounds it.
+//
+// The other piece of server state is the current live session (see state.js):
+// the browser mints a token, the snippet pasted into the TARGET app answers
 // requests cross-origin, and the browser collects the answers.
 //
 // The Origin gate below is why that is safe. Binding to loopback stops the
@@ -117,18 +123,13 @@ const routes = [
   { method: 'OPTIONS', pattern: /^\/api\/session\/data$/, handler: sessionRoutes.handlePreflight, crossOrigin: true },
   { method: 'POST', pattern: /^\/api\/session\/data$/, handler: sessionRoutes.handleReportQueryResult, crossOrigin: true },
   { method: 'GET', pattern: /^\/api\/session\/data$/, handler: sessionRoutes.handleGetQueryResult },
-  // The performance recorder's own bridge (see routes/session.js) — a SECOND
-  // bridge tab, pasted on the admin port's own origin rather than the app's.
-  // Poll, sample and request are cross-origin and token-gated, same reasoning
-  // as the exec bridge above; start/stop/status are the MxScout UI, same-origin.
-  { method: 'OPTIONS', pattern: /^\/api\/session\/perf\/poll$/, handler: sessionRoutes.handlePreflight, crossOrigin: true },
-  { method: 'GET', pattern: /^\/api\/session\/perf\/poll$/, handler: sessionRoutes.handlePerfPoll, crossOrigin: true },
-  { method: 'OPTIONS', pattern: /^\/api\/session\/perf\/sample$/, handler: sessionRoutes.handlePreflight, crossOrigin: true },
-  { method: 'POST', pattern: /^\/api\/session\/perf\/sample$/, handler: sessionRoutes.handlePerfSample, crossOrigin: true },
-  // The admin-bridge tab's own record/stop icon, asking for the same state
-  // change the MxScout UI's Start/Finish buttons make (see handlePerfRequest).
-  { method: 'OPTIONS', pattern: /^\/api\/session\/perf\/request$/, handler: sessionRoutes.handlePreflight, crossOrigin: true },
-  { method: 'POST', pattern: /^\/api\/session\/perf\/request$/, handler: sessionRoutes.handlePerfRequest, crossOrigin: true },
+  // The performance recorder (see routes/session.js and admin-port.js). Every
+  // one of these is SAME-ORIGIN: the recorder no longer has a bridge tab of
+  // its own, because the server now reads the admin port itself. `connect` is
+  // the one route in MxScout that receives a password, and the one that
+  // triggers this server's only outbound connection.
+  { method: 'POST', pattern: /^\/api\/session\/perf\/connect$/, handler: sessionRoutes.handlePerfConnect },
+  { method: 'POST', pattern: /^\/api\/session\/perf\/disconnect$/, handler: sessionRoutes.handlePerfDisconnect },
   { method: 'GET', pattern: /^\/api\/session\/perf\/status$/, handler: sessionRoutes.handlePerfStatus },
   { method: 'POST', pattern: /^\/api\/session\/perf\/start$/, handler: sessionRoutes.handlePerfStart },
   { method: 'POST', pattern: /^\/api\/session\/perf\/stop$/, handler: sessionRoutes.handlePerfStop }

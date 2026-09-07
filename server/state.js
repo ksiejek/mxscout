@@ -3,8 +3,9 @@
 const crypto = require('crypto');
 
 // MxScout holds NO model server-side — the model lives entirely in the
-// browser's own storage. The only server-side state is the current live
-// session: a token, the command in flight, and its answer. This is a single-user,
+// browser's own storage. The server-side state is the current live session (a
+// token, the command in flight, its answer) and the performance recorder's
+// admin-port connection and sample buffer. This is a single-user,
 // single-session local tool by design (one person, one browser, a server on
 // their own machine), so a handful of module-level variables is the right
 // amount of state — no session store, no persistence.
@@ -49,59 +50,71 @@ function wakeCommandWaiters() {
   waiters.forEach((fn) => { try { fn(); } catch (e) { /* a dead response is not our problem */ } });
 }
 
-// ---------- the performance recorder's own bridge ----------
-// A second, independent tab (pasted on the admin PORT's own origin, not the
-// app's — see public/admin-bridge.js) shares the one sessionToken above but
-// needs its own connected/active state: whether MxScout wants it recording
-// right now, and the samples it has reported since the last Start. Kept
-// entirely separate from pendingCommand/commandResult so the two bridges can
-// be connected — or not — independently of one another.
+// ---------- the performance recorder ----------
+// Two separate things live here. The CONNECTION is what server/admin-port.js
+// needs to reach the Mendix Runtime's admin port: a loopback host it picked
+// at connect time, a port, and the m2ee password.
+//
+// That password is the one secret this server has ever held, and it is held
+// exactly like everything else here — in module memory, for this process, for
+// this session. It is never written to disk (this server writes nothing to
+// disk), never logged, and never returned by a route: getAdminConnection()
+// deliberately omits it, and only the recorder ever calls
+// getAdminPassword(). Disconnecting, starting a new session and clearing the
+// session all wipe it, so it lives no longer than the run it belongs to —
+// Studio Pro mints a new one every time the app restarts anyway.
+let adminHost = null;
+let adminPort = null;
+let adminPassword = null;
+
+// The RECORDING is the buffer the sampling loop fills while it runs. It is
+// kept separate from pendingCommand/commandResult so a recording and a live
+// app session can be going at once without either noticing the other.
 let perfActive = false;
 let perfSamples = [];        // { t, requests, stats }[], cleared on start() and on stop()
-let perfStartedAt = null;    // when the CURRENT recording began — set once, by whichever side started it
-let perfLastPollAt = null;
+let perfStartedAt = null;    // when the CURRENT recording began
 const PERF_SAMPLES_MAX = 50000; // a generous cap; older samples drop first
-const perfWaiters = new Set();
-function addPerfWaiter(fn) { perfWaiters.add(fn); return () => perfWaiters.delete(fn); }
-function perfHeldPollCount() { return perfWaiters.size; }
-function wakePerfWaiters() {
-  const waiters = Array.from(perfWaiters);
-  perfWaiters.clear();
-  waiters.forEach((fn) => { try { fn(); } catch (e) { /* a dead response is not our problem */ } });
+
+function setAdminConnection(host, port, password) {
+  adminHost = host;
+  adminPort = port;
+  adminPassword = password;
 }
+function clearAdminConnection() {
+  adminHost = null;
+  adminPort = null;
+  adminPassword = null;
+}
+function isAdminConnected() { return !!adminPassword; }
+// Everything about the connection EXCEPT the password — this is what the
+// status route is allowed to say out loud.
+function getAdminConnection() { return { host: adminHost, port: adminPort }; }
+function getAdminPassword() { return adminPassword; }
+
 function getPerfActive() { return perfActive; }
 function startPerfRecording() {
   perfActive = true;
   perfSamples = [];
   perfStartedAt = new Date().toISOString();
-  wakePerfWaiters();
 }
-// Flips the desired state to "stop" WITHOUT touching the buffer — used when
-// the admin-bridge tab's own Stop icon asks for this (see perf/request
-// below). Only MxScout's page can turn samples into a saved recording (they
-// live in ITS IndexedDB), so the buffer has to wait for that page's own
-// stopPerfRecording() call, whichever side flipped the flag.
-function requestStopPerfRecording() { perfActive = false; wakePerfWaiters(); }
 // Hands back everything collected and empties the buffer in one step — the
 // caller (the UI, stopping a recording) gets exactly what it needs to build a
-// file, and a sample that lands a moment later (see isPerfActive guard in the
-// route) is not silently appended to a buffer nobody is reading anymore.
+// recording, and a sample that lands a moment later cannot be appended to a
+// buffer nobody is reading anymore.
 function stopPerfRecording() {
   perfActive = false;
   const samples = perfSamples;
   perfSamples = [];
   perfStartedAt = null;
-  wakePerfWaiters();
   return samples;
 }
 function addPerfSample(sample) {
+  if (!perfActive) return;
   perfSamples.push(sample);
   if (perfSamples.length > PERF_SAMPLES_MAX) perfSamples.splice(0, perfSamples.length - PERF_SAMPLES_MAX);
 }
 function getPerfSampleCount() { return perfSamples.length; }
 function getPerfStartedAt() { return perfStartedAt; }
-function getPerfLastPollAt() { return perfLastPollAt; }
-function touchPerfPoll() { perfLastPollAt = new Date().toISOString(); }
 
 // Mint a fresh token and drop any prior report/command — starting a new scan
 // session invalidates every script pasted for the previous one.
@@ -111,10 +124,12 @@ function startSession() {
   commandResult = null;
   queryResult = null;
   lastCommandPollAt = null;
-  perfActive = false;
-  perfSamples = [];
-  perfStartedAt = null;
-  perfLastPollAt = null;
+  // The admin-port connection is deliberately NOT cleared here. A fresh token
+  // invalidates the scripts pasted for the previous session, which is what
+  // this function is for — but the recorder does not use a pasted script and
+  // does not use the token: it is same-origin only. Connecting to a live app
+  // must not silently kill a recording that is already running.
+
   // Release any request parked by the PREVIOUS session's bridge. Without this
   // its waiter sits in the set for the rest of the long-poll window, and
   // heldPollCount — which is what "connected" is read from — keeps reporting a
@@ -123,7 +138,6 @@ function startSession() {
   // refused. Waking them empties the set; each one re-polls with its stale
   // token, gets a 403, and stops.
   wakeCommandWaiters();
-  wakePerfWaiters();
   return sessionToken;
 }
 
@@ -156,12 +170,13 @@ function clearSession() {
   commandResult = null;
   queryResult = null;
   lastCommandPollAt = null;
+  // A full teardown DOES drop the admin connection, password included — this
+  // is the "forget everything" path, and the secret goes with everything else.
   perfActive = false;
   perfSamples = [];
   perfStartedAt = null;
-  perfLastPollAt = null;
+  clearAdminConnection();
   wakeCommandWaiters();
-  wakePerfWaiters();
 }
 
 module.exports = {
@@ -171,8 +186,8 @@ module.exports = {
   getQueryResult, setQueryResult,
   getLastCommandPollAt, touchCommandPoll,
   addCommandWaiter, heldPollCount,
-  getPerfActive, startPerfRecording, requestStopPerfRecording, stopPerfRecording,
-  addPerfSample, getPerfSampleCount, getPerfStartedAt,
-  addPerfWaiter, perfHeldPollCount,
-  getPerfLastPollAt, touchPerfPoll
+  setAdminConnection, clearAdminConnection, isAdminConnected,
+  getAdminConnection, getAdminPassword,
+  getPerfActive, startPerfRecording, stopPerfRecording,
+  addPerfSample, getPerfSampleCount, getPerfStartedAt
 };

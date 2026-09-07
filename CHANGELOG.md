@@ -15,6 +15,36 @@ The version in `package.json` is the single source of truth. The About page
 reads it from the running server rather than from a constant, so it cannot
 claim a version it is not.
 
+## 1.2.0
+
+### The performance recorder connects to the admin port itself
+
+Recording performance no longer asks you to paste a script into a browser tab
+open on the Mendix admin port. Enter the port, paste the password the
+PowerShell script prints, press Connect, and record. The connection survives a
+page reload, so the password is entered once per app run rather than once per
+sitting.
+
+This is a deliberate, narrow change to what MxScout promised, and **About &
+security** now has a section of its own about it — *Reading a running app's
+admin port*. In short: the server makes one kind of outbound connection, to a
+loopback address it chooses rather than one you supply, asking two read-only
+actions and no third, only while a recording is running, and only ever on this
+machine. The admin password is checked before it is kept, held in the server
+process's memory for the session, written nowhere, and returned by no endpoint;
+Disconnect forgets it.
+
+The recorder's three cross-origin endpoints are gone with the pasted bridge, so
+four endpoints accept cross-origin requests now instead of seven — all four
+belonging to the app-tab bridge, which is unchanged.
+
+- The admin port is entered as a port number, not a URL, and only ports on this
+  machine can be reached.
+- Connecting says what actually went wrong: nothing listening, wrong password,
+  or something that is not a Mendix admin port.
+- If the port stops answering mid-recording, the recorder says so instead of
+  saving an empty recording.
+
 ## 1.1.0
 
 ### Associations are members too, and write shows on the value

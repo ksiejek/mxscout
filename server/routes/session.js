@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const { readJsonBody, sendJson } = require('../http-util');
 const state = require('../state');
+const adminApi = require('../admin-port');
 
 // The bridge runs on the TARGET Mendix app's origin (its own tab), not ours —
 // so everything it sends back is cross-origin and needs explicit CORS. This is
@@ -484,132 +485,105 @@ async function handleReportCommandResult(req, res) {
   sendJson(res, 200, { ok: true });
 }
 
-// ---------- the performance recorder's own bridge ----------
-// A second bridge, pasted on the admin PORT's own origin rather than the
-// app's (see public/admin-bridge.js and ROADMAP step 46, Phase 1b). It shares
-// the one sessionToken above but has nothing to do with a query or a flow
-// run, so it gets its own small poll/sample/start/stop/status group instead
-// of overloading the exec channel.
-const PERF_SAMPLE_MAX_BYTES = 200 * 1024; // drop an outsized sample rather than let the buffer grow unbounded
+// ---------- the performance recorder ----------
+// Until 2026-09-07 this was a second pasted bridge, living on the admin
+// port's own origin. It is now the server itself
+// that talks to the admin port — see server/admin-port.js for the whole
+// argument, the allowlists that keep the break narrow, and why a browser tab
+// could never have done this directly. What is left here is only the UI's
+// side of it, and every route below is SAME-ORIGIN: no part of the recorder
+// is reachable from another tab any more, which is three cross-origin
+// endpoints fewer than the bridge needed.
+const DEFAULT_INTERVAL_MS = 50;
 
-function sanitizePerfSample(body) {
-  const t = Number(body.t);
-  if (!Number.isFinite(t) || t < 0) return null;
-  const requests = (body.requests && typeof body.requests === 'object') ? body.requests : {};
-  const stats = (body.stats && typeof body.stats === 'object') ? body.stats : null;
-  const sample = { t: Math.floor(t), requests, stats };
-  let size;
-  try { size = Buffer.byteLength(JSON.stringify(sample)); } catch (e) { return null; }
-  if (size > PERF_SAMPLE_MAX_BYTES) return null;
-  return sample;
-}
+const CONNECT_MESSAGES = {
+  unreachable: (port) => 'Nothing answered on port ' + port + ' of this machine. Is the app running, and is that its admin port?',
+  password: () => 'The admin port refused that password. Studio Pro mints a new one every time the app starts — run the script again and paste what it prints now.',
+  'not-admin-port': (port) => 'Something is listening on port ' + port + ', but it did not answer like a Mendix admin port. Check the port number.'
+};
 
-// Cross-origin, token via query — the admin-bridge tab long-polls this the
-// same way the exec bridge long-polls /api/session/exec/poll, except there is
-// no one-shot command to dispatch here: it just wants to know "should I be
-// recording right now", so a poll answers immediately whenever that differs
-// from what the caller last knew (?known=0|1), and otherwise holds open until
-// it changes or the window elapses.
-function handlePerfPoll(req, res) {
-  setCors(req, res);
-  if (!tokenMatches(req.query.get('token'))) {
-    sendJson(res, 403, { error: 'Invalid or missing token — reconnect in MxScout for a fresh snippet.' });
-    return;
-  }
-  state.touchPerfPoll();
-  const current = state.getPerfActive();
-  const known = req.query.get('known');
-  if (req.query.get('wait') !== '1' || known == null || (known === '1') !== current) {
-    sendJson(res, 200, { active: current });
-    return;
-  }
-
-  let settled = false;
-  let removeWaiter = null;
-  const timer = setTimeout(finish, LONG_POLL_MS);
-  function finish() {
-    if (settled) return;
-    settled = true;
-    clearTimeout(timer);
-    if (removeWaiter) removeWaiter();
-    sendJson(res, 200, { active: state.getPerfActive() });
-  }
-  removeWaiter = state.addPerfWaiter(finish);
-  req.on('close', () => {
-    if (settled) return;
-    settled = true;
-    clearTimeout(timer);
-    if (removeWaiter) removeWaiter();
-  });
-}
-
-// Cross-origin, token in body — one sample per call, same granularity as the
-// admin port is polled at. Silently ignored (not an error) once recording has
-// stopped, so a request already in flight when Finish is clicked cannot
-// resurrect the buffer the UI just collected.
-async function handlePerfSample(req, res) {
-  setCors(req, res);
+// Verifies before it stores: a password that does not work is never kept, so
+// "connected" in the UI means the runtime really answered, not that a form
+// was filled in. This is the only route that ever receives the password, and
+// nothing it sends back contains it.
+async function handlePerfConnect(req, res) {
   const body = await readJsonBody(req);
-  if (!tokenMatches(body.token)) {
-    sendJson(res, 403, { error: 'Invalid or missing token.' });
+  const port = Number(body.port);
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    sendJson(res, 400, { error: 'That is not a valid port number.' });
     return;
   }
-  if (!state.getPerfActive()) { sendJson(res, 200, { ok: true }); return; }
-  const sample = sanitizePerfSample(body);
-  if (sample) state.addPerfSample(sample);
+  if (!password) {
+    sendJson(res, 400, { error: 'The admin password is missing.' });
+    return;
+  }
+  const result = await adminApi.verify(port, password);
+  if (!result.ok) {
+    state.clearAdminConnection();
+    const message = CONNECT_MESSAGES[result.reason] || CONNECT_MESSAGES.unreachable;
+    sendJson(res, 502, { error: message(port), reason: result.reason });
+    return;
+  }
+  state.setAdminConnection(result.host, port, password);
+  console.log('perf: connected to the admin port on ' + result.host + ':' + port);
+  sendJson(res, 200, { ok: true, host: result.host, port });
+}
+
+// Forgets the password, and stops anything still running on it. There is no
+// way to read it back out of MxScout, so this is how it goes away before the
+// process does.
+function handlePerfDisconnect(req, res) {
+  adminApi.stopSampling();
+  state.stopPerfRecording();
+  state.clearAdminConnection();
   sendJson(res, 200, { ok: true });
 }
 
-// Same-origin: the MxScout UI asking whether the admin-bridge tab is there,
-// and whether it is actively recording. `connected` is computed exactly like
-// the exec bridge's listenerConnected — a bridge parked on a held-open poll
-// has not gone away. `startedAt` is the server's own record of when the
-// CURRENT recording began, so the UI reports the true start time regardless
-// of which side (its own Start button, or the admin tab's own record icon)
-// triggered it.
-function handlePerfStatus(req, res) {
-  const lastPollAt = state.getPerfLastPollAt();
-  const connected = state.perfHeldPollCount() > 0 ||
-    (!!lastPollAt && (Date.now() - new Date(lastPollAt).getTime()) < LISTENER_STALE_MS);
-  sendJson(res, 200, {
-    connected, active: state.getPerfActive(),
-    sampleCount: state.getPerfSampleCount(), startedAt: state.getPerfStartedAt()
-  });
-}
-
-// Cross-origin, token in body — lets the admin-bridge tab's own record/stop
-// icon ask for the same state change the MxScout UI's Start/Finish buttons
-// make, without also trying to drain the sample buffer itself: only
-// MxScout's page can turn samples into a saved recording (they live in ITS
-// IndexedDB), so a request to stop just flips the flag, and the actual
-// draining still happens through the same-origin perf/stop below — called
-// automatically by the page once it notices (see perf.js's status polling).
-async function handlePerfRequest(req, res) {
-  setCors(req, res);
-  const body = await readJsonBody(req);
-  if (!tokenMatches(body.token)) {
-    sendJson(res, 403, { error: 'Invalid or missing token.' });
-    return;
-  }
-  if (body.active) state.startPerfRecording();
-  else state.requestStopPerfRecording();
-  sendJson(res, 200, { ok: true, active: state.getPerfActive() });
-}
-
-// Same-origin. Starting clears whatever the buffer held before (a previous
-// recording should already have been collected via stop before a new one
-// begins) and wakes the bridge out of its idle long-poll.
+// Starting needs a verified connection — without one there is nothing to
+// sample and an empty recording would be the only symptom.
 function handlePerfStart(req, res) {
+  if (!state.isAdminConnected()) {
+    sendJson(res, 409, { error: 'Not connected to an admin port yet.' });
+    return;
+  }
+  const conn = state.getAdminConnection();
   state.startPerfRecording();
+  adminApi.startSampling({
+    host: conn.host,
+    port: conn.port,
+    password: state.getAdminPassword(),
+    intervalMs: DEFAULT_INTERVAL_MS,
+    onSample: (sample) => state.addPerfSample(sample)
+  });
   sendJson(res, 200, { ok: true });
 }
 
-// Same-origin. Hands back everything collected since start — this response
-// IS the recording's samples, ready for the UI to wrap in the file envelope
-// and save.
+// Stops the loop FIRST, then drains — the other order lets a round already in
+// flight append to a buffer that has just been handed away. The response IS
+// the recording's samples, ready for the UI to wrap in its envelope and save
+// to IndexedDB, which is still the only place a recording is ever stored.
 function handlePerfStop(req, res) {
+  adminApi.stopSampling();
   const samples = state.stopPerfRecording();
   sendJson(res, 200, { ok: true, samples });
+}
+
+// What the UI polls while a recording runs. `trouble` carries the recorder's
+// own diagnosis when the admin port has stopped answering for a run of
+// rounds — the lesson from the "always 0 samples" bug is that silence has to
+// be reported, not left to look like an idle app. The password is not part
+// of this, or of any other response.
+function handlePerfStatus(req, res) {
+  const conn = state.getAdminConnection();
+  sendJson(res, 200, {
+    connected: state.isAdminConnected(),
+    host: conn.host, port: conn.port,
+    active: state.getPerfActive(),
+    sampleCount: state.getPerfSampleCount(),
+    startedAt: state.getPerfStartedAt(),
+    trouble: adminApi.getTrouble()
+  });
 }
 
 module.exports = {
@@ -617,5 +591,6 @@ module.exports = {
   handleReportQueryResult, handleGetQueryResult,
   handleSetCommand, handleClearCommand, handleGetCommandStatus,
   handleCommandPoll, handleReportCommandResult,
-  handlePerfPoll, handlePerfSample, handlePerfStatus, handlePerfStart, handlePerfStop, handlePerfRequest
+  handlePerfConnect, handlePerfDisconnect,
+  handlePerfStatus, handlePerfStart, handlePerfStop
 };

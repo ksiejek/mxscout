@@ -1772,6 +1772,14 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 .perf-connect-strip { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .perf-connect-addr { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
 .perf-connect-strip .btn { margin-left: auto; }
+/* The recorder's own diagnosis when the admin port stops answering. Alarm
+   coloured because an empty recording is otherwise indistinguishable from an
+   idle app — that ambiguity was the whole "always 0 samples" bug. */
+.perf-trouble {
+  color: var(--alarm);
+  font-size: 12.5px;
+  margin: 10px 0 0;
+}
 
 /* ---------- performance: the recordings dashboard ---------- */
 .rec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 14px; }
