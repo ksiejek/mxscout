@@ -258,11 +258,25 @@
     }
 
     // ---------- boot ----------
+    // Pinging MxScout only proves this tab can reach IT — it says nothing
+    // about whether the admin API on THIS origin actually answers to the
+    // typed password. Left unchecked, that gap surfaced only after a whole
+    // recording came back with zero samples (see the dashboard's "the admin
+    // port never answered" card) — a wrong port number or a stale password
+    // looked identical to "everything is fine, the app was just idle" until
+    // then. One real admin call, right here, turns that into an immediate,
+    // specific error instead.
     fetch(CFG.origin + '/api/session/ping?token=' + encodeURIComponent(CFG.token))
       .then(function (r) { if (!r.ok) throw new Error(); })
       .then(function () {
-        showBadge();
-        pollLoop();
+        invokeAdmin('get_current_runtime_requests', function (r) {
+          if (r === null) {
+            showError('Connected to MxScout, but ' + location.origin + ' did not answer the Mendix admin API — check the admin port number and the password, then reconnect in MxScout.');
+            return;
+          }
+          showBadge();
+          pollLoop();
+        });
       })
       .catch(function () {
         showError('Could not reach MxScout at ' + CFG.origin + '. Keep this tab open, and check that MxScout is running on this same machine.');

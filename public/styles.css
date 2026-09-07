@@ -802,6 +802,7 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 .live-status { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 600; }
 .live-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .live-status-ok .live-dot { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.live-status-recording .live-dot { background: var(--alarm); box-shadow: 0 0 0 3px color-mix(in srgb, var(--alarm) 25%, transparent); }
 .live-status-blocked .live-dot { background: var(--muted); }
 .card.live-ok { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
 .card.live-blocked { border-color: var(--border); }

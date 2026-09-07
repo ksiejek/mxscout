@@ -582,12 +582,29 @@
   }
 
   // ---------- rendering: connecting the admin port ----------
+  // A browser cannot honestly scan for open ports \u2014 the only source of truth
+  // is the Mendix convention itself: locally, the admin API listens on the
+  // app's own port + 10. Reusing the app URL already on file (persisted from
+  // the Live app tab) turns that convention into a real, filled-in
+  // suggestion instead of a rule the user has to remember and apply by hand.
+  function suggestedAdminOrigin(project) {
+    var raw = (project && project.appUrl) || (state.detail.live && state.detail.live.url) || '';
+    if (!raw) return null;
+    try {
+      var withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw) ? raw : ('https://' + raw);
+      var u = new URL(withScheme);
+      var appPort = u.port ? parseInt(u.port, 10) : (u.protocol === 'https:' ? 443 : 80);
+      return u.protocol + '//' + u.hostname + ':' + (appPort + 10);
+    } catch (e) { return null; }
+  }
+
   function renderAddressStep(project) {
     var p = state.detail.perf;
-    var input = el('input', { type: 'text', class: 'live-url-input', placeholder: 'http://localhost:' + DEFAULT_ADMIN_PORT, value: p.adminUrl });
+    var suggestion = suggestedAdminOrigin(project);
+    var input = el('input', { type: 'text', class: 'live-url-input', placeholder: suggestion || ('http://localhost:' + DEFAULT_ADMIN_PORT), value: p.adminUrl });
     input.addEventListener('input', function () { p.adminUrl = input.value; });
     function doCheck() {
-      var url = (p.adminUrl || '').trim() || ('http://localhost:' + DEFAULT_ADMIN_PORT);
+      var url = (p.adminUrl || '').trim() || suggestion || ('http://localhost:' + DEFAULT_ADMIN_PORT);
       p.adminUrl = url;
       p.result = window.MxLive.classifyAppUrl(url);
       render();
@@ -602,6 +619,9 @@
         el('span', { text: 'Admin port address' }),
         el('div', { class: 'live-url-row' }, [ input, el('button', { class: 'btn btn-primary', text: 'Check', onclick: doCheck }) ])
       ]),
+      el('p', { class: 'muted', text: suggestion
+        ? ('Mendix commonly runs the admin API on the app\u2019s own port + 10 \u2014 based on the app URL on file, try ' + suggestion + '.')
+        : 'Mendix commonly runs the admin API on the app\u2019s own port + 10 (locally: 8080 \u2192 8090). A browser cannot scan for it \u2014 this is a guess to try, not a lookup.' }),
       blocked ? el('p', { class: 'muted', text: 'MxScout can connect only to local, test and acceptance environments.' }) : null
     ].filter(Boolean));
   }
@@ -639,6 +659,20 @@
     ]);
   }
 
+  // Forgets the typed address/password and drops back to Step 1 \u2014 the only
+  // way, until now, to try a different port after a bad guess was to reload
+  // the page. Only offered while idle: mid-recording, Finish is the one way
+  // out, so the buffer always gets drained into a saved recording rather
+  // than abandoned. A bridge tab left open elsewhere just keeps polling
+  // harmlessly (its token is still valid) until it is closed or reconnected.
+  function disconnectAdminBridge() {
+    var p = state.detail.perf;
+    stopStatusPolling();
+    p.adminUrl = ''; p.result = null; p.password = '';
+    p.script = null; p.scriptKey = null; p.status = {};
+    render();
+  }
+
   // The connected/idle-or-recording state, collapsed to one line \u2014 this is
   // what the dashboard shows instead of a full card once the bridge is up,
   // per ROADMAP step 46 Phase 2 ("nagrania s\u0105 tre\u015bci\u0105 strony"). Kept as its
@@ -650,11 +684,12 @@
     var active = !!(p.status && p.status.active);
     var sampleCount = (p.status && p.status.sampleCount) || 0;
     return el('div', { class: 'perf-connect-strip' }, [
-      el('div', { class: 'live-status live-status-ok' }, [
+      el('div', { class: 'live-status ' + (active ? 'live-status-recording' : 'live-status-ok') }, [
         el('span', { class: 'live-dot' }),
         el('span', { text: active ? ('Recording\u2026 ' + sampleCount + ' sample' + (sampleCount === 1 ? '' : 's') + ' so far.') : 'Connected to the admin port \u2014 idle.' })
       ]),
       el('span', { class: 'muted perf-connect-addr', text: p.result ? p.result.origin : p.adminUrl }),
+      active ? null : el('button', { class: 'btn btn-sm btn-ghost', text: 'Disconnect', onclick: disconnectAdminBridge }),
       active
         ? el('button', { class: 'btn btn-danger', text: 'Finish recording', onclick: function () { finishRecordingSession(project); } })
         : el('button', { class: 'btn btn-primary', text: 'Start recording', onclick: startRecordingSession })
