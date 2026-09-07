@@ -625,7 +625,12 @@
   function adminAddressBody(project) {
     var p = state.detail.perf;
     var suggestion = suggestedAdminUrl(project);
-    var input = el('input', { type: 'text', class: 'live-url-input', placeholder: suggestion, value: p.adminUrl || '' });
+    // Filled in, not just hinted at. In practice the only part that ever
+    // differs is the port on the end, so an empty box with grey placeholder
+    // text made the user retype an address MxScout already knew — Karol,
+    // seeing it: "będziemy zmieniać tylko i wyłącznie końcówkę".
+    if (!p.adminUrl) p.adminUrl = suggestion;
+    var input = el('input', { type: 'text', class: 'live-url-input', placeholder: suggestion, value: p.adminUrl });
     input.addEventListener('input', function () { p.adminUrl = input.value; });
     var problem = el('p', { class: 'muted' });
     function doCheck() {
@@ -649,7 +654,7 @@
         el('div', { class: 'live-url-row' }, [input, el('button', { class: 'btn btn-primary', text: 'Continue', onclick: doCheck })])
       ]),
       problem,
-      el('p', { class: 'muted', text: 'Suggested from the app URL on file: ' + suggestion + '. Nothing can scan for it — this is a convention to try, not a lookup.' })
+      el('p', { class: 'muted', text: 'Filled in from the Mendix convention — the admin API listens on the app’s own port + 10. Nothing can scan for it, so change the port on the end if yours is elsewhere.' })
     ]);
   }
 
