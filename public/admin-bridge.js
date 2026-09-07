@@ -258,6 +258,19 @@
     }
 
     // ---------- boot ----------
+    // The script is generated for a specific admin-port address (typed into
+    // MxScout's Step 1), but nothing stops it from being pasted into some
+    // OTHER already-open tab instead of a fresh one navigated there — every
+    // "same-origin" call below would then quietly hit the WRONG server, and
+    // every admin call would fail exactly like a real dead admin port.
+    // location.origin is read live from wherever this script actually ended
+    // up running, so comparing it against what MxScout expected catches that
+    // mistake by name, before wasting a round trip on anything else.
+    if (CFG.adminOrigin && location.origin !== CFG.adminOrigin) {
+      showError('This code was generated for ' + CFG.adminOrigin + ', but you pasted it into a tab at ' + location.origin + '. Open a NEW tab, put ' + CFG.adminOrigin + ' directly in the address bar, and paste the code there instead.');
+      return;
+    }
+
     // Pinging MxScout only proves this tab can reach IT — it says nothing
     // about whether the admin API on THIS origin actually answers to the
     // typed password. Left unchecked, that gap surfaced only after a whole

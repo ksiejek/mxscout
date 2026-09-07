@@ -198,11 +198,12 @@
   // ---------- the bridge script (admin-bridge.js), generated per session ----------
   function perfScriptFor(token, password) {
     var p = state.detail.perf;
-    var key = token + ':' + password;
+    var adminOrigin = p.result ? p.result.origin : null;
+    var key = token + ':' + password + ':' + adminOrigin;
     if (p.scriptKey === key && p.script) return p.script;
     p.scriptKey = key;
     p.script = window.MxAdminBridge.buildScript({
-      origin: window.location.origin, token: token, password: password, intervalMs: DEFAULT_INTERVAL_MS,
+      origin: window.location.origin, adminOrigin: adminOrigin, token: token, password: password, intervalMs: DEFAULT_INTERVAL_MS,
       palette: window.MxLive.currentPalette()
     });
     return p.script;
