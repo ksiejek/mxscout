@@ -12,10 +12,12 @@
  * at all. Two earlier shapes worked around that — a PowerShell script that
  * did the whole recording and wrote a JSON file, then a bridge script pasted
  * into a browser tab open ON the admin port. Karol's call, 2026-09-07: both
- * paste steps go. MxScout's own server now connects to the admin port, over
- * loopback, and this page drives it through /api/session/perf/* — see
- * server/admin-port.js for what that break of an old invariant is bounded by,
- * and public/about.js for how it is declared.
+ * paste steps go. MxScout's own server connects to the admin port now, and
+ * this page drives it through /api/session/perf/* — see server/admin-port.js
+ * for what that break of an old invariant is bounded by, and public/about.js
+ * for how it is declared. Starting and finishing a recording also happens on
+ * the app tab's own badge (public/bridge.js), because that is where the
+ * tester is standing while they record.
  *
  * PowerShell survives for exactly one job it alone can do: reading
  * M2EE_ADMIN_PASS out of the runtime process's own memory (proven in Phase 0).
@@ -35,7 +37,7 @@
   'use strict';
 
   // Bound once, in init(). Named exactly as they were in app.js.
-  var el, state, store, render, setMessage, api, jumpToObject, objectsOfSection, newId, formatDate, withMod, moduleColor;
+  var el, state, store, render, setMessage, api, jumpToObject, objectsOfSection, newId, formatDate, withMod, moduleColor, downloadText;
 
   function init(deps) {
     el = deps.el;
@@ -50,6 +52,17 @@
     formatDate = deps.formatDate;
     withMod = deps.withMod;
     moduleColor = deps.moduleColor;
+    downloadText = deps.downloadText;
+  }
+
+  // Hands the whole recording back as the JSON it already is. This exists for
+  // one reason above the obvious: when the analyzer shows something that looks
+  // wrong against a REAL Mendix runtime, the recording is the only evidence,
+  // and no parser in this project gets written or fixed against a guess —
+  // see the note about `stats` in this file's header, and ROADMAP step 46.
+  function exportRecording(r) {
+    var when = String(r.started || '').replace(/[:.]/g, '-').slice(0, 19) || 'recording';
+    downloadText(JSON.stringify(r, null, 2), 'mxscout-perf-' + when + '.json', 'application/json');
   }
 
   var FORMAT_VERSION = 1;
@@ -87,8 +100,7 @@
     '# printed password into MxScout, which keeps it in memory for this session',
     '# and uses it only to read performance data from this same machine.',
     '#',
-    '# Windows only. Run it on this machine — the one hosting the Mendix app —',
-    '# as the same',
+    '# Windows only. Run it on the machine hosting the Mendix app, as the same',
     '# user running that app (or an administrator) — reading another process\'s',
     '# environment needs PROCESS_VM_READ on it, which only that account (or an',
     '# admin) has by default.',
@@ -888,6 +900,17 @@
     render();
   }
 
+  // Exporting is deliberately on the card rather than buried in the analyzer:
+  // the moment it is wanted is the moment something looks wrong, and that is
+  // the moment the raw JSON has to be one click away.
+  function renderExportButton(r) {
+    return el('button', {
+      class: 'btn btn-sm', text: 'Export',
+      title: 'Save this recording as JSON',
+      onclick: function (e) { e.stopPropagation(); exportRecording(r); }
+    });
+  }
+
   function renderDeleteButton(r) {
     return el('button', {
       class: 'btn btn-sm btn-danger-outline', text: 'Delete',
@@ -915,7 +938,7 @@
         el('div', { class: 'rec-fig' }, [el('span', { class: 'v', text: '0' }), el('span', { class: 'k', text: 'samples' })])
       ]),
       el('p', { class: 'rec-warn', text: 'The admin port never answered — check the password and record again.' }),
-      el('div', { class: 'rec-actions' }, [renderDeleteButton(r)])
+      el('div', { class: 'rec-actions' }, [renderExportButton(r), renderDeleteButton(r)])
     ]);
   }
 
@@ -944,6 +967,7 @@
           class: 'btn btn-sm btn-primary', text: 'Open',
           onclick: function (e) { e.stopPropagation(); openRecording(r.id); }
         }),
+        renderExportButton(r),
         renderDeleteButton(r)
       ])
     ]);

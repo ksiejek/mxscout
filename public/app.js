@@ -2285,7 +2285,8 @@
     el: el, state: state, store: store, render: render, setMessage: setMessage,
     api: api,
     jumpToObject: jumpToObject, objectsOfSection: objectsOfSection,
-    newId: newId, formatDate: formatDate, withMod: withMod, moduleColor: moduleColor
+    newId: newId, formatDate: formatDate, withMod: withMod, moduleColor: moduleColor,
+    downloadText: downloadText
   });
   window.MxMprImport.init({
     el: el, state: state, store: store, render: render, setMessage: setMessage,
