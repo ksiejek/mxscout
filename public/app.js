@@ -327,7 +327,7 @@
           adminUrl: '', result: null, password: '',
           script: null, scriptKey: null, status: {},
           recordings: null, recordingsLoading: false, selectedId: null,
-          _finishing: false
+          tab: 'overview', _finishing: false
         },
         // 'all' shows everything regardless of role; otherwise a user-role name.
         // Default to the first role so a tester lands on a realistic, filtered
@@ -2285,7 +2285,7 @@
     el: el, state: state, store: store, render: render, setMessage: setMessage,
     api: api,
     jumpToObject: jumpToObject, objectsOfSection: objectsOfSection,
-    newId: newId, formatDate: formatDate
+    newId: newId, formatDate: formatDate, withMod: withMod, moduleColor: moduleColor
   });
   window.MxMprImport.init({
     el: el, state: state, store: store, render: render, setMessage: setMessage,

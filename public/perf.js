@@ -41,7 +41,7 @@
   'use strict';
 
   // Bound once, in init(). Named exactly as they were in app.js.
-  var el, state, store, render, setMessage, api, jumpToObject, objectsOfSection, newId, formatDate;
+  var el, state, store, render, setMessage, api, jumpToObject, objectsOfSection, newId, formatDate, withMod, moduleColor;
 
   function init(deps) {
     el = deps.el;
@@ -54,6 +54,8 @@
     objectsOfSection = deps.objectsOfSection;
     newId = deps.newId;
     formatDate = deps.formatDate;
+    withMod = deps.withMod;
+    moduleColor = deps.moduleColor;
   }
 
   var FORMAT_VERSION = 1;
@@ -288,6 +290,7 @@
           if (!state.detail || !state.detail.perf) return;
           state.detail.perf.recordings = rows;
           state.detail.perf.selectedId = recording.id;
+          state.detail.perf.tab = 'overview';
           selectedRequestId = null;
           setMessage('Recording saved — ' + samples.length + ' sample' + (samples.length === 1 ? '' : 's') + '.', 'ok');
           render();
@@ -358,6 +361,77 @@
     if (!samples.length) return 0;
     var last = samples[samples.length - 1];
     return typeof last.t === 'number' ? last.t : 0;
+  }
+
+  // The module a qualified name belongs to ("Sales" for "Sales.CancelOrder"),
+  // or null for a name with no dot (a raw request id standing in for one).
+  function moduleOf(qualifiedName) {
+    if (typeof qualifiedName !== 'string') return null;
+    var i = qualifiedName.indexOf('.');
+    return i > 0 ? qualifiedName.slice(0, i) : null;
+  }
+
+  // How many requests were in flight at each sample — the admin port already
+  // hands over exactly this per sample (`requests`), so this is a count, not
+  // new parsing. Doubles as the dashboard sparkline's data and the Overview
+  // tab's peak-parallelism tile.
+  function concurrencySeries(recording) {
+    return (recording.samples || []).map(function (s) { return Object.keys(s.requests || {}).length; });
+  }
+
+  function peakParallel(recording) {
+    var best = 0, atMs = 0;
+    (recording.samples || []).forEach(function (s) {
+      var n = Object.keys(s.requests || {}).length;
+      if (n > best) { best = n; atMs = typeof s.t === 'number' ? s.t : atMs; }
+    });
+    return { count: best, atMs: atMs };
+  }
+
+  // Fraction of samples where the runtime had anything at all in flight.
+  function busyFraction(recording) {
+    var samples = recording.samples || [];
+    if (!samples.length) return 0;
+    var busy = samples.filter(function (s) { return Object.keys(s.requests || {}).length > 0; }).length;
+    return busy / samples.length;
+  }
+
+  // Real samples vs. how many the interval implies over the recording's
+  // length — after the Phase 1c "always 0 samples" bug, this is shown on
+  // every recording rather than assumed.
+  function sampleCoverage(recording) {
+    var samples = (recording.samples || []).length;
+    var interval = recording.intervalMs || DEFAULT_INTERVAL_MS;
+    var total = totalDurationMs(recording);
+    var expected = interval > 0 ? Math.max(1, Math.round(total / interval) + 1) : samples;
+    return { samples: samples, expected: expected, ratio: expected > 0 ? Math.min(1, samples / expected) : 0 };
+  }
+
+  function requestTypeCounts(rows) {
+    var counts = { client: 0, async: 0, custom: 0, other: 0 };
+    rows.forEach(function (row) { counts[typeClass(row.type)]++; });
+    return counts;
+  }
+
+  // Where the time went, by entry point — the same per-request rows the
+  // Timeline already builds, just grouped by `entry` and summed instead of
+  // laid out on a ruler. Sorted heaviest first; `share` is that entry's
+  // fraction of the summed duration across every request in the recording.
+  function entryTotals(recording) {
+    var rows = buildRequestRows(recording);
+    var byEntry = {};
+    var order = [];
+    var grandTotal = 0;
+    rows.forEach(function (row) {
+      var key = row.entry || row.id;
+      if (!(key in byEntry)) { byEntry[key] = 0; order.push(key); }
+      byEntry[key] += row.maxDuration;
+      grandTotal += row.maxDuration;
+    });
+    var list = order.map(function (key) { return { name: key, ms: byEntry[key] }; });
+    list.sort(function (a, b) { return b.ms - a.ms; });
+    list.forEach(function (item) { item.share = grandTotal > 0 ? Math.round((item.ms / grandTotal) * 100) : 0; });
+    return { list: list, total: grandTotal };
   }
 
   function findByQualifiedName(list, qn) {
@@ -565,32 +639,34 @@
     ]);
   }
 
+  // The connected/idle-or-recording state, collapsed to one line \u2014 this is
+  // what the dashboard shows instead of a full card once the bridge is up,
+  // per ROADMAP step 46 Phase 2 ("nagrania s\u0105 tre\u015bci\u0105 strony"). Kept as its
+  // own function (rather than inlined) because fetchStatus() re-renders just
+  // this node in place on most polls, via #perf-status-area below, instead of
+  // a full render() that would otherwise fire once a second while recording.
   function renderStatusArea(project) {
     var p = state.detail.perf;
     var active = !!(p.status && p.status.active);
     var sampleCount = (p.status && p.status.sampleCount) || 0;
-    var kids = [];
-    kids.push(el('div', { class: 'live-status live-status-ok' }, [
-      el('span', { class: 'live-dot' }),
-      el('span', { text: active ? ('Recording\u2026 ' + sampleCount + ' sample' + (sampleCount === 1 ? '' : 's') + ' so far.') : 'Connected to the admin port \u2014 idle.' })
-    ]));
-    kids.push(el('div', { class: 'scan-copy-row' }, [
+    return el('div', { class: 'perf-connect-strip' }, [
+      el('div', { class: 'live-status live-status-ok' }, [
+        el('span', { class: 'live-dot' }),
+        el('span', { text: active ? ('Recording\u2026 ' + sampleCount + ' sample' + (sampleCount === 1 ? '' : 's') + ' so far.') : 'Connected to the admin port \u2014 idle.' })
+      ]),
+      el('span', { class: 'muted perf-connect-addr', text: p.result ? p.result.origin : p.adminUrl }),
       active
         ? el('button', { class: 'btn btn-danger', text: 'Finish recording', onclick: function () { finishRecordingSession(project); } })
         : el('button', { class: 'btn btn-primary', text: 'Start recording', onclick: startRecordingSession })
-    ]));
-    return el('div', {}, kids);
+    ]);
   }
 
-  function renderBridgeStep(project, token) {
+  function renderConnectedCard(project) {
+    return el('div', { class: 'card', id: 'perf-status-area' }, [renderStatusArea(project)]);
+  }
+
+  function renderBridgeWaitingStep(project, token) {
     var p = state.detail.perf;
-    if (!_statusPoll) startStatusPolling();
-    if (p.status && p.status.connected) {
-      return el('div', { class: 'card' }, [
-        el('h3', { class: 'live-h', text: 'Connected to the admin port' }),
-        el('div', { id: 'perf-status-area', class: 'exec-status-area' }, [renderStatusArea(project)])
-      ]);
-    }
     var script = perfScriptFor(token, p.password);
     var copyStatus = el('span', { class: 'muted' });
     var copyBtn = el('button', {
@@ -620,7 +696,7 @@
     ]);
   }
 
-  function renderConnectCard(project) {
+  function renderConnectArea(project) {
     var p = state.detail.perf;
     if (!p.result || p.result.verdict !== 'allow') return renderAddressStep(project);
     if (!p.password) return renderPasswordStep();
@@ -628,43 +704,201 @@
       window.MxLive.ensureSessionToken(function () { render(); });
       return el('div', { class: 'scan-section' }, [el('span', { class: 'spinner' })]);
     }
-    return renderBridgeStep(project, state.detail.live.token);
+    if (!_statusPoll) startStatusPolling();
+    if (p.status && p.status.connected) return renderConnectedCard(project);
+    return renderBridgeWaitingStep(project, state.detail.live.token);
   }
 
-  // ---------- rendering: the recordings list ----------
-  function renderRecordingsList(project) {
+  // ---------- rendering: the recordings dashboard ----------
+  function sparklineSvg(values, colour) {
+    var svgNs = 'http://www.w3.org/2000/svg';
+    var w = 260, h = 34;
+    var svg = document.createElementNS(svgNs, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+    svg.setAttribute('preserveAspectRatio', 'none');
+    if (values.length < 2) return svg;
+    var max = Math.max.apply(null, values.concat([1]));
+    var step = w / (values.length - 1);
+    var pts = values.map(function (v, i) { return [i * step, h - 3 - (v / max) * (h - 8)]; });
+    var d = pts.map(function (pt, i) { return (i ? 'L' : 'M') + pt[0].toFixed(1) + ' ' + pt[1].toFixed(1); }).join(' ');
+    var area = document.createElementNS(svgNs, 'path');
+    area.setAttribute('d', d + ' L' + w + ' ' + h + ' L0 ' + h + ' Z');
+    area.setAttribute('fill', colour);
+    area.setAttribute('fill-opacity', '.18');
+    var line = document.createElementNS(svgNs, 'path');
+    line.setAttribute('d', d);
+    line.setAttribute('fill', 'none');
+    line.setAttribute('stroke', colour);
+    line.setAttribute('stroke-width', '1.6');
+    line.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.appendChild(area);
+    svg.appendChild(line);
+    return svg;
+  }
+
+  function openRecording(id) {
     var p = state.detail.perf;
-    if (p.recordings === null) return null; // still loading — nothing to show yet
-    if (!p.recordings.length) return null;  // the connect card above says what to do
-    var rows = p.recordings.map(function (r) {
-      var isSelected = r.id === p.selectedId;
-      var openBtn = el('button', {
-        class: 'btn btn-sm', text: isSelected ? 'Close' : 'Open',
-        onclick: function () { p.selectedId = isSelected ? null : r.id; selectedRequestId = null; render(); }
-      });
-      var delBtn = el('button', {
-        class: 'btn btn-sm btn-danger-outline', text: 'Delete',
-        onclick: function () {
-          if (!confirm('Delete this recording? This cannot be undone.')) return;
-          deleteRecording(r.id).then(function () {
-            if (!state.detail || !state.detail.perf) return;
-            state.detail.perf.recordings = (state.detail.perf.recordings || []).filter(function (x) { return x.id !== r.id; });
-            if (state.detail.perf.selectedId === r.id) state.detail.perf.selectedId = null;
-            render();
-          }, function (err) { setMessage((err && err.message) || 'Could not delete that recording.', 'error'); render(); });
-        }
-      });
-      return el('div', { class: 'perf-recording-row' + (isSelected ? ' is-selected' : '') }, [
-        el('div', { class: 'perf-recording-info' }, [
-          el('span', { class: 'kv-key', text: formatDate(r.started) || 'unknown time' }),
-          el('span', { class: 'kv-val muted', text: recordingSummary(r) })
-        ]),
-        el('div', { class: 'perf-recording-actions' }, [openBtn, delBtn])
-      ]);
+    p.selectedId = id;
+    p.tab = 'overview';
+    selectedRequestId = null;
+    render();
+  }
+
+  function renderDeleteButton(r) {
+    return el('button', {
+      class: 'btn btn-sm btn-danger-outline', text: 'Delete',
+      onclick: function (e) {
+        if (e) e.stopPropagation();
+        if (!confirm('Delete this recording? This cannot be undone.')) return;
+        deleteRecording(r.id).then(function () {
+          if (!state.detail || !state.detail.perf) return;
+          state.detail.perf.recordings = (state.detail.perf.recordings || []).filter(function (x) { return x.id !== r.id; });
+          if (state.detail.perf.selectedId === r.id) state.detail.perf.selectedId = null;
+          render();
+        }, function (err) { setMessage((err && err.message) || 'Could not delete that recording.', 'error'); render(); });
+      }
     });
-    return el('div', { class: 'card' }, [
-      el('h3', { class: 'live-h', text: 'Recordings (' + p.recordings.length + ')' }),
-      el('div', { class: 'perf-recordings' }, rows)
+  }
+
+  // A recording that never got a single sample (the admin port didn't
+  // answer — ROADMAP step 46 Phase 1c) gets its own state, not an empty
+  // list row that reads as "nothing happened".
+  function renderEmptyRecordingCard(r) {
+    return el('div', { class: 'card rec-card is-empty' }, [
+      el('div', { class: 'rec-card-head' }, [ el('span', { class: 'rec-when', text: formatDate(r.started) || 'unknown time' }) ]),
+      el('div', { class: 'rec-figs' }, [
+        el('div', { class: 'rec-fig' }, [el('span', { class: 'v', text: formatMs(totalDurationMs(r)) }), el('span', { class: 'k', text: 'length' })]),
+        el('div', { class: 'rec-fig' }, [el('span', { class: 'v', text: '0' }), el('span', { class: 'k', text: 'samples' })])
+      ]),
+      el('p', { class: 'rec-warn', text: 'The admin port never answered — check the password and record again.' }),
+      el('div', { class: 'rec-actions' }, [renderDeleteButton(r)])
+    ]);
+  }
+
+  function renderRecordingCard(r) {
+    if (!(r.samples || []).length) return renderEmptyRecordingCard(r);
+    var rows = buildRequestRows(r);
+    var totals = entryTotals(r);
+    var top = totals.list[0] || null;
+    var spark = concurrencySeries(r);
+    var colour = moduleColor((top && (moduleOf(top.name) || top.name)) || 'System');
+    return el('div', { class: 'card rec-card', onclick: function () { openRecording(r.id); } }, [
+      el('div', { class: 'rec-card-head' }, [ el('span', { class: 'rec-when', text: formatDate(r.started) || 'unknown time' }) ]),
+      el('div', { class: 'rec-figs' }, [
+        el('div', { class: 'rec-fig' }, [el('span', { class: 'v', text: formatMs(totalDurationMs(r)) }), el('span', { class: 'k', text: 'length' })]),
+        el('div', { class: 'rec-fig' }, [el('span', { class: 'v', text: String(rows.length) }), el('span', { class: 'k', text: 'requests' })]),
+        el('div', { class: 'rec-fig' }, [el('span', { class: 'v', text: String(r.samples.length) }), el('span', { class: 'k', text: 'samples' })])
+      ]),
+      el('div', { class: 'rec-spark' }, [sparklineSvg(spark, colour)]),
+      top ? el('div', { class: 'rec-top' }, [
+        el('span', { text: 'Heaviest:' }),
+        el('b', { text: top.name }),
+        el('span', { text: top.share + '%' })
+      ]) : el('p', { class: 'rec-top muted', text: 'No in-flight requests were caught.' }),
+      el('div', { class: 'rec-actions' }, [
+        el('button', {
+          class: 'btn btn-sm btn-primary', text: 'Open',
+          onclick: function (e) { e.stopPropagation(); openRecording(r.id); }
+        }),
+        renderDeleteButton(r)
+      ])
+    ]);
+  }
+
+  function renderDashboard(project) {
+    var p = state.detail.perf;
+    var kids = [renderConnectArea(project)];
+    if (p.recordings && p.recordings.length) {
+      kids.push(el('div', { class: 'rec-grid' }, p.recordings.map(renderRecordingCard)));
+    }
+    return el('div', {}, kids.filter(Boolean));
+  }
+
+  // ---------- rendering: the single-recording analyzer ----------
+  var ANALYZER_TABS = [['overview', 'Overview'], ['timeline', 'Timeline']];
+
+  function renderOverviewTab(recording) {
+    var samples = (recording.samples || []).length;
+    if (!samples) {
+      return el('div', { class: 'card' }, [
+        el('h3', { class: 'live-h', text: 'What this recording caught' }),
+        el('p', { class: 'muted', text: 'The admin port never answered while this recording ran — there is nothing to analyze.' })
+      ]);
+    }
+    var rows = buildRequestRows(recording);
+    var counts = requestTypeCounts(rows);
+    var peak = peakParallel(recording);
+    var coverage = sampleCoverage(recording);
+    var busy = busyFraction(recording);
+    var totals = entryTotals(recording);
+
+    var tiles = [
+      { v: formatMs(totalDurationMs(recording)), k: 'length', n: formatDate(recording.started) || '' },
+      { v: String(rows.length), k: 'requests', n: [
+          counts.client ? (counts.client + ' client') : null,
+          counts.async ? (counts.async + ' async') : null,
+          counts.custom ? (counts.custom + ' custom') : null,
+          counts.other ? (counts.other + ' other') : null
+        ].filter(Boolean).join(' · ') },
+      { v: String(peak.count), k: 'peak parallel', n: peak.count ? ('at ' + formatMs(peak.atMs)) : '' },
+      { v: Math.round(coverage.ratio * 100) + '%', k: 'sample coverage', n: samples + ' of ' + coverage.expected + ' expected' },
+      { v: Math.round(busy * 100) + '%', k: 'runtime busy', n: Math.round(busy * samples) + ' of ' + samples + ' samples had work in flight' }
+    ];
+
+    var shareRows = totals.list.slice(0, 5).map(function (item) {
+      return withMod(el('div', { class: 'share' }, [
+        el('div', {}, [
+          el('div', { class: 'share-name', text: item.name }),
+          el('div', { class: 'share-track' }, [el('div', { class: 'share-fill', style: 'width:' + item.share + '%' })])
+        ]),
+        el('span', { class: 'share-val', text: formatMs(item.ms) + ' · ' + item.share + '%' })
+      ]), moduleOf(item.name) || item.name);
+    });
+
+    return el('div', {}, [
+      el('div', { class: 'card' }, [
+        el('h3', { class: 'live-h', text: 'What this recording caught' }),
+        el('p', { class: 'muted', text: 'Everything below is derived from the ' + samples + ' samples — nothing was measured twice.' }),
+        el('div', { class: 'stat-row' }, tiles.map(function (t) {
+          return el('div', { class: 'stat' }, [
+            el('div', { class: 'v', text: t.v }),
+            el('div', { class: 'k', text: t.k }),
+            t.n ? el('div', { class: 'n', text: t.n }) : null
+          ].filter(Boolean));
+        }))
+      ]),
+      shareRows.length ? el('div', { class: 'card' }, [
+        el('h3', { class: 'live-h', text: 'Where the time went' }),
+        el('p', { class: 'muted', text: 'Share of the summed request duration, counting an entry point whenever it sat anywhere on the stack.' }),
+        el('div', { class: 'share-list' }, shareRows),
+        renderVerdict(recording)
+      ]) : null
+    ].filter(Boolean));
+  }
+
+  function renderAnalyzer(model, project, recording) {
+    var p = state.detail.perf;
+    var body = p.tab === 'timeline'
+      ? el('div', { class: 'card perf-timeline-card' }, [renderTimeline(model, recording), renderVerdict(recording)])
+      : renderOverviewTab(recording);
+    return el('div', {}, [
+      el('div', { class: 'perf-back-row' }, [
+        el('button', {
+          class: 'btn btn-sm btn-ghost', text: '← Recordings',
+          onclick: function () { p.selectedId = null; render(); }
+        })
+      ]),
+      el('div', { class: 'perf-analyzer-head' }, [
+        el('h3', { class: 'live-h', text: formatDate(recording.started) || 'Recording' }),
+        el('p', { class: 'muted', text: recordingSummary(recording) })
+      ]),
+      el('div', { class: 'popup-tabs' }, ANALYZER_TABS.map(function (t) {
+        return el('button', {
+          class: 'popup-tab' + (p.tab === t[0] ? ' is-active' : ''), text: t[1],
+          onclick: function () { p.tab = t[0]; render(); }
+        });
+      })),
+      body
     ]);
   }
 
@@ -683,16 +917,8 @@
     }
 
     var selected = (p.recordings || []).filter(function (r) { return r.id === p.selectedId; })[0] || null;
-    var kids = [renderConnectCard(project), renderRecordingsList(project)];
-    if (selected) {
-      kids.push(el('div', { class: 'card' }, [
-        el('h3', { class: 'live-h', text: 'Recording \u2014 ' + (formatDate(selected.started) || selected.id) }),
-        el('p', { class: 'muted', text: recordingSummary(selected) }),
-        renderVerdict(selected)
-      ]));
-      kids.push(el('div', { class: 'card perf-timeline-card' }, [renderTimeline(model, selected)]));
-    }
-    return el('div', {}, kids.filter(Boolean));
+    if (selected) return renderAnalyzer(model, project, selected);
+    return renderDashboard(project);
   }
 
   window.MxPerf = {
