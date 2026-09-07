@@ -51,6 +51,13 @@ it.
 - If the port stops answering mid-recording, both the app's badge and MxScout
   say so, instead of saving an empty recording.
 - Stopping from the app tab saves the recording in MxScout and opens it.
+- The Timeline was drawing two long grey bars called `feedback` and `result`
+  on a real recording. The Mendix admin API answers in an envelope —
+  `{ feedback, result }` — and MxScout was storing that envelope as if it were
+  the list of live requests. It is unwrapped now, and a recording already
+  saved the wrong way is unwrapped when it is read, so nothing captured is
+  lost.
+- A recording can be exported as JSON from its card.
 
 ## 1.1.0
 

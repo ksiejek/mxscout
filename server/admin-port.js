@@ -80,6 +80,27 @@ function authHeader(password) {
   return Buffer.from(String(password), 'utf8').toString('base64');
 }
 
+// The m2ee admin API answers in an envelope — { feedback: <the answer>,
+// result: <0 on success> } — not with the answer itself. MxScout stored the
+// envelope and treated it as the answer for the whole of Phases 1 and 2a,
+// which is why a real recording drew two long grey bars: `feedback` and
+// `result` were read as two request ids that were "in flight" for the entire
+// recording. Caught 2026-09-07 on Karol's first real run, from a sample he
+// pasted back; the fixture had been guessed without it.
+//
+// Unwrapped here, at the edge, so nothing downstream has to know the envelope
+// exists. A non-zero result means the runtime refused the action, which is a
+// failure like any other. A body without the envelope is passed through
+// rather than dropped: this is a shape read off ONE runtime version, and
+// throwing away an answer that does not match it would be the same mistake
+// again, in the other direction.
+function unwrap(body) {
+  if (!body || typeof body !== 'object') return null;
+  if (!('feedback' in body) && !('result' in body)) return body;
+  if ('result' in body && body.result !== 0) return null;
+  return body.feedback == null ? null : body.feedback;
+}
+
 // One admin call. Resolves to the parsed body, or to null for every kind of
 // failure — a refused connection, a timeout, a 401, a body that is not JSON.
 // The caller cannot tell those apart and does not need to: during a recording
@@ -110,7 +131,7 @@ function invoke(host, port, password, action) {
       });
       res.on('end', () => {
         if (res.statusCode !== 200) { done(null); return; }
-        try { done(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+        try { done(unwrap(JSON.parse(Buffer.concat(chunks).toString('utf8')))); }
         catch (e) { done(null); }
       });
     });
@@ -251,7 +272,7 @@ function isSampling() { return !!timer; }
 function getTrouble() { return trouble; }
 
 module.exports = {
-  ALLOWED_ACTIONS, isAllowedHost,
+  ALLOWED_ACTIONS, isAllowedHost, unwrap,
   invoke, verify,
   startSampling, stopSampling, isSampling, getTrouble
 };

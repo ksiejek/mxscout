@@ -327,12 +327,30 @@
     return null;
   }
 
+  // The requests in one sample. Recordings made before 2026-09-07 stored the
+  // m2ee admin API's ENVELOPE — { feedback: <the answer>, result: 0 } — rather
+  // than the answer, because nothing had checked the shape against a real
+  // runtime. The server unwraps it now (see server/admin-port.js), but a
+  // recording already saved cannot be re-recorded, so it is unwrapped here on
+  // the way out too: those recordings are a tester's real afternoon, and
+  // silently drawing them as two nonsense bars called "feedback" and "result"
+  // is worse than either fixing them or refusing them.
+  function requestsOf(sample) {
+    var reqs = sample && sample.requests;
+    if (!reqs || typeof reqs !== 'object') return {};
+    if ('feedback' in reqs || 'result' in reqs) {
+      if ('result' in reqs && reqs.result !== 0) return {};
+      return (reqs.feedback && typeof reqs.feedback === 'object') ? reqs.feedback : {};
+    }
+    return reqs;
+  }
+
   function buildRequestRows(recording) {
     var byId = {};
     var order = [];
     (recording.samples || []).forEach(function (sample) {
       var t = typeof sample.t === 'number' ? sample.t : 0;
-      var reqs = sample.requests || {};
+      var reqs = requestsOf(sample);
       Object.keys(reqs).forEach(function (id) {
         var req = reqs[id] || {};
         var row = byId[id];
@@ -373,13 +391,13 @@
   // new parsing. Doubles as the dashboard sparkline's data and the Overview
   // tab's peak-parallelism tile.
   function concurrencySeries(recording) {
-    return (recording.samples || []).map(function (s) { return Object.keys(s.requests || {}).length; });
+    return (recording.samples || []).map(function (s) { return Object.keys(requestsOf(s)).length; });
   }
 
   function peakParallel(recording) {
     var best = 0, atMs = 0;
     (recording.samples || []).forEach(function (s) {
-      var n = Object.keys(s.requests || {}).length;
+      var n = Object.keys(requestsOf(s)).length;
       if (n > best) { best = n; atMs = typeof s.t === 'number' ? s.t : atMs; }
     });
     return { count: best, atMs: atMs };
@@ -389,7 +407,7 @@
   function busyFraction(recording) {
     var samples = recording.samples || [];
     if (!samples.length) return 0;
-    var busy = samples.filter(function (s) { return Object.keys(s.requests || {}).length > 0; }).length;
+    var busy = samples.filter(function (s) { return Object.keys(requestsOf(s)).length > 0; }).length;
     return busy / samples.length;
   }
 
