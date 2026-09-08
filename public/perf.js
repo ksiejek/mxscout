@@ -319,6 +319,7 @@
     if (typeof frame.xpath === 'string' && frame.xpath) return frame.xpath;
     if (typeof frame.entityName === 'string' && frame.entityName) return frame.entityName;
     if (typeof frame.name === 'string' && frame.name) return frame.name;
+    if (typeof frame.type === 'string' && frame.type) return frame.type;
     return null;
   }
 
@@ -328,9 +329,25 @@
     return (typeof v === 'string' && v) ? v : null;
   }
 
+  // The request's entry point, for grouping ("Where the time went", module
+  // colour, the dashboard card's "Heaviest") — the OUTERMOST frame's own
+  // name, not the innermost. Confirmed 2026-09-08 against a real nested
+  // sample (ROADMAP step 46's open question): action_stack[0] is the frame
+  // CURRENTLY EXECUTING, and the array runs inward-to-outward from there, so
+  // scanning from the front (the old code did) picks up whatever granular
+  // retrieve or commit happened to be running at the last sample — which is
+  // why raw XPath queries and bare request ids, not microflow names, were
+  // showing up as the heaviest entries. The entry point sits at the other
+  // end. A qualified flow name is preferred over a frame's own free-text
+  // label here specifically because this value feeds moduleOf() grouping and
+  // colour, which need a "Module.Flow"-shaped string, not a sentence.
   function entryLabel(stack) {
-    for (var i = 0; i < stack.length; i++) {
-      var label = frameLabel(stack[i]);
+    for (var i = stack.length - 1; i >= 0; i--) {
+      var qn = frameQualifiedName(stack[i]);
+      if (qn) return qn;
+    }
+    for (var j = stack.length - 1; j >= 0; j--) {
+      var label = frameLabel(stack[j]);
       if (label) return label;
     }
     return null;
