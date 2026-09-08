@@ -305,17 +305,26 @@
   // admin port's own concurrency key, so this needs no work beyond grouping
   // by it. Frame shapes are read defensively throughout: the one real sample
   // seen so far (ROADMAP step 46, Phase 0) is not treated as a frozen schema.
+  // Field names confirmed against a real Mendix runtime (2026-09-08, ROADMAP
+  // step 46's open question): a Microflow/Nanoflow frame's qualified name is
+  // `name`, and `current_activity` is an object with a human `caption` — not
+  // the string this guessed at before any real sample was seen.
   function frameLabel(frame) {
     if (!frame || typeof frame !== 'object') return null;
-    if (typeof frame.current_activity === 'string' && frame.current_activity) return frame.current_activity;
+    var activity = frame.current_activity;
+    if (activity && typeof activity === 'object' && typeof activity.caption === 'string' && activity.caption) return activity.caption;
+    if (typeof activity === 'string' && activity) return activity;
     var qn = frameQualifiedName(frame);
     if (qn) return qn;
     if (typeof frame.xpath === 'string' && frame.xpath) return frame.xpath;
+    if (typeof frame.entityName === 'string' && frame.entityName) return frame.entityName;
+    if (typeof frame.name === 'string' && frame.name) return frame.name;
     return null;
   }
 
   function frameQualifiedName(frame) {
-    var v = frame['Module.Flow'];
+    if (frame.type !== 'Microflow' && frame.type !== 'Nanoflow') return null;
+    var v = frame.name;
     return (typeof v === 'string' && v) ? v : null;
   }
 
