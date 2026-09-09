@@ -389,8 +389,35 @@
   // time counts the samples where a span was the DEEPEST frame present —
   // exactly what a sampling profiler can honestly claim, no different a
   // definition than any other one.
+  // How far apart the samples ACTUALLY landed, as the median gap between
+  // adjacent ones — not the interval the recorder asked for.
+  //
+  // Measured on two real 2026-09-09 recordings off a live runtime: the loop
+  // asks for 50 ms and lands 62–63 ms apart, because each round is two HTTP
+  // round trips to the admin port (get_current_runtime_requests and
+  // runtime_statistics) and those cost what they cost. Every duration this
+  // file computes is samples × interval, so using the requested 50 understated
+  // every self and total by about 20 %, and sampleCoverage() reported "80 %"
+  // as if a fifth of the samples had been lost when in fact none had — the
+  // sampler was simply going as fast as it can.
+  //
+  // The median, not the mean: one stalled round (a GC pause, a slow query on
+  // the admin thread) should not stretch every duration in the recording.
+  function observedIntervalMs(recording) {
+    var samples = recording.samples || [];
+    if (samples.length < 3) return recording.intervalMs || DEFAULT_INTERVAL_MS;
+    var gaps = [];
+    for (var i = 1; i < samples.length; i++) {
+      var g = samples[i].t - samples[i - 1].t;
+      if (g > 0) gaps.push(g);
+    }
+    if (!gaps.length) return recording.intervalMs || DEFAULT_INTERVAL_MS;
+    gaps.sort(function (a, b) { return a - b; });
+    return gaps[Math.floor(gaps.length / 2)];
+  }
+
   function buildSpans(recording, requestId) {
-    var interval = recording.intervalMs || DEFAULT_INTERVAL_MS;
+    var interval = observedIntervalMs(recording);
     var open = [];
     var closed = [];
 
@@ -671,12 +698,16 @@
   // Real samples vs. how many the interval implies over the recording's
   // length — after the Phase 1c "always 0 samples" bug, this is shown on
   // every recording rather than assumed.
+  // Against the cadence the sampler ACHIEVED, not the one it asked for — see
+  // observedIntervalMs. A recording where every round landed is 100 % here and
+  // says so; a real gap (the admin port stopped answering for a stretch) still
+  // shows up, which is the only thing this number was ever for.
   function sampleCoverage(recording) {
     var samples = (recording.samples || []).length;
-    var interval = recording.intervalMs || DEFAULT_INTERVAL_MS;
+    var interval = observedIntervalMs(recording);
     var total = totalDurationMs(recording);
     var expected = interval > 0 ? Math.max(1, Math.round(total / interval) + 1) : samples;
-    return { samples: samples, expected: expected, ratio: expected > 0 ? Math.min(1, samples / expected) : 0 };
+    return { samples: samples, expected: expected, ratio: expected > 0 ? Math.min(1, samples / expected) : 0, interval: interval };
   }
 
   function requestTypeCounts(rows) {
@@ -987,11 +1018,19 @@
     ]);
   }
 
+  // The interval quoted here is the one the samples actually landed at, not
+  // the one the recorder asked for \u2014 quoting the request would understate the
+  // error bar on every duration on the page by the same 20 % it understated
+  // the durations themselves.
   function renderVerdict(recording) {
-    var interval = recording.intervalMs || DEFAULT_INTERVAL_MS;
+    var asked = recording.intervalMs || DEFAULT_INTERVAL_MS;
+    var got = observedIntervalMs(recording);
+    var note = got > asked + 5
+      ? ' It asked for ' + asked + ' ms and the admin port could not answer faster than this, which is the real limit on how fine this can get.'
+      : '';
     return el('p', { class: 'perf-verdict', text:
-      'Sampling profiler \u2014 it looked at what was running roughly every ' + interval + ' ms, ' +
-      'not a tracer. Durations are approximate, and an action shorter than the sampling interval may not get a row here at all.' });
+      'Sampling profiler \u2014 it looked at what was running every ' + got + ' ms on average, ' +
+      'not a tracer. Durations are approximate to within that, and an action shorter than it may not get a row here at all.' + note });
   }
 
   function recordingSummary(recording) {
@@ -1853,6 +1892,7 @@
     memorySeries: memorySeries,
     connectionbusSeries: connectionbusSeries,
     sessionsNow: sessionsNow,
+    observedIntervalMs: observedIntervalMs,
     renderPanel: renderPanel
   };
 })();
