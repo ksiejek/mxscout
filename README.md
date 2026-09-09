@@ -380,9 +380,11 @@ client on Node's built-in `WebSocket`. A suite that dragged in a tree of
 packages would be the largest attack surface in the repository and the thing
 nobody reads.
 
-The suite itself is not part of this public download — the same reasoning that
-keeps a private working log out of it, rather than anything about the tests
-themselves. What it covers today:
+It ships with the app, in `test/`. Run it with `npm test`, or
+`node test/run.js flow` to run only the files whose name matches — it starts
+MxScout and a stand-in Mendix app on their own ports and drives a real
+Chromium. There is no framework: a test file exports `async function (t)` and
+calls `t.ok(condition, message)`. What it covers today:
 
 - the bridge protocol — token gating, long-poll delivery, the data round trip,
   a superseded session, and a busy bridge still counting as connected;
@@ -414,7 +416,7 @@ reports, the encrypted package, version notifications, and the About &
 security and Getting started pages.
 
 What's next lives in a working log kept beside the code rather than in it —
-not part of this download, the same as the test suite.
+not part of this download.
 
 ## License
 
