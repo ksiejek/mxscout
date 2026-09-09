@@ -1542,9 +1542,17 @@
       tiles.push({ v: String(totalOps), k: 'database operations', n: 'select · insert · update · delete · commit' });
     }
     if (sessions) {
-      var named = typeof sessions.named_users === 'number' ? sessions.named_users : null;
-      var anon = typeof sessions.anonymous_sessions === 'number' ? sessions.anonymous_sessions : null;
-      tiles.push({ v: named != null ? String(named) : '—', k: 'named sessions', n: anon != null ? (anon + ' anonymous') : '' });
+      // `named_users` is how many user ACCOUNTS exist, not how many sessions
+      // are open — a real recording reported 3 736 named_users with exactly
+      // one browser actually connected, and this tile called that "3736 named
+      // sessions". Sessions are the entries in `user_sessions`; the account
+      // count is a fact about the database and belongs in the sub-line.
+      var open = sessions.user_sessions && typeof sessions.user_sessions === 'object'
+        ? Object.keys(sessions.user_sessions).length : null;
+      var anon = typeof sessions.anonymous_sessions === 'number' ? sessions.anonymous_sessions : 0;
+      var accounts = typeof sessions.named_users === 'number' ? sessions.named_users : null;
+      var note = [anon ? (anon + ' anonymous') : null, accounts != null ? (accounts + ' user accounts exist') : null].filter(Boolean).join(' · ');
+      tiles.push({ v: open != null ? String(open + anon) : '—', k: 'open sessions', n: note });
     }
 
     var sparkBlocks = [];
