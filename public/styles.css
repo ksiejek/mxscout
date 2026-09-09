@@ -1799,6 +1799,39 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 }
 .link-btn:hover { color: var(--text); }
 
+/* ---------- Call tree + Hotspots (Phase 2c) ----------
+   .data-table already exists for the entity Data grid — reused as-is here
+   rather than a second table style, so .wide widens its default 280px
+   truncation for the columns that need it (an XPath, an entry point). */
+.data-table td.wide { max-width: 420px; }
+.data-table th.n, .data-table td.n { text-align: right; font-variant-numeric: tabular-nums; }
+
+.table-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 8px; flex-wrap: wrap; }
+.table-h h4 { margin: 0; font-size: 13px; font-weight: 600; }
+.table-block + .table-block { margin-top: 22px; }
+
+.th-sort { cursor: pointer; user-select: none; }
+.th-sort:hover { color: var(--text); }
+.sorted-desc::after { content: ' \25be'; color: var(--accent); }
+.sorted-asc::after { content: ' \25b4'; color: var(--accent); }
+
+/* A row's "Add as a finding" button only on hover — with 5+ rows visible at
+   once it is a wall of buttons otherwise, competing with the numbers the
+   table exists to show. */
+.row-act { opacity: 0; }
+.data-table tbody tr:hover .row-act { opacity: 1; }
+
+.tw { display: flex; align-items: center; gap: 7px; }
+.twist { display: inline-block; width: 14px; flex: none; color: var(--muted); text-align: left; }
+button.twist { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+button.twist:hover { color: var(--text); }
+.tname { color: var(--text); }
+.tname.xpath { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+
+.bar-cell { width: 128px; }
+.minibar { height: 6px; border-radius: 3px; background: var(--panel-2); position: relative; overflow: hidden; }
+.minibar-fill { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--mod, var(--muted)); }
+
 /* ---------- performance: the connect strip ---------- */
 /* ---------- the three setup steps ----------
    All three stay on screen the whole time, so the tester can see where they

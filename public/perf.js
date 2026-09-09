@@ -407,7 +407,12 @@
         frame: frame,
         t0: o.t0,
         t1: o.tLast + interval,
-        self: o.selfSamples * interval
+        self: o.selfSamples * interval,
+        // The chain of identities from the root down to this span, and that
+        // joined into one string — buildCallTree()'s merge key, and how a
+        // span finds its parent row there. Not used by the flame chart.
+        path: o.path,
+        pathKey: o.path.join(' → ')
       });
     }
 
@@ -430,7 +435,12 @@
         var o = open[depth];
         if (!o || o.identity !== id) {
           if (o) finishSpan(o);
-          o = open[depth] = { identity: id, frame: frame, depth: depth, t0: t, tLast: t, selfSamples: 0 };
+          // The invariant that makes this safe: `open` is always contiguous
+          // from 0 up to the current maxDepth (the loop above never leaves a
+          // gap), so open[depth - 1] is guaranteed to exist whenever depth >
+          // 0 — the parent is always already open before a child can be.
+          var parentPath = depth > 0 ? open[depth - 1].path : [];
+          o = open[depth] = { identity: id, frame: frame, depth: depth, t0: t, tLast: t, selfSamples: 0, path: parentPath.concat(id) };
         } else {
           o.tLast = t;
           o.frame = frame; // the freshest copy — a flow's current_activity may have moved on
@@ -442,6 +452,43 @@
 
     closed.sort(function (a, b) { return a.t0 - b.t0 || a.depth - b.depth; });
     return closed;
+  }
+
+  // One call tree for the WHOLE recording, not one request: every request's
+  // spans (buildSpans, above) are folded in by `pathKey` — the same call at
+  // the same position under the same parent, however many requests or loop
+  // iterations produced it, becomes one row with a `calls` count. A path can
+  // only be seen after its parent's, within one request's own spans (sorted
+  // parent-first — see buildSpans), and a parent from an EARLIER request is
+  // already in `byPath` by the time a later request's matching path shows
+  // up, so a child is never processed before the row it attaches to exists.
+  function buildCallTree(recording) {
+    var byPath = {};
+    var roots = [];
+    var all = [];
+
+    buildRequestRows(recording).forEach(function (row) {
+      buildSpans(recording, row.id).forEach(function (s) {
+        var node = byPath[s.pathKey];
+        if (!node) {
+          node = byPath[s.pathKey] = {
+            key: s.pathKey, depth: s.depth, kind: s.kind, name: s.name,
+            qualifiedName: s.qualifiedName, xpath: s.xpath, frame: s.frame,
+            calls: 0, self: 0, total: 0, children: []
+          };
+          all.push(node);
+          if (s.path.length > 1) byPath[s.path.slice(0, -1).join(' → ')].children.push(node);
+          else roots.push(node);
+        }
+        node.calls++;
+        node.self += s.self;
+        node.total += (s.t1 - s.t0);
+      });
+    });
+    function byTotalDesc(a, b) { return b.total - a.total; }
+    all.forEach(function (n) { n.children.sort(byTotalDesc); });
+    roots.sort(byTotalDesc);
+    return { roots: roots, all: all };
   }
 
   // The request's entry point, for grouping ("Where the time went", module
@@ -590,6 +637,67 @@
     return { list: list, total: grandTotal };
   }
 
+  // ---------- Hotspots: three rankings over the WHOLE recording ----------
+  // Each merges every occurrence of the same flow, or the same query,
+  // ANYWHERE in the tree into one row — unlike buildCallTree, which keeps
+  // the same flow as separate rows when different parents call it, because
+  // "which microflow is expensive" does not care who called it.
+  function forEachSpan(recording, fn) {
+    buildRequestRows(recording).forEach(function (row) {
+      buildSpans(recording, row.id).forEach(fn);
+    });
+  }
+
+  function hotFlows(recording) {
+    var byQn = {};
+    var order = [];
+    forEachSpan(recording, function (s) {
+      if (s.kind !== 'flow' || !s.qualifiedName) return;
+      var dur = s.t1 - s.t0;
+      var row = byQn[s.qualifiedName];
+      if (!row) { row = byQn[s.qualifiedName] = { name: s.qualifiedName, frame: s.frame, calls: 0, self: 0, total: 0, max: 0 }; order.push(row); }
+      row.calls++;
+      row.self += s.self;
+      row.total += dur;
+      row.frame = s.frame; // the freshest copy, for resolveFrame
+      if (dur > row.max) row.max = dur;
+    });
+    var recordingMs = totalDurationMs(recording);
+    order.forEach(function (row) { row.share = recordingMs > 0 ? Math.round((row.total / recordingMs) * 100) : 0; });
+    order.sort(function (a, b) { return b.total - a.total; });
+    return order;
+  }
+
+  // Grouped by the query's own literal text — the same grouping the runtime
+  // itself already did, since a schema-level retrieve carries placeholders
+  // rather than the actual argument values (real samples, ROADMAP step 46).
+  function hotXpaths(recording) {
+    var byXpath = {};
+    var order = [];
+    forEachSpan(recording, function (s) {
+      if (s.kind !== 'xpath' || !s.xpath) return;
+      var dur = s.t1 - s.t0;
+      var row = byXpath[s.xpath];
+      if (!row) {
+        row = byXpath[s.xpath] = {
+          xpath: s.xpath, frame: s.frame, calls: 0, totalMs: 0, max: 0,
+          amount: typeof s.amount === 'number' ? s.amount : null
+        };
+        order.push(row);
+      }
+      row.calls++;
+      row.totalMs += dur;
+      if (dur > row.max) row.max = dur;
+    });
+    order.forEach(function (row) { row.avg = row.calls > 0 ? row.totalMs / row.calls : 0; });
+    order.sort(function (a, b) { return b.max - a.max; });
+    return order;
+  }
+
+  function slowestRequests(recording) {
+    return buildRequestRows(recording).slice().sort(function (a, b) { return b.maxDuration - a.maxDuration; });
+  }
+
   function findByQualifiedName(list, qn) {
     return (list || []).filter(function (x) { return x.qualifiedName === qn; })[0] || null;
   }
@@ -670,7 +778,7 @@
   var selectedRequestId = null;
   var pickedSpanIndex = null;
   function ensureSelectionScope(projectId) {
-    if (selectedFor !== projectId) { selectedFor = projectId; selectedRequestId = null; pickedSpanIndex = null; }
+    if (selectedFor !== projectId) { selectedFor = projectId; selectedRequestId = null; pickedSpanIndex = null; collapsedTreeKeys = null; }
   }
 
   function renderBar(row, total) {
@@ -1136,6 +1244,7 @@
     p.tab = 'overview';
     selectedRequestId = null;
     pickedSpanIndex = null;
+    collapsedTreeKeys = null;
     render();
   }
 
@@ -1222,7 +1331,7 @@
   }
 
   // ---------- rendering: the single-recording analyzer ----------
-  var ANALYZER_TABS = [['overview', 'Overview'], ['timeline', 'Timeline']];
+  var ANALYZER_TABS = [['overview', 'Overview'], ['timeline', 'Timeline'], ['calltree', 'Call tree'], ['hotspots', 'Hotspots']];
 
   function renderOverviewTab(recording) {
     var samples = (recording.samples || []).length;
@@ -1283,10 +1392,273 @@
     ].filter(Boolean));
   }
 
+  // ---------- rendering: Call tree (Phase 2c) ----------
+  // Which rows are collapsed, keyed by the same pathKey buildCallTree()
+  // merges on. Reset alongside the Timeline's own selection (see
+  // ensureSelectionScope and openRecording) — a collapsed path from one
+  // recording names nothing in another.
+  var collapsedTreeKeys = null;
+  function toggleTreeKey(key) {
+    if (!collapsedTreeKeys) collapsedTreeKeys = {};
+    if (collapsedTreeKeys[key]) delete collapsedTreeKeys[key];
+    else collapsedTreeKeys[key] = true;
+    render();
+  }
+  function flattenTree(roots) {
+    var out = [];
+    function walk(node) {
+      out.push(node);
+      if (!(collapsedTreeKeys && collapsedTreeKeys[node.key])) node.children.forEach(walk);
+    }
+    roots.forEach(walk);
+    return out;
+  }
+
+  function renderCallTreeRow(node, maxTotal) {
+    var hasChildren = node.children.length > 0;
+    var collapsed = !!(collapsedTreeKeys && collapsedTreeKeys[node.key]);
+    var twist = hasChildren
+      ? el('button', { class: 'twist', text: collapsed ? '▸' : '▾', title: collapsed ? 'Expand' : 'Collapse', onclick: function () { toggleTreeKey(node.key); } })
+      : el('span', { class: 'twist', text: '·' });
+    var nameCell = el('span', { class: 'tw', style: 'padding-left:' + (node.depth * 16) + 'px' }, [
+      twist,
+      el('span', { class: 'tname' + (node.kind === 'xpath' ? ' xpath' : ''), text: node.name })
+    ]);
+    var modName = node.kind === 'flow' ? node.qualifiedName : (node.kind === 'xpath' ? xpathEntityQualifiedName(node.xpath) : null);
+    var barCell = el('td', { class: 'bar-cell' }, [
+      el('div', { class: 'minibar' }, [
+        el('div', { class: 'minibar-fill', style: 'width:' + (maxTotal > 0 ? Math.round((node.total / maxTotal) * 100) : 0) + '%' })
+      ])
+    ]);
+    if (modName) withMod(barCell, moduleOf(modName) || modName);
+    return el('tr', {}, [
+      el('td', {}, [nameCell]),
+      el('td', { class: 'n', text: String(node.calls) }),
+      el('td', { class: 'n', text: formatMs(node.self) }),
+      el('td', { class: 'n', text: formatMs(node.total) }),
+      barCell
+    ]);
+  }
+
+  function renderCallTreeTab(recording) {
+    var samples = (recording.samples || []).length;
+    if (!samples) {
+      return el('div', { class: 'card' }, [
+        el('h3', { class: 'live-h', text: 'Call tree' }),
+        el('p', { class: 'muted', text: 'The admin port never answered while this recording ran — there is nothing to build a tree from.' })
+      ]);
+    }
+    var tree = buildCallTree(recording);
+    if (!tree.roots.length) {
+      return el('div', { class: 'card' }, [
+        el('h3', { class: 'live-h', text: 'Call tree' }),
+        el('p', { class: 'muted', text: 'This recording has no in-flight requests in it — there is nothing to build a tree from.' })
+      ]);
+    }
+    var maxTotal = 0;
+    tree.all.forEach(function (n) { if (n.total > maxTotal) maxTotal = n.total; });
+    var rows = flattenTree(tree.roots);
+
+    return el('div', { class: 'card' }, [
+      el('div', { class: 'table-h' }, [
+        el('h4', { text: 'Call tree — the whole recording' }),
+        el('span', { class: 'muted', text: 'identical paths merged · sorted by total' })
+      ]),
+      el('p', { class: 'muted', style: 'margin-bottom:12px', text: 'Every call of the same microflow under the same parent is folded into one row, so a loop that ran many times reads as one line with a call count.' }),
+      el('div', { style: 'overflow-x:auto' }, [
+        el('table', { class: 'data-table' }, [
+          el('thead', {}, [el('tr', {}, [
+            el('th', { text: 'Microflow / retrieve' }),
+            el('th', { class: 'n', text: 'Calls' }),
+            el('th', { class: 'n', text: 'Self' }),
+            el('th', { class: 'n', text: 'Total' }),
+            el('th', { text: '' })
+          ])]),
+          el('tbody', {}, rows.map(function (node) { return renderCallTreeRow(node, maxTotal); }))
+        ])
+      ]),
+      renderVerdict(recording)
+    ]);
+  }
+
+  // ---------- rendering: Hotspots (Phase 2c) ----------
+  // Sort state for the three tables — a plain module var (not per-recording)
+  // is enough: it is a display preference, not data, and the defaults
+  // already match what each table is naturally read by.
+  var hotspotSort = {
+    flows: { key: 'total', dir: -1 },
+    xpath: { key: 'max', dir: -1 },
+    slowest: { key: 'maxDuration', dir: -1 }
+  };
+
+  function sortRows(rows, sort) {
+    var key = sort.key, dir = sort.dir;
+    return rows.slice().sort(function (a, b) {
+      var av = a[key], bv = b[key];
+      if (typeof av === 'string' || typeof bv === 'string') return dir * String(av || '').localeCompare(String(bv || ''));
+      return dir * ((av || 0) - (bv || 0));
+    });
+  }
+
+  function sortableHeader(text, sort, key, alignRight) {
+    var active = sort.key === key;
+    var cls = 'th-sort' + (alignRight ? ' n' : '') + (active ? (sort.dir < 0 ? ' sorted-desc' : ' sorted-asc') : '');
+    return el('th', {
+      class: cls, text: text,
+      onclick: function () {
+        if (sort.key === key) sort.dir = -sort.dir; else { sort.key = key; sort.dir = -1; }
+        render();
+      }
+    });
+  }
+
+  // A resolved model target -> the "Add as a finding" button comments.js
+  // needs. `attributes: []` because a finding about a microflow or an entity
+  // reached from here never carries the entity's own attribute checklist —
+  // that only applies to a finding opened from the entity popup itself.
+  function findingButton(resolved) {
+    var kind = resolved.sectionKey === 'microflows' ? 'microflow' : resolved.sectionKey === 'nanoflows' ? 'nanoflow' : 'entity';
+    var target = { kind: kind, qualifiedName: resolved.item.qualifiedName, module: moduleOf(resolved.item.qualifiedName), name: resolved.item.name, attributes: [] };
+    return window.MxComments.addButton(target, 'Add as a finding');
+  }
+
+  function renderHotFlowsTable(model, recording) {
+    var rows = sortRows(hotFlows(recording), hotspotSort.flows);
+    if (!rows.length) return null;
+    return el('div', { class: 'table-block' }, [
+      el('div', { class: 'table-h' }, [
+        el('h4', { text: 'Microflows' }),
+        el('span', { class: 'muted', text: 'self = time it was the deepest frame' })
+      ]),
+      el('div', { style: 'overflow-x:auto' }, [
+        el('table', { class: 'data-table' }, [
+          el('thead', {}, [el('tr', {}, [
+            sortableHeader('Microflow', hotspotSort.flows, 'name'),
+            sortableHeader('Calls', hotspotSort.flows, 'calls', true),
+            sortableHeader('Self', hotspotSort.flows, 'self', true),
+            sortableHeader('Total', hotspotSort.flows, 'total', true),
+            sortableHeader('Max call', hotspotSort.flows, 'max', true),
+            el('th', { text: '' })
+          ])]),
+          el('tbody', {}, rows.map(function (row) {
+            var target = resolveFrame(model, row.frame);
+            var nameCell = target
+              ? el('button', { class: 'link-btn', text: row.name, onclick: function () { jumpToObject(target.sectionKey, target.item); } })
+              : el('span', { text: row.name });
+            return el('tr', {}, [
+              el('td', { class: 'wide' }, [nameCell]),
+              el('td', { class: 'n', text: String(row.calls) }),
+              el('td', { class: 'n', text: formatMs(row.self) }),
+              el('td', { class: 'n', text: formatMs(row.total) + '  (' + row.share + '%)' }),
+              el('td', { class: 'n', text: formatMs(row.max) }),
+              el('td', {}, [target ? el('span', { class: 'row-act' }, [findingButton(target)]) : null])
+            ]);
+          }))
+        ])
+      ])
+    ]);
+  }
+
+  function renderHotXpathsTable(model, recording) {
+    var rows = sortRows(hotXpaths(recording), hotspotSort.xpath);
+    if (!rows.length) return null;
+    return el('div', { class: 'table-block' }, [
+      el('div', { class: 'table-h' }, [
+        el('h4', { text: 'Retrieves' }),
+        el('span', { class: 'muted', text: 'grouped by the query itself' })
+      ]),
+      el('div', { style: 'overflow-x:auto' }, [
+        el('table', { class: 'data-table' }, [
+          el('thead', {}, [el('tr', {}, [
+            sortableHeader('XPath', hotspotSort.xpath, 'xpath'),
+            sortableHeader('Calls', hotspotSort.xpath, 'calls', true),
+            sortableHeader('Avg', hotspotSort.xpath, 'avg', true),
+            sortableHeader('Max', hotspotSort.xpath, 'max', true),
+            sortableHeader('Amount', hotspotSort.xpath, 'amount', true),
+            el('th', { text: 'Entity' })
+          ])]),
+          el('tbody', {}, rows.map(function (row) {
+            var entityQn = xpathEntityQualifiedName(row.xpath);
+            var entity = entityQn ? findByQualifiedName(objectsOfSection(model, 'entities'), entityQn) : null;
+            var target = entity ? { sectionKey: 'entities', item: { name: entity.name, qualifiedName: entity.qualifiedName } } : null;
+            var entityCell = target
+              ? el('button', { class: 'link-btn', text: entity.name, onclick: function () { jumpToObject('entities', target.item); } })
+              : el('span', { class: 'muted', text: entityQn || '—' });
+            return el('tr', {}, [
+              el('td', { class: 'wide', title: row.xpath, text: row.xpath }),
+              el('td', { class: 'n', text: String(row.calls) }),
+              el('td', { class: 'n', text: formatMs(row.avg) }),
+              el('td', { class: 'n', text: formatMs(row.max) }),
+              el('td', { class: 'n', text: row.amount == null ? '—' : (row.amount === -1 ? 'unlimited' : String(row.amount)) }),
+              el('td', {}, [entityCell, target ? el('span', { class: 'row-act', style: 'margin-left:8px' }, [findingButton(target)]) : null].filter(Boolean))
+            ]);
+          }))
+        ])
+      ])
+    ]);
+  }
+
+  function renderSlowestTable(recording) {
+    var rows = sortRows(slowestRequests(recording), hotspotSort.slowest).slice(0, 10);
+    if (!rows.length) return null;
+    return el('div', { class: 'table-block' }, [
+      el('div', { class: 'table-h' }, [
+        el('h4', { text: 'Slowest requests' }),
+        el('span', { class: 'muted', text: 'as the runtime reported them' })
+      ]),
+      el('div', { style: 'overflow-x:auto' }, [
+        el('table', { class: 'data-table' }, [
+          el('thead', {}, [el('tr', {}, [
+            sortableHeader('Entry point', hotspotSort.slowest, 'entry'),
+            el('th', { text: 'Type' }), el('th', { text: 'User' }),
+            sortableHeader('Started', hotspotSort.slowest, 'firstT', true),
+            sortableHeader('Duration', hotspotSort.slowest, 'maxDuration', true)
+          ])]),
+          el('tbody', {}, rows.map(function (row) {
+            return el('tr', {}, [
+              el('td', { class: 'wide', text: row.entry || row.id }),
+              el('td', { text: typeClass(row.type) }),
+              el('td', { text: row.user || '' }),
+              el('td', { class: 'n', text: '+' + formatMs(row.firstT) }),
+              el('td', { class: 'n', text: formatMs(row.maxDuration) })
+            ]);
+          }))
+        ])
+      ])
+    ]);
+  }
+
+  function renderHotspotsTab(model, recording) {
+    var samples = (recording.samples || []).length;
+    if (!samples) {
+      return el('div', { class: 'card' }, [
+        el('h3', { class: 'live-h', text: 'Hotspots' }),
+        el('p', { class: 'muted', text: 'The admin port never answered while this recording ran — there is nothing to rank.' })
+      ]);
+    }
+    var blocks = [renderHotFlowsTable(model, recording), renderHotXpathsTable(model, recording), renderSlowestTable(recording)].filter(Boolean);
+    if (!blocks.length) {
+      return el('div', { class: 'card' }, [
+        el('h3', { class: 'live-h', text: 'Hotspots' }),
+        el('p', { class: 'muted', text: 'This recording has no in-flight requests in it — there is nothing to rank.' })
+      ]);
+    }
+    return el('div', { class: 'card' }, [
+      el('h3', { class: 'live-h', text: 'Hotspots' }),
+      el('p', { class: 'muted', style: 'margin-bottom:16px', text: 'Three rankings over the same samples. Any row can become a finding, and every name opens the object it points at.' }),
+      el('div', {}, blocks),
+      renderVerdict(recording)
+    ]);
+  }
+
   function renderAnalyzer(model, project, recording) {
     var p = state.detail.perf;
     var body = p.tab === 'timeline'
       ? el('div', { class: 'card perf-timeline-card' }, [renderTimeline(model, recording), renderVerdict(recording)])
+      : p.tab === 'calltree'
+      ? renderCallTreeTab(recording)
+      : p.tab === 'hotspots'
+      ? renderHotspotsTab(model, recording)
       : renderOverviewTab(recording);
     return el('div', {}, [
       el('div', { class: 'perf-back-row' }, [
@@ -1339,6 +1711,10 @@
     resolveFrame: resolveFrame,
     buildRequestRows: buildRequestRows,
     buildSpans: buildSpans,
+    buildCallTree: buildCallTree,
+    hotFlows: hotFlows,
+    hotXpaths: hotXpaths,
+    slowestRequests: slowestRequests,
     renderPanel: renderPanel
   };
 })();
