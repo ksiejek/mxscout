@@ -722,14 +722,23 @@
   // fraction of the summed duration across every request in the recording.
   function entryTotals(recording) {
     var rows = buildRequestRows(recording);
+    var interval = observedIntervalMs(recording);
     var byEntry = {};
     var order = [];
     var grandTotal = 0;
     rows.forEach(function (row) {
       var key = row.entry || row.id;
+      // Time this request was VISIBLE in the recording, not `request_duration`.
+      // That field is the runtime's own counter since the request began, and a
+      // real 2026-09-09 recording had a CUSTOM request reporting 321 747 ms
+      // inside a 7 810 ms recording — it had been running for five minutes
+      // before Start was ever pressed. Summing those made "Where the time
+      // went" total 323 s over a recording that lasted eight, and every share
+      // in it meaningless.
+      var seen = (row.lastT - row.firstT) + interval;
       if (!(key in byEntry)) { byEntry[key] = 0; order.push(key); }
-      byEntry[key] += row.maxDuration;
-      grandTotal += row.maxDuration;
+      byEntry[key] += seen;
+      grandTotal += seen;
     });
     var list = order.map(function (key) { return { name: key, ms: byEntry[key] }; });
     list.sort(function (a, b) { return b.ms - a.ms; });
@@ -1501,7 +1510,7 @@
       ]),
       shareRows.length ? el('div', { class: 'card' }, [
         el('h3', { class: 'live-h', text: 'Where the time went' }),
-        el('p', { class: 'muted', text: 'Share of the summed request duration, counting an entry point whenever it sat anywhere on the stack.' }),
+        el('p', { class: 'muted', text: 'Share of the time requests were visible in this recording, grouped by the microflow that started each one. A request that was already running when Start was pressed counts only from there.' }),
         el('div', { class: 'share-list' }, shareRows),
         renderVerdict(recording)
       ]) : null,
@@ -1893,6 +1902,7 @@
     connectionbusSeries: connectionbusSeries,
     sessionsNow: sessionsNow,
     observedIntervalMs: observedIntervalMs,
+    entryTotals: entryTotals,
     renderPanel: renderPanel
   };
 })();
