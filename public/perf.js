@@ -875,6 +875,18 @@
     return (ms / 1000).toFixed(1) + ' s';
   }
 
+  // How long the running recording has been going, as a clock rather than a
+  // duration — "2:14" reads as elapsed time the way a stopwatch does, where
+  // "134 s" reads as a measurement of something already finished. The stamp
+  // comes from the server (state.js), which owns the sampling loop's clock.
+  function elapsedLabel(startedAt) {
+    var t0 = startedAt ? Date.parse(startedAt) : NaN;
+    if (!(t0 > 0)) return '0:00';
+    var secs = Math.max(0, Math.round((Date.now() - t0) / 1000));
+    var mins = Math.floor(secs / 60);
+    return mins + ':' + String(secs % 60).padStart(2, '0');
+  }
+
   var BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
   function formatBytes(n) {
     if (!(n >= 0)) return '0 B';
@@ -1264,10 +1276,12 @@
   function renderStatusArea(project) {
     var p = state.detail.perf;
     var active = !!(p.status && p.status.active);
-    var sampleCount = (p.status && p.status.sampleCount) || 0;
     var trouble = p.status && p.status.trouble;
+    // Elapsed time, not a sample count. Karol, 2026-09-09: while a recording
+    // runs the only question is "how long have I been at this" — a sample
+    // count answers a question about the sampler, not about the run.
     var label = active
-      ? ('Recording… ' + sampleCount + ' sample' + (sampleCount === 1 ? '' : 's') + ' so far.')
+      ? ('Recording… ' + elapsedLabel(p.status && p.status.startedAt))
       : 'Ready — record from the app’s badge, or here.';
     return el('div', {}, [
       el('div', { class: 'perf-connect-strip' }, [
@@ -1277,9 +1291,16 @@
         ]),
         el('span', { class: 'muted perf-connect-addr', text: adminLabel(p) }),
         active ? null : el('button', { class: 'btn btn-sm btn-ghost', text: 'Disconnect', onclick: disconnectAdminPort }),
+        // A record control carries a red dot, the way every recorder anyone
+        // has used does — the glyph says "record", the colour says which
+        // glyph it is, and neither depends on reading the label.
         active
-          ? el('button', { class: 'btn btn-danger', text: 'Finish recording', onclick: function () { finishRecordingSession(project); } })
-          : el('button', { class: 'btn btn-primary', text: 'Start recording', onclick: startRecordingSession })
+          ? el('button', { class: 'btn btn-danger btn-rec', onclick: function () { finishRecordingSession(project); } }, [
+              el('span', { class: 'rec-glyph is-stop' }), el('span', { text: 'Finish recording' })
+            ])
+          : el('button', { class: 'btn btn-rec', onclick: startRecordingSession }, [
+              el('span', { class: 'rec-glyph' }), el('span', { text: 'Start recording' })
+            ])
       ].filter(Boolean)),
       // The recorder's own diagnosis when the port has gone quiet for a run of
       // rounds. Without it the only symptom is a recording that saves with

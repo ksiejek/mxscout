@@ -627,6 +627,10 @@ function handlePerfPoll(req, res) {
     connected: state.isAdminConnected(),
     active: state.getPerfActive(),
     sampleCount: state.getPerfSampleCount(),
+    // The badge counts elapsed time, not samples — so it needs the same start
+    // stamp perf/status hands the UI. Both now say the same thing in the same
+    // words while one recording runs.
+    startedAt: state.getPerfStartedAt(),
     trouble: adminApi.getTrouble()
   });
 }

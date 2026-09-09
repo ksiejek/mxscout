@@ -599,7 +599,10 @@
       // this removes. Hidden until MxScout says an admin port is connected:
       // without one there is nothing to record, and a dead button that never
       // explains itself is worse than no button.
-      var rec = add(badge, mk('span', 'cursor:pointer;font-size:15px;line-height:1;padding:0 3px;display:none;color:' + P.accent + ';', '⏺'));
+      // Red, always — a record dot is red before it is pressed, not only
+      // while it runs. Painting it accent-orange until active made it read as
+      // one more link on the badge instead of as the recorder it is.
+      var rec = add(badge, mk('span', 'cursor:pointer;font-size:15px;line-height:1;padding:0 3px;display:none;color:' + P.alarm + ';', '⏺'));
       rec.title = 'Start recording performance';
       rec.addEventListener('click', function () { requestRecording(!perfActive); });
       var x = add(badge, mk('span', 'cursor:pointer;opacity:.6;padding-left:2px;', '✕'));
@@ -619,18 +622,27 @@
     // showing what the recorder is doing and asking it to start or stop.
     var perfActive = false;
     var perfTimer = null;
+    function elapsed(startedAt) {
+      var t0 = startedAt ? Date.parse(startedAt) : NaN;
+      if (!(t0 > 0)) return '0:00';
+      var secs = Math.max(0, Math.round((Date.now() - t0) / 1000));
+      var s = String(secs % 60);
+      return Math.floor(secs / 60) + ':' + (s.length < 2 ? '0' + s : s);
+    }
     function paintRecordControl(s) {
       if (!badge || !badge.__rec) return;
       var rec = badge.__rec;
       rec.style.display = s.connected ? '' : 'none';
       rec.textContent = s.active ? '⏹' : '⏺';
       rec.title = s.active ? 'Finish recording' : 'Start recording performance';
-      rec.style.color = s.active ? P.alarm : P.accent;
       // Only speak while recording — the rest of the time this badge belongs
-      // to the live-app bridge and should say what that is doing.
+      // to the live-app bridge and should say what that is doing. What it says
+      // is how long the recording has been running: standing in the app tab
+      // clicking through a scenario, elapsed time is the number you are
+      // actually tracking, and a sample count answers a question about the
+      // sampler instead.
       if (s.active) {
-        setBadge(s.trouble ? s.trouble
-          : 'Recording… ' + s.sampleCount + ' sample' + (s.sampleCount === 1 ? '' : 's'));
+        setBadge(s.trouble ? s.trouble : 'Recording… ' + elapsed(s.startedAt));
       } else if (perfActive) {
         setBadge(badge.__idle); // just stopped — hand the line back
       }
