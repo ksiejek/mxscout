@@ -1824,22 +1824,58 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 
 .perf-lane { position: relative; height: 24px; margin-bottom: 4px; background: color-mix(in srgb, var(--panel-2) 55%, transparent); border-radius: 5px; }
 .perf-lane:last-child { margin-bottom: 0; }
+/* Colour is the MODULE, the same identity channel the rest of MxScout uses —
+   not the request type, which had its own private four-colour code that no
+   legend explained. The type is a word inside the label instead. */
 .perf-bar {
   position: absolute;
-  top: 2px;
-  bottom: 2px;
+  top: 0;
+  height: 24px;
   min-width: 3px;
   border: none;
   border-radius: 4px;
   cursor: pointer;
   padding: 0;
+  overflow: hidden;
+  font: inherit;
+  text-align: left;
+  background: color-mix(in srgb, var(--mod) 30%, var(--panel-2));
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--mod) 85%, transparent);
 }
-.perf-bar-client { background: var(--accent); }
-.perf-bar-async { background: color-mix(in srgb, var(--accent) 55%, var(--text)); }
-.perf-bar-custom { background: var(--muted); }
-.perf-bar-other { background: color-mix(in srgb, var(--muted) 60%, var(--border)); }
-.perf-bar:hover { filter: brightness(1.15); }
-.perf-bar.is-selected { outline: 2px solid var(--text); outline-offset: 1px; }
+.perf-bar:hover { background: color-mix(in srgb, var(--mod) 42%, var(--panel-2)); }
+.perf-bar.is-selected {
+  background: color-mix(in srgb, var(--mod) 50%, var(--panel-2));
+  outline: 1px solid var(--mod);
+  outline-offset: -1px;
+}
+
+/* The sticky label: absolutely placed inside its bar and pushed right by
+   however much of the bar has scrolled off, so a call that started before
+   the viewport still says what it is. */
+.tl-lbl {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  white-space: nowrap;
+  pointer-events: none;
+  font: 11.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text);
+}
+.tl-type {
+  font-size: 9px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 4px;
+}
+.tl-count { color: var(--muted); }
 .perf-hint { margin: 4px 0 0; }
 .perf-detail {
   border: 1px solid var(--border);
@@ -1865,21 +1901,26 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
   height: 22px;
   border: 0;
   border-radius: 3px;
-  padding: 0 7px;
-  font: 11px/22px inherit;
+  padding: 0;
+  font: inherit;
   text-align: left;
   cursor: pointer;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
   background: color-mix(in srgb, var(--mod, var(--muted)) 24%, var(--panel-2));
   color: var(--text);
   box-shadow: inset 2px 0 0 var(--mod, var(--border));
 }
 .flame:hover { background: color-mix(in srgb, var(--mod, var(--muted)) 38%, var(--panel-2)); }
 .flame.is-picked { background: color-mix(in srgb, var(--mod, var(--muted)) 46%, var(--panel-2)); outline: 1px solid var(--mod, var(--muted)); outline-offset: -1px; }
-.flame.kind-xpath { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; }
-.flame.kind-activity { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--border); color: var(--muted); }
+.flame.kind-xpath .tl-lbl { font-size: 10.5px; }
+.flame.kind-activity { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--border); }
+.flame.kind-activity .tl-lbl { color: var(--muted); }
+/* A cluster is not one call — the hatch says so before the ×N is read. */
+.flame.is-cluster {
+  background: repeating-linear-gradient(115deg,
+    color-mix(in srgb, var(--mod, var(--muted)) 30%, var(--panel-2)) 0 7px,
+    color-mix(in srgb, var(--mod, var(--muted)) 18%, var(--panel-2)) 7px 14px);
+}
 
 .link-btn {
   background: none;

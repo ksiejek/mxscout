@@ -1010,15 +1010,52 @@
     return { x0: x0, w: Math.max(2, tlX(t1) - x0) };
   }
 
+  // The bar says what it is. Colour comes from the MODULE (Karol's call,
+  // 2026-09-09) rather than from the request type, so a bar means the same
+  // thing here as everywhere else in MxScout and the eye can group by it;
+  // the type is a chip inside the label, where it reads as a word instead of
+  // as a colour nobody has a legend for.
   function renderBar(row) {
     var g = tlPlace(row.firstT, row.lastT + observedIntervalMs(_tlRecording));
-    return el('button', {
-      class: 'perf-bar perf-bar-' + typeClass(row.type) + (selectedRequestId === row.id ? ' is-selected' : ''),
+    var name = row.entry || row.id;
+    var bar = el('button', {
+      class: 'perf-bar' + (selectedRequestId === row.id ? ' is-selected' : ''),
+      'data-x0': g.x0.toFixed(1),
       style: 'left:' + g.x0.toFixed(1) + 'px;width:' + g.w.toFixed(1) + 'px',
-      title: (row.entry || row.id) + ' \u2014 ' + formatMs(row.lastT - row.firstT),
+      title: name + ' \u2014 ' + formatMs((row.lastT - row.firstT) + observedIntervalMs(_tlRecording)),
       onclick: function () { selectedRequestId = row.id; pickedSpanIndex = null; repaintTimeline(); },
       ondblclick: function () { tlZoomTo(row.firstT, row.lastT, true); }
-    });
+    }, [
+      el('span', { class: 'tl-lbl' }, [
+        el('span', { class: 'tl-type', text: typeClass(row.type) }),
+        el('span', { text: name })
+      ])
+    ]);
+    return withMod(bar, moduleOf(name) || 'System');
+  }
+
+  // A label rides the VISIBLE edge of its bar, not the real one, so a call
+  // that started before the viewport still says its own name \u2014 the same trick
+  // Perfetto and the DevTools Performance panel use on long slices. Anything
+  // too narrow to hold a name loses the label rather than showing a sliver of
+  // one; on the flame, clusterSpans() below has already made sure that only
+  // happens where a name would not have helped anyway.
+  var TL_LABEL_PX = 34;
+  function stickLabels(scroller, canvas) {
+    var view0 = scroller.scrollLeft;
+    var view1 = view0 + scroller.clientWidth;
+    var bars = canvas.querySelectorAll('[data-x0]');
+    for (var i = 0; i < bars.length; i++) {
+      var bar = bars[i];
+      var lbl = bar.firstChild;
+      if (!lbl || lbl.className !== 'tl-lbl') continue;
+      var x0 = Number(bar.getAttribute('data-x0'));
+      var w = bar.offsetWidth;
+      var visible = Math.min(x0 + w, view1) - Math.max(x0, view0);
+      if (visible < TL_LABEL_PX) { lbl.style.display = 'none'; continue; }
+      lbl.style.display = '';
+      lbl.style.left = Math.max(0, view0 - x0) + 'px';
+    }
   }
 
   // The flame: one row per depth, depth 0 (the outermost, root call) at the
@@ -1032,30 +1069,79 @@
     }
     var maxDepth = 0;
     spans.forEach(function (s) { if (s.depth > maxDepth) maxDepth = s.depth; });
+    // Cluster from the root down, and do not draw what sits UNDER a clustered
+    // block: a "×24" already says those calls are collapsed at this zoom, and
+    // drawing their insides as fifty unreadable slivers underneath is the
+    // same noise the block exists to replace. Stretching splits it and the
+    // rows below come back.
+    var hidden = [];
     var rows = [];
-    for (var d = 0; d <= maxDepth; d++) rows.push([]);
-    spans.forEach(function (s, i) { rows[s.depth].push({ s: s, i: i }); });
+    for (var d = 0; d <= maxDepth; d++) {
+      var atDepth = [];
+      spans.forEach(function (s, i) {
+        if (s.depth !== d) return;
+        for (var h = 0; h < hidden.length; h++) if (s.t0 >= hidden[h].t0 && s.t1 <= hidden[h].t1) return;
+        atDepth.push({ s: s, i: i });
+      });
+      var items = clusterSpans(atDepth);
+      items.forEach(function (it) { if (it.items.length > 1) hidden.push({ t0: it.t0, t1: it.t1 }); });
+      if (items.length) rows.push(items);
+    }
     rows.reverse();
-    return el('div', { class: 'flame-wrap' }, rows.map(function (rowSpans) {
-      return el('div', { class: 'flame-row' }, rowSpans.map(function (item) {
-        return renderFlameBar(item.s, item.i);
-      }));
+    return el('div', { class: 'flame-wrap' }, rows.map(function (rowItems) {
+      return el('div', { class: 'flame-row' }, rowItems.map(renderFlameBar));
     }));
+  }
+
+  // Adjacent calls of the same thing, none of them wide enough to carry its
+  // own name, become one block that is. The clustering threshold is
+  // deliberately the SAME number as the label threshold: a block either has
+  // room to say what it is, or it merges with its neighbours until it does —
+  // there is no width band where a bar is drawn but unreadable, which is the
+  // whole complaint this answers ("na samej kresce fajnie pokazać czym to
+  // jest"). Reversible: clicking a cluster stretches to it and it comes apart.
+  function clusterSpans(entries) {
+    var sorted = entries.slice().sort(function (a, b) { return a.s.t0 - b.s.t0; });
+    var out = [], cur = null;
+    sorted.forEach(function (e) {
+      var w = tlX(e.s.t1) - tlX(e.s.t0);
+      if (cur && cur.items[0].s.name === e.s.name && w < TL_LABEL_PX &&
+          (tlX(e.s.t0) - tlX(cur.t1)) < TL_LABEL_PX * 2) {
+        cur.items.push(e);
+        cur.t1 = e.s.t1;
+        return;
+      }
+      cur = { t0: e.s.t0, t1: e.s.t1, items: [e] };
+      out.push(cur);
+      if (w >= TL_LABEL_PX) cur = null; // wide enough to stand alone; do not absorb the next
+    });
+    return out;
   }
 
   // On the RECORDING's axis, not on the request's own \u2014 that is what makes it
   // one timeline rather than two charts stacked. A call that ran at +7.4 s
   // sits under the +7.4 s tick, and under whatever else was running then.
-  function renderFlameBar(s, index) {
-    var g = tlPlace(s.t0, s.t1);
+  function renderFlameBar(item) {
+    var s = item.items[0].s;
+    var index = item.items[0].i;
+    var count = item.items.length;
+    var g = tlPlace(item.t0, item.t1);
     var bar = el('button', {
-      class: 'flame kind-' + s.kind + (pickedSpanIndex === index ? ' is-picked' : ''),
+      class: 'flame kind-' + s.kind + (count > 1 ? ' is-cluster' : '') +
+             (count === 1 && pickedSpanIndex === index ? ' is-picked' : ''),
+      'data-x0': g.x0.toFixed(1),
       style: 'left:' + g.x0.toFixed(1) + 'px;width:' + g.w.toFixed(1) + 'px',
-      title: s.name + ' \u2014 ' + formatMs(s.t1 - s.t0),
-      text: s.name,
-      onclick: function () { pickedSpanIndex = index; repaintTimeline(); },
-      ondblclick: function () { tlZoomTo(s.t0, s.t1, true); }
-    });
+      title: s.name + (count > 1 ? ' \u00d7' + count : '') + ' \u2014 ' + formatMs(item.t1 - item.t0),
+      onclick: count > 1
+        ? function () { tlZoomTo(item.t0, item.t1, true); }
+        : function () { pickedSpanIndex = index; repaintTimeline(); },
+      ondblclick: function () { tlZoomTo(item.t0, item.t1, true); }
+    }, [
+      el('span', { class: 'tl-lbl' }, [
+        el('span', { text: s.name }),
+        count > 1 ? el('span', { class: 'tl-count', text: '\u00d7' + count }) : null
+      ].filter(Boolean))
+    ]);
     var modName = s.kind === 'flow' ? s.qualifiedName : (s.kind === 'xpath' ? xpathEntityQualifiedName(s.xpath) : null);
     return modName ? withMod(bar, moduleOf(modName) || modName) : bar;
   }
@@ -1228,6 +1314,7 @@
       }
       scroller.scrollLeft = tlScrollLeft;
       syncGutterHeights(gutter, canvas);
+      stickLabels(scroller, canvas);
     });
   }
 
@@ -1372,6 +1459,7 @@
         if (mini) positionMiniWindow(mini, lenMs);
         var crumb = document.querySelector('#perf-timeline-area .tl-crumb');
         if (crumb) crumb.textContent = tlWindowLabel(lenMs);
+        stickLabels(scroller, canvas);
       });
     });
 
