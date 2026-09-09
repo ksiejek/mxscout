@@ -1878,6 +1878,8 @@ button.twist:hover { color: var(--text); }
 }
 
 /* ---------- performance: the recordings dashboard ---------- */
+.rec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-top: 22px; }
+.rec-head .live-h { margin: 0; }
 .rec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 14px; }
 .rec-card { display: flex; flex-direction: column; gap: 10px; cursor: pointer; }
 .rec-card:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }

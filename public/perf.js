@@ -37,7 +37,7 @@
   'use strict';
 
   // Bound once, in init(). Named exactly as they were in app.js.
-  var el, state, store, render, setMessage, api, jumpToObject, objectsOfSection, newId, formatDate, withMod, moduleColor, downloadText;
+  var el, state, store, render, setMessage, api, jumpToObject, objectsOfSection, newId, formatDate, withMod, moduleColor, downloadText, pickFile, readFileText;
 
   function init(deps) {
     el = deps.el;
@@ -53,6 +53,8 @@
     withMod = deps.withMod;
     moduleColor = deps.moduleColor;
     downloadText = deps.downloadText;
+    pickFile = deps.pickFile;
+    readFileText = deps.readFileText;
   }
 
   // Hands the whole recording back as the JSON it already is. This exists for
@@ -63,6 +65,61 @@
   function exportRecording(r) {
     var when = String(r.started || '').replace(/[:.]/g, '-').slice(0, 19) || 'recording';
     downloadText(JSON.stringify(r, null, 2), 'mxscout-perf-' + when + '.json', 'application/json');
+  }
+
+  // The other direction: a recording exported from any MxScout, read back into
+  // this project. Karol asked for it 2026-09-09 with two exports in hand, and
+  // the reason it matters is not convenience — it is that a recording is the
+  // evidence. A tester records on the machine that has the running app and the
+  // admin port; whoever looks at it may have neither, and until now had a JSON
+  // file and no way to open it. Import needs no admin port, no bridge and no
+  // server round trip: it is a file read in this tab and a row written to this
+  // browser's IndexedDB, exactly like every other thing MxScout stores.
+  //
+  // Deliberately tolerant about `version` and silent about `id`/`projectId`:
+  // both are rewritten on the way in, so importing the same file twice gives
+  // two rows rather than overwriting one, and a recording from another
+  // project lands in the one that is open.
+  function importRecording(project) {
+    if (!project) return;
+    pickFile(function (file) {
+      readFileText(file, function (fileName, text) {
+        var parsed;
+        try { parsed = JSON.parse(text); }
+        catch (e) { setMessage('That file is not JSON — pick a recording exported with the Export button.', 'error'); render(); return; }
+        if (!parsed || parsed.tool !== 'mxscout-perf-recording' || !Array.isArray(parsed.samples)) {
+          setMessage('That is not an MxScout performance recording.', 'error');
+          render();
+          return;
+        }
+        var recording = {
+          id: newId(),
+          projectId: project.id,
+          tool: 'mxscout-perf-recording',
+          version: typeof parsed.version === 'number' ? parsed.version : FORMAT_VERSION,
+          intervalMs: parsed.intervalMs || DEFAULT_INTERVAL_MS,
+          adminUrl: parsed.adminUrl || null,
+          started: parsed.started || new Date().toISOString(),
+          stopped: parsed.stopped || null,
+          importedFrom: fileName || null,
+          samples: parsed.samples
+        };
+        saveRecording(recording)
+          .then(function () { return loadRecordings(project.id); })
+          .then(function (rows) {
+            if (!state.detail || !state.detail.perf) return;
+            state.detail.perf.recordings = rows;
+            state.detail.perf.selectedId = recording.id;
+            state.detail.perf.tab = 'overview';
+            selectedRequestId = null;
+            pickedSpanIndex = null;
+            collapsedTreeKeys = null;
+            setMessage('Imported ' + recording.samples.length + ' sample' + (recording.samples.length === 1 ? '' : 's') + ' from ' + (fileName || 'the file') + '.', 'ok');
+            render();
+          })
+          .catch(function (err) { setMessage((err && err.message) || 'Could not save that recording.', 'error'); render(); });
+      });
+    }, '.json,application/json');
   }
 
   var FORMAT_VERSION = 1;
@@ -1469,10 +1526,24 @@
 
   function renderDashboard(project) {
     var p = state.detail.perf;
-    var kids = [renderConnectArea(project)];
-    if (p.recordings && p.recordings.length) {
-      kids.push(el('div', { class: 'rec-grid' }, p.recordings.map(renderRecordingCard)));
-    }
+    var count = (p.recordings || []).length;
+    // The header carries Import whether or not there is anything to list —
+    // "I was sent a recording and have no admin port here" is exactly the
+    // case where the grid is empty, so hiding the button behind having
+    // recordings already would hide it from the person who needs it.
+    var kids = [
+      renderConnectArea(project),
+      el('div', { class: 'rec-head' }, [
+        el('h3', { class: 'live-h', text: count ? ('Recordings (' + count + ')') : 'Recordings' }),
+        el('button', {
+          class: 'btn btn-sm', text: 'Import…',
+          title: 'Open a recording exported from MxScout (.json)',
+          onclick: function () { importRecording(project); }
+        })
+      ])
+    ];
+    if (count) kids.push(el('div', { class: 'rec-grid' }, p.recordings.map(renderRecordingCard)));
+    else kids.push(el('p', { class: 'muted', text: 'No recordings yet — start one above, or import a recording someone exported.' }));
     return el('div', {}, kids.filter(Boolean));
   }
 
