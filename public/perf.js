@@ -289,6 +289,7 @@
           state.detail.perf.selectedId = recording.id;
           state.detail.perf.tab = 'overview';
           selectedRequestId = null;
+          pickedSpanIndex = null;
           setMessage('Recording saved — ' + samples.length + ' sample' + (samples.length === 1 ? '' : 's') + '.', 'ok');
           render();
           fetchStatus();
@@ -327,6 +328,120 @@
     if (frame.type !== 'Microflow' && frame.type !== 'Nanoflow') return null;
     var v = frame.name;
     return (typeof v === 'string' && v) ? v : null;
+  }
+
+  // What a span shows on the flame chart. A qualified name over a caption,
+  // where both exist — a flow's OWN current_activity is useful in the detail
+  // panel below, but as the bar's label it would read as a sentence next to
+  // every other bar's dotted Module.Flow name, and it does not group or
+  // colour by module the way a qualified name does (see entryLabel above,
+  // same reasoning). Everything that is not a flow has no qualified name to
+  // prefer, so this is just frameLabel() for those.
+  function spanLabel(frame) {
+    var qn = frameQualifiedName(frame);
+    return qn || frameLabel(frame);
+  }
+
+  // 'flow' draws with module colour and links to the model; 'xpath' draws
+  // monospaced and links to the entity behind the query; everything else
+  // ('activity') is a step the runtime reported that MxScout has no model
+  // object for — CreateAction, JavaAction, RetrieveIdAction, CommitAction,
+  // EventExtendedAction, and an outright empty frame, all seen in real
+  // samples (ROADMAP step 46).
+  function frameKind(frame) {
+    if (frameQualifiedName(frame)) return 'flow';
+    if (frame && typeof frame.xpath === 'string' && frame.xpath) return 'xpath';
+    return 'activity';
+  }
+
+  // A stable key for "is this the same call, continued into the next
+  // sample" — deliberately NOT frameLabel(): a flow's own current_activity
+  // caption moves as its execution advances without that meaning a
+  // different call, so a flow's identity is its qualified name alone. Every
+  // other kind is keyed by whatever field actually distinguishes one
+  // instance of that action from another, falling back to the action's
+  // `type` alone, then to the frame's own JSON so two frames that carry
+  // nothing recognisable still end up distinguishable rather than fused.
+  function frameIdentity(frame) {
+    if (!frame || typeof frame !== 'object') return 'frame:empty';
+    var qn = frameQualifiedName(frame);
+    if (qn) return 'flow:' + qn;
+    if (typeof frame.xpath === 'string' && frame.xpath) return 'xpath:' + frame.xpath;
+    if (typeof frame.entityName === 'string' && frame.entityName) return 'create:' + frame.entityName;
+    if (typeof frame.name === 'string' && frame.name) return (frame.type || 'action') + ':' + frame.name;
+    if (typeof frame.id === 'string' && frame.id) return (frame.type || 'action') + ':' + frame.id;
+    if (Array.isArray(frame.ids)) return (frame.type || 'action') + ':' + frame.ids.join(',');
+    if (typeof frame.type === 'string' && frame.type) return frame.type;
+    return 'frame:' + JSON.stringify(frame);
+  }
+
+  // Reconstructs one request's call tree from the action_stack carried in
+  // every sample it appears in — the whole point of Phase 2b (ROADMAP step
+  // 46). Confirmed 2026-09-08 against a real nested sample:
+  // `action_stack[0]` is the frame CURRENTLY EXECUTING, and the array runs
+  // inward-to-outward from there, so depth 0 (the root, drawn at the bottom
+  // of the flame) is the LAST index, not the first.
+  //
+  // A span is one frame identity staying at the same depth across ADJACENT
+  // samples: `[t0, tLast + interval)`. A different identity showing up at a
+  // depth closes whatever was open there and opens a new span; a depth that
+  // stops appearing at all (the call returned) closes it the same way. Self
+  // time counts the samples where a span was the DEEPEST frame present —
+  // exactly what a sampling profiler can honestly claim, no different a
+  // definition than any other one.
+  function buildSpans(recording, requestId) {
+    var interval = recording.intervalMs || DEFAULT_INTERVAL_MS;
+    var open = [];
+    var closed = [];
+
+    function finishSpan(o) {
+      var frame = o.frame;
+      closed.push({
+        depth: o.depth,
+        kind: frameKind(frame),
+        name: spanLabel(frame) || 'activity',
+        qualifiedName: frameQualifiedName(frame),
+        xpath: typeof frame.xpath === 'string' ? frame.xpath : null,
+        amount: typeof frame.amount === 'number' ? frame.amount : null,
+        returnsCount: frame.returnsCount === true,
+        frame: frame,
+        t0: o.t0,
+        t1: o.tLast + interval,
+        self: o.selfSamples * interval
+      });
+    }
+
+    (recording.samples || []).forEach(function (sample) {
+      var t = typeof sample.t === 'number' ? sample.t : 0;
+      var req = requestsOf(sample)[requestId];
+      var stack = (req && Array.isArray(req.action_stack)) ? req.action_stack : [];
+      var maxDepth = stack.length - 1;
+
+      // The call unwound past this depth since the last sample — close
+      // whatever was open there before possibly reopening shallower depths.
+      for (var d = open.length - 1; d > maxDepth; d--) {
+        if (open[d]) { finishSpan(open[d]); open[d] = null; }
+      }
+      if (open.length > maxDepth + 1) open.length = maxDepth + 1;
+
+      for (var depth = 0; depth <= maxDepth; depth++) {
+        var frame = stack[maxDepth - depth];
+        var id = frameIdentity(frame);
+        var o = open[depth];
+        if (!o || o.identity !== id) {
+          if (o) finishSpan(o);
+          o = open[depth] = { identity: id, frame: frame, depth: depth, t0: t, tLast: t, selfSamples: 0 };
+        } else {
+          o.tLast = t;
+          o.frame = frame; // the freshest copy — a flow's current_activity may have moved on
+        }
+        if (depth === maxDepth) o.selfSamples++;
+      }
+    });
+    open.forEach(function (o) { if (o) finishSpan(o); });
+
+    closed.sort(function (a, b) { return a.t0 - b.t0 || a.depth - b.depth; });
+    return closed;
   }
 
   // The request's entry point, for grouping ("Where the time went", module
@@ -479,6 +594,15 @@
     return (list || []).filter(function (x) { return x.qualifiedName === qn; })[0] || null;
   }
 
+  // The entity an XPath opens with — "//Sales.Order[...]" -> "Sales.Order" —
+  // or null for a query this simple pattern doesn't match. Shared by
+  // resolveFrame() (does the model have that entity?) and the flame chart
+  // (which module colour does this retrieve get?).
+  function xpathEntityQualifiedName(xpath) {
+    var m = /\/\/([A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*)/.exec(xpath || '');
+    return m ? m[1] : null;
+  }
+
   // A stack frame -> the object it names in the CURRENTLY OPEN model, or null
   // when it can't be resolved (a recording made against a different or older
   // project than the one open right now). Null is a normal, tested outcome —
@@ -494,9 +618,9 @@
       return null;
     }
     if (typeof frame.xpath === 'string' && frame.xpath) {
-      var m = /\/\/([A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*)/.exec(frame.xpath);
-      if (m) {
-        var entity = findByQualifiedName(objectsOfSection(model, 'entities'), m[1]);
+      var entityQn = xpathEntityQualifiedName(frame.xpath);
+      if (entityQn) {
+        var entity = findByQualifiedName(objectsOfSection(model, 'entities'), entityQn);
         if (entity) return { sectionKey: 'entities', item: { name: entity.name, qualifiedName: entity.qualifiedName } };
       }
     }
@@ -535,15 +659,18 @@
   }
 
   // ---------- rendering: the timeline ----------
-  // Which request is open in the detail panel below the bars. Kept per
-  // project (not per recording) so switching projects never shows a detail
-  // panel for a request that no longer exists in what is on screen; opening a
-  // DIFFERENT recording in the same project also resets it (see the list's
-  // Open handler below).
+  // Which request is open below the bars, and which span within its flame is
+  // picked. Kept per project (not per recording) so switching projects never
+  // shows a detail panel for a request that no longer exists in what is on
+  // screen; opening a DIFFERENT recording in the same project also resets it
+  // (see the list's Open handler below), and picking a different request bar
+  // resets the span \u2014 a picked index from one request's flame means nothing
+  // in another's.
   var selectedFor = null;
   var selectedRequestId = null;
+  var pickedSpanIndex = null;
   function ensureSelectionScope(projectId) {
-    if (selectedFor !== projectId) { selectedFor = projectId; selectedRequestId = null; }
+    if (selectedFor !== projectId) { selectedFor = projectId; selectedRequestId = null; pickedSpanIndex = null; }
   }
 
   function renderBar(row, total) {
@@ -553,38 +680,89 @@
       class: 'perf-bar perf-bar-' + typeClass(row.type) + (selectedRequestId === row.id ? ' is-selected' : ''),
       style: 'left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%',
       title: (row.entry || row.id) + ' \u2014 ' + formatMs(row.maxDuration),
-      onclick: function () { selectedRequestId = row.id; render(); }
+      onclick: function () { selectedRequestId = row.id; pickedSpanIndex = null; render(); }
     });
     return bar;
   }
 
-  function renderDetail(model, rows) {
-    if (!selectedRequestId) {
-      return el('p', { class: 'muted perf-hint', text: 'Click a bar to see what it was doing.' });
+  // The flame: one row per depth, depth 0 (the outermost, root call) at the
+  // BOTTOM \u2014 the reading order every flame graph anyone has seen uses
+  // (speedscope, DevTools Performance), and the one that matches "the thing
+  // that triggered this" sitting still while what it called comes and goes
+  // above it.
+  function renderFlame(spans) {
+    if (!spans.length) {
+      return el('p', { class: 'muted', text: 'No activity recorded for this request.' });
     }
-    var row = rows.filter(function (r) { return r.id === selectedRequestId; })[0];
-    if (!row) return null;
-    var stack = row.lastStack || [];
-    var frameEls = stack.length
-      ? stack.map(function (frame) {
-          var label = frameLabel(frame) || 'activity';
-          var target = resolveFrame(model, frame);
-          if (!target) return el('div', { class: 'perf-frame', text: label });
-          return el('button', {
-            class: 'perf-frame perf-frame-link', text: label,
-            title: 'Open in the model',
-            onclick: function () { jumpToObject(target.sectionKey, target.item); }
-          });
-        })
-      : [el('p', { class: 'muted', text: 'No activity recorded for this request.' })];
+    var span0 = Math.min.apply(null, spans.map(function (s) { return s.t0; }));
+    var span1 = Math.max.apply(null, spans.map(function (s) { return s.t1; }));
+    var width = Math.max(1, span1 - span0);
+    var maxDepth = 0;
+    spans.forEach(function (s) { if (s.depth > maxDepth) maxDepth = s.depth; });
+    var rows = [];
+    for (var d = 0; d <= maxDepth; d++) rows.push([]);
+    spans.forEach(function (s, i) { rows[s.depth].push({ s: s, i: i }); });
+    rows.reverse();
+    return el('div', { class: 'flame-wrap' }, rows.map(function (rowSpans) {
+      return el('div', { class: 'flame-row' }, rowSpans.map(function (item) {
+        return renderFlameBar(item.s, item.i, span0, width);
+      }));
+    }));
+  }
 
-    return el('div', { class: 'perf-detail' }, [
+  function renderFlameBar(s, index, span0, width) {
+    var left = ((s.t0 - span0) / width) * 100;
+    var w = Math.max(0.6, ((s.t1 - s.t0) / width) * 100);
+    var bar = el('button', {
+      class: 'flame kind-' + s.kind + (pickedSpanIndex === index ? ' is-picked' : ''),
+      style: 'left:' + left.toFixed(2) + '%;width:' + w.toFixed(2) + '%',
+      title: s.name + ' \u2014 ' + formatMs(s.t1 - s.t0),
+      text: s.name,
+      onclick: function () { pickedSpanIndex = index; render(); }
+    });
+    var modName = s.kind === 'flow' ? s.qualifiedName : (s.kind === 'xpath' ? xpathEntityQualifiedName(s.xpath) : null);
+    return modName ? withMod(bar, moduleOf(modName) || modName) : bar;
+  }
+
+  function kvRow(key, value) {
+    return el('div', { class: 'kv-row' }, [el('span', { class: 'kv-key', text: key }), el('span', { class: 'kv-val', text: value })]);
+  }
+
+  function renderSpanDetail(model, spans) {
+    var s = pickedSpanIndex != null ? spans[pickedSpanIndex] : null;
+    if (!s) {
+      return el('p', { class: 'muted perf-hint', text: 'Click a bar in the flame to see what it was doing.' });
+    }
+    var kindLabel = s.kind === 'xpath' ? 'Retrieve' : s.kind === 'flow' ? 'Microflow' : 'Activity';
+    var rows = [
+      kvRow('Started', '+' + formatMs(s.t0)),
+      kvRow('Finished', '+' + formatMs(s.t1)),
+      kvRow('Self time', formatMs(s.self))
+    ];
+    if (s.amount != null) rows.push(kvRow('Amount asked', s.amount === -1 ? 'unlimited' : String(s.amount)));
+    if (s.returnsCount) rows.push(kvRow('Returns a count', 'yes'));
+
+    var kids = [
       el('div', { class: 'perf-detail-head' }, [
-        el('span', { class: 'perf-detail-title', text: row.entry || row.id }),
-        el('span', { class: 'muted', text: [row.type, row.user, formatMs(row.maxDuration)].filter(Boolean).join(' \u00b7 ') })
+        el('span', { class: 'perf-detail-title', text: s.name }),
+        el('span', { class: 'muted', text: kindLabel + ' \u00b7 ' + formatMs(s.t1 - s.t0) })
       ]),
-      el('div', { class: 'perf-frames' }, frameEls)
-    ]);
+      el('div', { class: 'kv' }, rows)
+    ];
+    if (s.kind === 'xpath' && s.xpath) kids.push(el('code', { class: 'rule-xpath-code', style: 'margin-top:10px', text: s.xpath }));
+
+    var target = resolveFrame(model, s.frame);
+    if (target) {
+      kids.push(el('div', { class: 'perf-detail-actions' }, [
+        el('button', {
+          class: 'link-btn', text: 'Open ' + (s.qualifiedName || target.item.qualifiedName || target.item.name) + ' in the model',
+          onclick: function () { jumpToObject(target.sectionKey, target.item); }
+        })
+      ]));
+    } else if (s.kind === 'activity') {
+      kids.push(el('p', { class: 'muted', style: 'margin-top:10px', text: 'A step the runtime reported \u2014 MxScout has no model object to open for it.' }));
+    }
+    return el('div', { class: 'perf-detail' }, kids);
   }
 
   function renderTimeline(model, recording) {
@@ -602,9 +780,25 @@
       return el('div', { class: 'perf-lane' }, laneRows.map(function (row) { return renderBar(row, total); }));
     });
 
+    var selectedRow = rows.filter(function (r) { return r.id === selectedRequestId; })[0] || null;
+    var below;
+    if (!selectedRow) {
+      below = el('p', { class: 'muted perf-hint', text: 'Click a bar to see what it was doing.' });
+    } else {
+      var spans = buildSpans(recording, selectedRow.id);
+      below = el('div', { class: 'perf-detail' }, [
+        el('div', { class: 'perf-detail-head' }, [
+          el('span', { class: 'perf-detail-title', text: selectedRow.entry || selectedRow.id }),
+          el('span', { class: 'muted', text: [selectedRow.type, selectedRow.user, formatMs(selectedRow.maxDuration)].filter(Boolean).join(' \u00b7 ') })
+        ]),
+        renderFlame(spans),
+        renderSpanDetail(model, spans)
+      ]);
+    }
+
     return el('div', { class: 'perf-timeline' }, [
       el('div', { class: 'perf-lanes' }, laneEls),
-      renderDetail(model, rows)
+      below
     ]);
   }
 
@@ -941,6 +1135,7 @@
     p.selectedId = id;
     p.tab = 'overview';
     selectedRequestId = null;
+    pickedSpanIndex = null;
     render();
   }
 
@@ -1143,6 +1338,7 @@
     buildPasswordScript: buildPasswordScript,
     resolveFrame: resolveFrame,
     buildRequestRows: buildRequestRows,
+    buildSpans: buildSpans,
     renderPanel: renderPanel
   };
 })();

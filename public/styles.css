@@ -1755,18 +1755,49 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 }
 .perf-detail-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 8px; }
 .perf-detail-title { font-size: 13px; font-weight: 600; }
-.perf-frames { display: flex; flex-direction: column; gap: 4px; }
-.perf-frame {
-  font-size: 12px;
-  padding: 3px 0;
-  color: var(--muted);
-  border: none;
-  background: none;
+.perf-detail-actions { margin-top: 10px; }
+
+/* ---------- flame chart (Phase 2b) ----------
+   Depth 0 (the outermost call) is drawn at the BOTTOM, matching every flame
+   graph anyone has seen (speedscope, DevTools Performance) — perf.js reverses
+   its depth-ordered rows before handing them here. Positioned the same way
+   .perf-bar is: a real button per span, not an SVG shape, so it stays
+   clickable and focusable on its own. */
+.flame-wrap { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+.flame-row { position: relative; height: 22px; }
+.flame {
+  position: absolute;
+  top: 0;
+  height: 22px;
+  border: 0;
+  border-radius: 3px;
+  padding: 0 7px;
+  font: 11px/22px inherit;
   text-align: left;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background: color-mix(in srgb, var(--mod, var(--muted)) 24%, var(--panel-2));
+  color: var(--text);
+  box-shadow: inset 2px 0 0 var(--mod, var(--border));
 }
-.perf-frame-link { color: var(--text); cursor: pointer; }
-.perf-frame-link:hover { color: var(--accent); }
+.flame:hover { background: color-mix(in srgb, var(--mod, var(--muted)) 38%, var(--panel-2)); }
+.flame.is-picked { background: color-mix(in srgb, var(--mod, var(--muted)) 46%, var(--panel-2)); outline: 1px solid var(--mod, var(--muted)); outline-offset: -1px; }
+.flame.kind-xpath { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; }
+.flame.kind-activity { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--border); color: var(--muted); }
+
+.link-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.link-btn:hover { color: var(--text); }
 
 /* ---------- performance: the connect strip ---------- */
 /* ---------- the three setup steps ----------
