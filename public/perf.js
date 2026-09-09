@@ -533,6 +533,75 @@
     return reqs;
   }
 
+  // The `stats` block (`runtime_statistics`) rides along in every sample but
+  // went unread until Phase 2d — its real shape (sessions, memory,
+  // connectionbus, entities, per-handler requests) was confirmed against a
+  // real runtime before this was written (ROADMAP step 46), the same
+  // discipline as everything else here. Same envelope tolerance as
+  // requestsOf(), for the same reason: a recording saved before the server
+  // started unwrapping at the source still has the raw `{feedback, result}`.
+  function statsOf(sample) {
+    var s = sample && sample.stats;
+    if (!s || typeof s !== 'object') return null;
+    if ('feedback' in s || 'result' in s) {
+      if ('result' in s && s.result !== 0) return null;
+      return (s.feedback && typeof s.feedback === 'object') ? s.feedback : null;
+    }
+    return s;
+  }
+
+  // One point per sample that actually carried a heap reading — a sample
+  // where the admin port did not answer that round (see admin-port.js's
+  // failStreak) has none, and is skipped rather than drawn as zero.
+  function memorySeries(recording) {
+    var out = [];
+    (recording.samples || []).forEach(function (sample) {
+      var s = statsOf(sample);
+      var mem = s && s.memory;
+      if (mem && typeof mem.used_heap === 'number') {
+        out.push({ t: sample.t, used: mem.used_heap, max: typeof mem.max_heap === 'number' ? mem.max_heap : null });
+      }
+    });
+    return out;
+  }
+
+  // connectionbus counters are CUMULATIVE for the life of the runtime, not
+  // per-sample — so "how much database activity happened around this
+  // moment" is the delta from the previous stats-bearing sample, the same
+  // way a network monitor turns a byte counter into a throughput graph. The
+  // first point has nothing before it to subtract, so it is skipped, not
+  // shown as a spike.
+  function connectionbusSeries(recording) {
+    var out = [];
+    var prev = null;
+    (recording.samples || []).forEach(function (sample) {
+      var s = statsOf(sample);
+      var cb = s && s.connectionbus;
+      if (!cb) return;
+      if (prev) {
+        var total = ['select', 'insert', 'update', 'delete', 'transaction'].reduce(function (sum, key) {
+          var d = (typeof cb[key] === 'number' && typeof prev[key] === 'number') ? (cb[key] - prev[key]) : 0;
+          return sum + Math.max(0, d); // a restarted runtime would show as a drop, not a negative spike
+        }, 0);
+        out.push({ t: sample.t, total: total });
+      }
+      prev = cb;
+    });
+    return out;
+  }
+
+  // The runtime's session counts as of the LAST sample that reported
+  // them — the current picture, not a history; nothing here changes fast
+  // enough within one recording to need a series.
+  function sessionsNow(recording) {
+    var samples = recording.samples || [];
+    for (var i = samples.length - 1; i >= 0; i--) {
+      var s = statsOf(samples[i]);
+      if (s && s.sessions && typeof s.sessions === 'object') return s.sessions;
+    }
+    return null;
+  }
+
   function buildRequestRows(recording) {
     var byId = {};
     var order = [];
@@ -764,6 +833,14 @@
     if (!(ms >= 0)) return '0 ms';
     if (ms < 1000) return Math.round(ms) + ' ms';
     return (ms / 1000).toFixed(1) + ' s';
+  }
+
+  var BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
+  function formatBytes(n) {
+    if (!(n >= 0)) return '0 B';
+    var i = 0;
+    while (n >= 1024 && i < BYTE_UNITS.length - 1) { n /= 1024; i++; }
+    return (i === 0 ? Math.round(n) : n.toFixed(1)) + ' ' + BYTE_UNITS[i];
   }
 
   // ---------- rendering: the timeline ----------
@@ -1388,7 +1465,65 @@
         el('p', { class: 'muted', text: 'Share of the summed request duration, counting an entry point whenever it sat anywhere on the stack.' }),
         el('div', { class: 'share-list' }, shareRows),
         renderVerdict(recording)
-      ]) : null
+      ]) : null,
+      renderRuntimeCard(recording)
+    ].filter(Boolean));
+  }
+
+  // ---------- rendering: Runtime (Phase 2d) ----------
+  // `stats` — the admin port's `runtime_statistics` — rides along in every
+  // sample but was left unparsed until a real one had been seen (ROADMAP
+  // step 46). It describes the RUNTIME, not this recording specifically:
+  // heap and the database counters belong to the whole Mendix process, so
+  // this card sits under the request numbers above rather than mixed into
+  // them.
+  function renderRuntimeCard(recording) {
+    var mem = memorySeries(recording);
+    var cb = connectionbusSeries(recording);
+    var sessions = sessionsNow(recording);
+    if (!mem.length && !cb.length && !sessions) return null;
+
+    var tiles = [];
+    if (mem.length) {
+      var peakUsed = Math.max.apply(null, mem.map(function (m) { return m.used; }));
+      var ceiling = mem[mem.length - 1].max;
+      tiles.push({ v: formatBytes(peakUsed), k: 'peak heap', n: ceiling ? ('of ' + formatBytes(ceiling) + ' max') : '' });
+    }
+    if (cb.length) {
+      var totalOps = cb.reduce(function (sum, p) { return sum + p.total; }, 0);
+      tiles.push({ v: String(totalOps), k: 'database operations', n: 'select · insert · update · delete · commit' });
+    }
+    if (sessions) {
+      var named = typeof sessions.named_users === 'number' ? sessions.named_users : null;
+      var anon = typeof sessions.anonymous_sessions === 'number' ? sessions.anonymous_sessions : null;
+      tiles.push({ v: named != null ? String(named) : '—', k: 'named sessions', n: anon != null ? (anon + ' anonymous') : '' });
+    }
+
+    var sparkBlocks = [];
+    if (mem.length > 1) {
+      sparkBlocks.push(el('div', {}, [
+        el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:4px', text: 'Heap used, over the recording' }),
+        el('div', { class: 'rec-spark' }, [sparklineSvg(mem.map(function (m) { return m.used; }), '#e8a33d')])
+      ]));
+    }
+    if (cb.length > 1) {
+      sparkBlocks.push(el('div', {}, [
+        el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:4px', text: 'Database operations per sample interval' }),
+        el('div', { class: 'rec-spark' }, [sparklineSvg(cb.map(function (p) { return p.total; }), '#e8a33d')])
+      ]));
+    }
+
+    return el('div', { class: 'card' }, [
+      el('h3', { class: 'live-h', text: 'Runtime, while this ran' }),
+      el('p', { class: 'muted', text: 'From the same admin port, alongside the requests above — heap and database activity belong to the whole runtime, not just this recording’s own requests.' }),
+      tiles.length ? el('div', { class: 'stat-row' }, tiles.map(function (t) {
+        return el('div', { class: 'stat' }, [
+          el('div', { class: 'v', text: t.v }),
+          el('div', { class: 'k', text: t.k }),
+          t.n ? el('div', { class: 'n', text: t.n }) : null
+        ].filter(Boolean));
+      })) : null,
+      sparkBlocks.length ? el('div', { style: 'display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-top:14px' }, sparkBlocks) : null
     ].filter(Boolean));
   }
 
@@ -1715,6 +1850,9 @@
     hotFlows: hotFlows,
     hotXpaths: hotXpaths,
     slowestRequests: slowestRequests,
+    memorySeries: memorySeries,
+    connectionbusSeries: connectionbusSeries,
+    sessionsNow: sessionsNow,
     renderPanel: renderPanel
   };
 })();
