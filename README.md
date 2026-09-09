@@ -325,7 +325,7 @@ Anything else makes it worthless to the person reading it.
 No build step, no bundler, no dependencies — what runs is what you read. One
 subject per file, each reached through a single named object, each given what
 it needs through `init()` rather than reaching for it. Nothing here is over
-2,400 lines:
+2,800 lines:
 
 | file | what it is |
 | --- | --- |

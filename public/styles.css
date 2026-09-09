@@ -2075,3 +2075,35 @@ button.twist:hover { color: var(--text); }
 /* Runtime tracks share the timeline's canvas width, so they stretch with it
    and stay glued to the request bars above. */
 .tl-svg { display: block; }
+
+/* ---------- the span detail panel (Phase 2f) ----------
+   Chips answer "what am I looking at" before a number is read; the split bar
+   answers the only question a caller has — is this slow, or is what it calls
+   slow — which was a line in a flat kv list nobody compared against the one
+   above it. */
+.perf-detail-head { align-items: flex-start; }
+.perf-detail-when { text-align: right; white-space: nowrap; }
+.perf-detail-when b { display: block; font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.perf-detail-when span { font-size: 11.5px; }
+.perf-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.perf-chip {
+  font: 10.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .04em; text-transform: uppercase; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px;
+}
+.perf-chip.is-mod { color: var(--mod); border-color: color-mix(in srgb, var(--mod) 45%, var(--border)); }
+.perf-split { display: grid; gap: 5px; margin: 12px 0; }
+.perf-split-track { height: 9px; border-radius: 5px; overflow: hidden; background: color-mix(in srgb, var(--mod, var(--muted)) 22%, var(--panel-2)); }
+.perf-split-self { height: 100%; background: var(--mod, var(--muted)); }
+.perf-split-legend { display: flex; gap: 14px; font-size: 11.5px; }
+.perf-nums {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 1px; background: var(--border); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden;
+}
+.perf-num { background: var(--panel); padding: 8px 10px; }
+.perf-num b { display: block; font: 13px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
+.perf-num span { font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.perf-detail .rule-xpath-code { margin-top: 12px; }
+.perf-detail-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.perf-sub-h { margin: 0 0 8px; font-size: 12.5px; font-weight: 600; }

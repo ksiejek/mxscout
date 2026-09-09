@@ -488,6 +488,14 @@
         xpath: typeof frame.xpath === 'string' ? frame.xpath : null,
         amount: typeof frame.amount === 'number' ? frame.amount : null,
         returnsCount: frame.returnsCount === true,
+        // The runtime says which pass of a loop it is on. Real recordings are
+        // full of these — one reported iteration 4312 of 6889 — and it is the
+        // difference between "this microflow is slow" and "this microflow ran
+        // six thousand times".
+        iteration: typeof frame.iteration === 'number' ? frame.iteration : null,
+        iterations: typeof frame.iterations === 'number' ? frame.iterations : null,
+        activity: (frame.current_activity && typeof frame.current_activity === 'object' && typeof frame.current_activity.caption === 'string')
+          ? frame.current_activity.caption : null,
         frame: frame,
         t0: o.t0,
         t1: o.tLast + interval,
@@ -1217,43 +1225,78 @@
     return modName ? withMod(bar, moduleOf(modName) || modName) : bar;
   }
 
-  function kvRow(key, value) {
-    return el('div', { class: 'kv-row' }, [el('span', { class: 'kv-key', text: key }), el('span', { class: 'kv-val', text: value })]);
-  }
-
   function renderSpanDetail(model, spans) {
     var s = pickedSpanIndex != null ? spans[pickedSpanIndex] : null;
     if (!s) {
       return el('p', { class: 'muted perf-hint', text: 'Click a bar in the flame to see what it was doing.' });
     }
     var kindLabel = s.kind === 'xpath' ? 'Retrieve' : s.kind === 'flow' ? 'Microflow' : 'Activity';
-    var rows = [
-      kvRow('Started', '+' + formatMs(s.t0)),
-      kvRow('Finished', '+' + formatMs(s.t1)),
-      kvRow('Self time', formatMs(s.self))
-    ];
-    if (s.amount != null) rows.push(kvRow('Amount asked', s.amount === -1 ? 'unlimited' : String(s.amount)));
-    if (s.returnsCount) rows.push(kvRow('Returns a count', 'yes'));
+    var wall = s.t1 - s.t0;
+    var inCalls = Math.max(0, wall - s.self);
+    var interval = observedIntervalMs(_tlRecording);
+    var mod = s.qualifiedName ? moduleOf(s.qualifiedName)
+      : (s.kind === 'xpath' ? moduleOf(xpathEntityQualifiedName(s.xpath) || '') : null);
+
+    // The chips answer "what am I looking at" before any number is read. The
+    // flat kv list this replaces made every fact the same size, so the module,
+    // the loop position and the kind were all as loud as the finish time.
+    var chips = [el('span', { class: 'perf-chip', text: kindLabel })];
+    if (mod) chips.push(withMod(el('span', { class: 'perf-chip is-mod', text: mod }), mod));
+    if (s.activity) chips.push(el('span', { class: 'perf-chip', text: s.activity }));
+    if (s.iterations) chips.push(el('span', { class: 'perf-chip', text: 'iteration ' + (s.iteration != null ? s.iteration : '?') + ' of ' + s.iterations }));
+    var sameName = spans.filter(function (o) { return o.name === s.name; }).length;
+    if (sameName > 1) chips.push(el('span', { class: 'perf-chip', text: sameName + '\u00d7 in this request' }));
+
+    var nums = [['Started', '+' + formatMs(s.t0)], ['Finished', '+' + formatMs(s.t1)],
+                ['Wall', formatMs(wall)], ['Self', formatMs(s.self)],
+                ['Samples', String(Math.max(1, Math.round(wall / interval)))]];
+    if (s.amount != null) nums.push(['Amount asked', s.amount === -1 ? 'unlimited' : String(s.amount)]);
+    if (s.returnsCount) nums.push(['Returns', 'a count']);
 
     var kids = [
       el('div', { class: 'perf-detail-head' }, [
-        el('span', { class: 'perf-detail-title', text: s.name }),
-        el('span', { class: 'muted', text: kindLabel + ' \u00b7 ' + formatMs(s.t1 - s.t0) })
+        el('div', {}, [
+          el('div', { class: 'perf-detail-title', text: s.name }),
+          el('div', { class: 'perf-chips' }, chips)
+        ]),
+        el('div', { class: 'perf-detail-when' }, [
+          el('b', { text: formatMs(wall) }),
+          el('span', { class: 'muted', text: 'in this recording' })
+        ])
       ]),
-      el('div', { class: 'kv' }, rows)
+      // Self against what it called, as one bar. It is the single question a
+      // caller actually has \u2014 is this slow, or is what it calls slow \u2014 and it
+      // was a number in a list nobody compared against the one above it.
+      el('div', { class: 'perf-split' }, [
+        el('div', { class: 'perf-split-track' }, [
+          el('div', { class: 'perf-split-self', style: 'width:' + (wall ? (s.self / wall) * 100 : 100).toFixed(1) + '%' })
+        ]),
+        el('div', { class: 'perf-split-legend' }, [
+          el('span', { text: 'self ' + formatMs(s.self) }),
+          el('span', { class: 'muted', text: 'in calls it made ' + formatMs(inCalls) })
+        ])
+      ]),
+      el('div', { class: 'perf-nums' }, nums.map(function (n) {
+        return el('div', { class: 'perf-num' }, [el('b', { text: n[1] }), el('span', { text: n[0] })]);
+      }))
     ];
-    if (s.kind === 'xpath' && s.xpath) kids.push(el('code', { class: 'rule-xpath-code', style: 'margin-top:10px', text: s.xpath }));
+    if (s.kind === 'xpath' && s.xpath) kids.push(el('code', { class: 'rule-xpath-code', text: s.xpath }));
 
+    var acts = [];
     var target = resolveFrame(model, s.frame);
     if (target) {
-      kids.push(el('div', { class: 'perf-detail-actions' }, [
-        el('button', {
-          class: 'link-btn', text: 'Open ' + (s.qualifiedName || target.item.qualifiedName || target.item.name) + ' in the model',
-          onclick: function () { jumpToObject(target.sectionKey, target.item); }
-        })
-      ]));
-    } else if (s.kind === 'activity') {
-      kids.push(el('p', { class: 'muted', style: 'margin-top:10px', text: 'A step the runtime reported \u2014 MxScout has no model object to open for it.' }));
+      acts.push(el('button', {
+        class: 'btn btn-sm', text: 'Open ' + (s.qualifiedName || target.item.qualifiedName || target.item.name) + ' in the model',
+        onclick: function () { jumpToObject(target.sectionKey, target.item); }
+      }));
+    }
+    acts.push(el('button', { class: 'btn btn-sm', text: 'Stretch to this call', onclick: function () { tlZoomTo(s.t0, s.t1, true); } }));
+    // The same comments.js editor every object popup uses, reached the same
+    // way Hotspots reaches it \u2014 one finding system, not a second one.
+    if (target) acts.push(findingButton(target));
+    kids.push(el('div', { class: 'perf-detail-actions' }, acts));
+    if (!target && s.kind === 'activity') {
+      kids.push(el('p', { class: 'muted', style: 'margin:10px 0 0', text: 'A step the runtime reported \u2014 MxScout has no model object to open for it.' }));
     }
     return el('div', { class: 'perf-detail' }, kids);
   }
@@ -2220,15 +2263,49 @@
     var sessions = sessionsNow(recording);
     if (!mem.length && !cb.length && !sessions) return null;
 
+    var pools = poolSeries(recording);
+    var requestCount = buildRequestRows(recording).length;
+
+    // Every tile carries what the number is measured AGAINST. "447 MB" is not
+    // a fact anyone can act on; "447 MB of the 400 MB this runtime has
+    // committed" is. The time series these tiles used to sit beside moved to
+    // the Timeline's own tracks, where they share its ruler.
     var tiles = [];
-    if (mem.length) {
-      var peakUsed = Math.max.apply(null, mem.map(function (m) { return m.used; }));
-      var ceiling = mem[mem.length - 1].max;
-      tiles.push({ v: formatBytes(peakUsed), k: 'peak heap', n: ceiling ? ('of ' + formatBytes(ceiling) + ' max') : '' });
+    if (pools.length) {
+      var peakUsed = pools.reduce(function (m, p) { return Math.max(m, p.used); }, 0);
+      var committed = pools[pools.length - 1].committed;
+      var max = pools[pools.length - 1].max;
+      tiles.push({
+        v: formatBytes(peakUsed), k: 'peak heap',
+        n: committed ? ('of ' + formatBytes(committed) + ' committed' + (max ? ', ' + formatBytes(max) + ' max' : '')) : (max ? 'of ' + formatBytes(max) + ' max' : '')
+      });
+      // Old Gen across the whole recording. Young-generation churn is normal
+      // and says nothing; the old generation ending higher than it started,
+      // after collections have run, is the one leak signal this data carries.
+      var withPools = pools.filter(function (p) { return p.hasPools; });
+      if (withPools.length > 1) {
+        var grew = withPools[withPools.length - 1].old - withPools[0].old;
+        tiles.push({
+          v: (grew >= 0 ? '+' : '−') + formatBytes(Math.abs(grew)), k: 'old gen moved',
+          n: gcMarks(recording).length + ' inferred collection' + (gcMarks(recording).length === 1 ? '' : 's')
+        });
+      }
     }
     if (cb.length) {
       var totalOps = cb.reduce(function (sum, p) { return sum + p.total; }, 0);
-      tiles.push({ v: String(totalOps), k: 'database operations', n: 'select · insert · update · delete · commit' });
+      var selects = cb.reduce(function (sum, p) { return sum + p.select; }, 0);
+      tiles.push({ v: String(totalOps), k: 'database operations', n: selects + ' of them selects' });
+      // The one number on this card that is a verdict on its own: a retrieve
+      // inside a loop shows up here and nowhere else on the Overview tab. It
+      // is a ratio of two things the admin port reports separately, so the
+      // sub-line says so rather than letting it read as a measurement.
+      if (requestCount) {
+        var perReq = Math.round(selects / requestCount);
+        tiles.push({
+          v: String(perReq), k: 'selects per request',
+          n: 'counted, not measured — ' + selects + ' ÷ ' + requestCount + ' requests'
+        });
+      }
     }
     if (sessions) {
       // `named_users` is how many user ACCOUNTS exist, not how many sessions
@@ -2244,23 +2321,9 @@
       tiles.push({ v: open != null ? String(open + anon) : '—', k: 'open sessions', n: note });
     }
 
-    var sparkBlocks = [];
-    if (mem.length > 1) {
-      sparkBlocks.push(el('div', {}, [
-        el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:4px', text: 'Heap used, over the recording' }),
-        el('div', { class: 'rec-spark' }, [sparklineSvg(mem.map(function (m) { return m.used; }), '#e8a33d')])
-      ]));
-    }
-    if (cb.length > 1) {
-      sparkBlocks.push(el('div', {}, [
-        el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:4px', text: 'Database operations per sample interval' }),
-        el('div', { class: 'rec-spark' }, [sparklineSvg(cb.map(function (p) { return p.total; }), '#e8a33d')])
-      ]));
-    }
-
     return el('div', { class: 'card' }, [
       el('h3', { class: 'live-h', text: 'Runtime, while this ran' }),
-      el('p', { class: 'muted', text: 'From the same admin port, alongside the requests above — heap and database activity belong to the whole runtime, not just this recording’s own requests.' }),
+      el('p', { class: 'muted', text: 'From the same admin port, alongside the requests above — heap and the database counters belong to the whole Mendix process, not only to this recording’s own requests. How they moved over time is on the Timeline tab, on the same ruler as the requests that moved them.' }),
       tiles.length ? el('div', { class: 'stat-row' }, tiles.map(function (t) {
         return el('div', { class: 'stat' }, [
           el('div', { class: 'v', text: t.v }),
@@ -2268,8 +2331,53 @@
           t.n ? el('div', { class: 'n', text: t.n }) : null
         ].filter(Boolean));
       })) : null,
-      sparkBlocks.length ? el('div', { style: 'display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-top:14px' }, sparkBlocks) : null
+      renderHandlerTable(recording),
+      el('p', { class: 'muted', style: 'margin:14px 0 0;font-size:12px', text:
+        'Not in this data, and no chart will invent it: CPU, thread counts, how long a collection paused for, and how many rows a retrieve returned. A collection is inferred from used heap dropping between two samples — the admin port reports no such event.' })
     ].filter(Boolean));
+  }
+
+  // The per-handler request counters. They are cumulative for the runtime's
+  // whole life, like connectionbus, so the number worth showing is how far
+  // each moved while this recording ran — and a handler that did not move at
+  // all is left out rather than listed as a row of dashes. `debugger/` moving
+  // is worth seeing on its own: a debugger attached during a measurement
+  // changes what is being measured.
+  function renderHandlerTable(recording) {
+    var samples = recording.samples || [];
+    var first = null, last = null;
+    for (var i = 0; i < samples.length; i++) {
+      var s = statsOf(samples[i]);
+      if (s && Array.isArray(s.requests)) { if (!first) first = s.requests; last = s.requests; }
+    }
+    if (!first || !last || first === last) return null;
+    var was = {};
+    first.forEach(function (h) { if (h && typeof h.name === 'string') was[h.name] = h.value; });
+    var moved = last.filter(function (h) {
+      return h && typeof h.name === 'string' && typeof h.value === 'number' && (h.value - (was[h.name] || 0)) > 0;
+    });
+    if (!moved.length) return null;
+    var secs = Math.max(0.001, totalDurationMs(recording) / 1000);
+    return el('div', { style: 'margin-top:16px' }, [
+      el('h4', { class: 'perf-sub-h', text: 'Requests the runtime answered' }),
+      el('div', { style: 'overflow-x:auto' }, [
+        el('table', { class: 'data-table' }, [
+          el('thead', {}, [el('tr', {}, [
+            el('th', { text: 'Handler' }),
+            el('th', { class: 'n', text: 'While recording' }),
+            el('th', { class: 'n', text: 'Per second' })
+          ])]),
+          el('tbody', {}, moved.map(function (h) {
+            var d = h.value - (was[h.name] || 0);
+            return el('tr', {}, [
+              el('td', { text: h.name || '(root)' }),
+              el('td', { class: 'n', text: '+' + d }),
+              el('td', { class: 'n', text: (d / secs).toFixed(1) })
+            ]);
+          }))
+        ])
+      ])
+    ]);
   }
 
   // ---------- rendering: Call tree (Phase 2c) ----------
