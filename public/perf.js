@@ -655,6 +655,21 @@
   // way a network monitor turns a byte counter into a throughput graph. The
   // first point has nothing before it to subtract, so it is skipped, not
   // shown as a spike.
+  // The five counters, and the weights they are drawn with. One hue, five
+  // strengths — a breakdown of one quantity, not five identities, so it stays
+  // inside the accent family instead of opening a sixth colour language on a
+  // screen that already carries a module hue on every bar. Karol's call,
+  // 2026-09-09. Delete is the exception: it is the one that should catch the
+  // eye, so it borrows the alarm hue rather than a weight of the accent.
+  var CB_OPS = ['select', 'insert', 'update', 'delete', 'transaction'];
+  var CB_FILL = {
+    select: 'var(--accent)',
+    insert: 'color-mix(in srgb, var(--accent) 66%, var(--panel-2))',
+    update: 'color-mix(in srgb, var(--accent) 44%, var(--panel-2))',
+    delete: 'color-mix(in srgb, var(--alarm) 55%, var(--panel-2))',
+    transaction: 'color-mix(in srgb, var(--accent) 24%, var(--panel-2))'
+  };
+
   function connectionbusSeries(recording) {
     var out = [];
     var prev = null;
@@ -663,14 +678,70 @@
       var cb = s && s.connectionbus;
       if (!cb) return;
       if (prev) {
-        var total = ['select', 'insert', 'update', 'delete', 'transaction'].reduce(function (sum, key) {
+        // Per operation as well as summed. "4007 database operations" says
+        // nothing; "3900 of them selects, across 7 requests" is the N+1
+        // verdict, and it cannot be read off a total.
+        var point = { t: sample.t, total: 0 };
+        CB_OPS.forEach(function (key) {
           var d = (typeof cb[key] === 'number' && typeof prev[key] === 'number') ? (cb[key] - prev[key]) : 0;
-          return sum + Math.max(0, d); // a restarted runtime would show as a drop, not a negative spike
-        }, 0);
-        out.push({ t: sample.t, total: total });
+          d = Math.max(0, d); // a restarted runtime would show as a drop, not a negative spike
+          point[key] = d;
+          point.total += d;
+        });
+        out.push(point);
       }
       prev = cb;
     });
+    return out;
+  }
+
+  // Heap split by pool, which is the difference between "memory went up" and
+  // "memory went up and stayed up". `memorypools` carries NON-heap pools too —
+  // Metaspace and three CodeHeaps, 160 MB of them in a real 2026-09-09
+  // sample — so `is_heap` has to be honoured or the heap line is drawn from a
+  // number that is not the heap. Eden's sawtooth is the allocation rate; Old
+  // Gen creeping up across collections is the only leak signal this admin API
+  // gives at all.
+  //
+  // `committed_heap` (400 MB in that sample) is the ceiling worth drawing.
+  // `max_heap` was 16 GB, which is why a chart scaled to it drew a flat line
+  // along the bottom and said nothing.
+  function poolSeries(recording) {
+    var out = [];
+    (recording.samples || []).forEach(function (sample) {
+      var s = statsOf(sample);
+      var mem = s && s.memory;
+      if (!mem || typeof mem.used_heap !== 'number') return;
+      var pools = Array.isArray(mem.memorypools) ? mem.memorypools : [];
+      var by = { eden: 0, old: 0, survivor: 0 };
+      pools.forEach(function (p) {
+        if (!p || p.is_heap !== true || typeof p.usage !== 'number') return;
+        var name = String(p.name || '').toLowerCase();
+        if (name.indexOf('eden') !== -1) by.eden += p.usage;
+        else if (name.indexOf('survivor') !== -1) by.survivor += p.usage;
+        else by.old += p.usage;
+      });
+      out.push({
+        t: sample.t, used: mem.used_heap,
+        committed: typeof mem.committed_heap === 'number' ? mem.committed_heap : null,
+        max: typeof mem.max_heap === 'number' ? mem.max_heap : null,
+        eden: by.eden, old: by.old, survivor: by.survivor,
+        hasPools: pools.length > 0
+      });
+    });
+    return out;
+  }
+
+  // Where used heap DROPPED between two samples. The admin API reports no
+  // garbage-collection events, so this is an inference and is labelled as one
+  // everywhere it is shown — a drop is the only evidence of a collection this
+  // data can carry.
+  function gcMarks(recording) {
+    var series = memorySeries(recording);
+    var out = [];
+    for (var i = 1; i < series.length; i++) {
+      if (series[i].used < series[i - 1].used * 0.92) out.push(series[i].t);
+    }
     return out;
   }
 
@@ -1269,11 +1340,17 @@
     var tracks = [
       { name: 'Time', read: formatMs(lenMs) + ' total', h: 22, body: renderTlRuler(lenMs) },
       { name: 'Requests', read: rows.length + ' request' + (rows.length === 1 ? '' : 's'),
-        h: packed.laneCount * 28, body: el('div', {}, lanes) },
-      { name: 'Call stack',
-        read: selectedRow ? (selectedRow.entry || selectedRow.id).split('.').pop() : 'pick a request',
-        h: 0, body: selectedRow ? renderFlame(spans) : el('p', { class: 'muted perf-hint', text: 'Click a request bar above.' }) }
+        h: packed.laneCount * 28, body: el('div', {}, lanes) }
     ];
+
+    var heap = renderHeapTrack(recording, lenMs, 46);
+    if (heap) tracks.push({ name: 'Heap', read: heapReadout(recording), h: 46, body: heap });
+    var db = renderDbTrack(recording, lenMs, 40);
+    if (db) tracks.push({ name: 'Database', read: dbReadout(recording), h: 40, body: db });
+
+    tracks.push({ name: 'Call stack',
+      read: selectedRow ? (selectedRow.entry || selectedRow.id).split('.').pop() : 'pick a request',
+      h: 0, body: selectedRow ? renderFlame(spans) : el('p', { class: 'muted perf-hint', text: 'Click a request bar above.' }) });
     tracks.forEach(function (tr) {
       gutter.appendChild(el('div', { class: 'tl-name' + (tr.h ? '' : ' is-auto'), style: tr.h ? 'height:' + tr.h + 'px' : null }, [
         el('b', { text: tr.name }), el('span', { class: 'tl-read', text: tr.read })
@@ -1412,16 +1489,123 @@
     e.preventDefault();
   }
 
+  // ---------- the runtime tracks (Phase 2f) ----------
+  // Heap and database sit UNDER the requests, on the same axis and the same
+  // ruler, because that is the whole point: "the heap stepped 200 MB" is a
+  // fact about the runtime, and "it stepped under IVK_SyncObjects" is a
+  // finding. The two charts could not be compared at all while they lived in
+  // their own card with their own unlabelled x-axis.
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  function svgNode(tag, attrs) {
+    var n = document.createElementNS(SVG_NS, tag);
+    Object.keys(attrs || {}).forEach(function (k) { if (attrs[k] != null) n.setAttribute(k, attrs[k]); });
+    return n;
+  }
+
+  // What each runtime track says in the gutter beside it — the number in the
+  // same place every time, rather than a tooltip you have to hunt for.
+  function heapReadout(recording) {
+    var pts = poolSeries(recording);
+    if (!pts.length) return '—';
+    var peak = pts.reduce(function (m, p) { return Math.max(m, p.used); }, 0);
+    var committed = pts[pts.length - 1].committed;
+    return formatBytes(peak) + (committed ? ' of ' + formatBytes(committed) : '');
+  }
+
+  function dbReadout(recording) {
+    var pts = connectionbusSeries(recording);
+    if (!pts.length) return '—';
+    var sel = pts.reduce(function (s, p) { return s + p.select; }, 0);
+    var rest = pts.reduce(function (s, p) { return s + p.total - p.select; }, 0);
+    return sel + ' select · ' + rest + ' other';
+  }
+
+  function renderHeapTrack(recording, lenMs, height) {
+    var pts = poolSeries(recording);
+    if (pts.length < 2) return null;
+    var width = Math.max(1, tlX(lenMs));
+    var peak = pts.reduce(function (m, p) { return Math.max(m, p.used); }, 1);
+    var ceiling = peak * 1.12;
+    var svg = svgNode('svg', { width: width.toFixed(1), height: height, viewBox: '0 0 ' + width.toFixed(1) + ' ' + height, preserveAspectRatio: 'none', class: 'tl-svg' });
+    function Y(v) { return height - 2 - (v / ceiling) * (height - 6); }
+    var hasPools = pts.some(function (p) { return p.hasPools; });
+    var dUsed = 'M' + tlX(pts[0].t).toFixed(1) + ' ' + height;
+    var dOld = dUsed;
+    pts.forEach(function (p) {
+      dUsed += ' L' + tlX(p.t).toFixed(1) + ' ' + Y(p.used).toFixed(1);
+      if (hasPools) dOld += ' L' + tlX(p.t).toFixed(1) + ' ' + Y(p.old + p.survivor).toFixed(1);
+    });
+    var lastX = tlX(pts[pts.length - 1].t).toFixed(1);
+    svg.appendChild(svgNode('path', { d: dUsed + ' L' + lastX + ' ' + height + ' Z', fill: 'var(--muted)', 'fill-opacity': '.20' }));
+    if (hasPools) svg.appendChild(svgNode('path', { d: dOld + ' L' + lastX + ' ' + height + ' Z', fill: 'var(--muted)', 'fill-opacity': '.36' }));
+    // The committed ceiling, but only when it fits the scale this chart is
+    // drawn to — a line off the top of the box is worse than no line.
+    var committed = pts[pts.length - 1].committed;
+    if (committed && committed <= ceiling) {
+      svg.appendChild(svgNode('line', {
+        x1: 0, x2: width.toFixed(1), y1: Y(committed).toFixed(1), y2: Y(committed).toFixed(1),
+        stroke: 'var(--muted)', 'stroke-dasharray': '3 3', 'stroke-width': '1', 'vector-effect': 'non-scaling-stroke'
+      }));
+    }
+    gcMarks(recording).forEach(function (t) {
+      svg.appendChild(svgNode('line', {
+        x1: tlX(t).toFixed(1), x2: tlX(t).toFixed(1), y1: 0, y2: height,
+        stroke: 'var(--accent)', 'stroke-opacity': '.45', 'stroke-dasharray': '2 3',
+        'stroke-width': '1', 'vector-effect': 'non-scaling-stroke'
+      }));
+    });
+    return svg;
+  }
+
+  function renderDbTrack(recording, lenMs, height) {
+    var pts = connectionbusSeries(recording);
+    if (!pts.length) return null;
+    var width = Math.max(1, tlX(lenMs));
+    // One bar per bucket, and a bucket is never narrower than about six
+    // pixels: at a wide zoom a bar per 62 ms sample would be sub-pixel noise.
+    var bucketMs = Math.max(observedIntervalMs(recording), tlT(6));
+    var buckets = {};
+    var peak = 1;
+    pts.forEach(function (p) {
+      var key = Math.floor(p.t / bucketMs);
+      var b = buckets[key];
+      if (!b) { b = buckets[key] = { t0: key * bucketMs, total: 0 }; CB_OPS.forEach(function (op) { b[op] = 0; }); }
+      CB_OPS.forEach(function (op) { b[op] += p[op] || 0; });
+      b.total += p.total;
+      if (b.total > peak) peak = b.total;
+    });
+    var svg = svgNode('svg', { width: width.toFixed(1), height: height, viewBox: '0 0 ' + width.toFixed(1) + ' ' + height, preserveAspectRatio: 'none', class: 'tl-svg' });
+    Object.keys(buckets).forEach(function (key) {
+      var b = buckets[key];
+      var x = tlX(b.t0);
+      var w = Math.max(1.5, tlX(b.t0 + bucketMs) - x - 1);
+      var y = height - 1;
+      CB_OPS.forEach(function (op) {
+        if (!b[op]) return;
+        var h = (b[op] / peak) * (height - 4);
+        y -= h;
+        svg.appendChild(svgNode('rect', { x: x.toFixed(1), y: y.toFixed(1), width: w.toFixed(1), height: Math.max(0.8, h).toFixed(1), fill: CB_FILL[op] }));
+      });
+    });
+    return svg;
+  }
+
   function renderTlRuler(lenMs) {
     var host = el('div', { class: 'tl-ruler' });
     var step = tickStep(tlPps);
+    var end = tlX(lenMs);
     for (var t = 0; t <= lenMs; t += step) {
-      host.appendChild(el('div', { class: 'tl-tick', style: 'left:' + tlX(t).toFixed(1) + 'px' }, [
-        el('span', { text: '+' + formatMs(t) })
-      ]));
+      var x = tlX(t);
+      // The tick line always; its label only when the label fits before the
+      // end of the canvas. A label hanging off the last tick makes the canvas
+      // wider than the recording, which puts a scrollbar under a timeline
+      // that is supposed to be showing everything.
+      host.appendChild(el('div', { class: 'tl-tick', style: 'left:' + x.toFixed(1) + 'px' },
+        x + TICK_LABEL_PX <= end ? [el('span', { text: '+' + formatMs(t) })] : []));
     }
     return host;
   }
+  var TICK_LABEL_PX = 52;
 
   // Crosshair and drag-selection, inside the canvas so they share its
   // coordinate space and need no correction when it is scrolled.
@@ -2417,6 +2601,8 @@
     observedIntervalMs: observedIntervalMs,
     entryTotals: entryTotals,
     tickStep: tickStep,
+    poolSeries: poolSeries,
+    gcMarks: gcMarks,
     renderPanel: renderPanel
   };
 })();
