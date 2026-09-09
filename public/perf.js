@@ -1418,10 +1418,14 @@
   function renderRecordingCard(r) {
     if (!(r.samples || []).length) return renderEmptyRecordingCard(r);
     var rows = buildRequestRows(r);
-    var totals = entryTotals(r);
-    var top = totals.list[0] || null;
     var spark = concurrencySeries(r);
-    var colour = moduleColor((top && (moduleOf(top.name) || top.name)) || 'System');
+    // The card used to carry a "Heaviest: <flow> N%" line. Karol, 2026-09-09,
+    // on two real recordings: it gives nothing at this view — the name is
+    // usually a framework flow you did not go looking for, and the percentage
+    // was a share of request_duration, which is the runtime's own counter
+    // since the request began and can be far longer than the recording. The
+    // sparkline is what actually identifies a recording in a list.
+    var colour = moduleColor(rows.length ? (moduleOf(rows[0].entry || '') || 'System') : 'System');
     return el('div', { class: 'card rec-card', onclick: function () { openRecording(r.id); } }, [
       el('div', { class: 'rec-card-head' }, [ el('span', { class: 'rec-when', text: formatDate(r.started) || 'unknown time' }) ]),
       el('div', { class: 'rec-figs' }, [
@@ -1430,11 +1434,7 @@
         el('div', { class: 'rec-fig' }, [el('span', { class: 'v', text: String(r.samples.length) }), el('span', { class: 'k', text: 'samples' })])
       ]),
       el('div', { class: 'rec-spark' }, [sparklineSvg(spark, colour)]),
-      top ? el('div', { class: 'rec-top' }, [
-        el('span', { text: 'Heaviest:' }),
-        el('b', { text: top.name }),
-        el('span', { text: top.share + '%' })
-      ]) : el('p', { class: 'rec-top muted', text: 'No in-flight requests were caught.' }),
+      rows.length ? null : el('p', { class: 'rec-top muted', text: 'No in-flight requests were caught.' }),
       el('div', { class: 'rec-actions' }, [
         el('button', {
           class: 'btn btn-sm btn-primary', text: 'Open',
