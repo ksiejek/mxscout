@@ -325,7 +325,7 @@ Anything else makes it worthless to the person reading it.
 No build step, no bundler, no dependencies — what runs is what you read. One
 subject per file, each reached through a single named object, each given what
 it needs through `init()` rather than reaching for it. Nothing here is over
-2,800 lines:
+2,400 lines:
 
 | file | what it is |
 | --- | --- |
@@ -339,6 +339,8 @@ it needs through `init()` rather than reaching for it. Nothing here is over
 | `public/crypto.js` | the package format and the access code — WebCrypto only |
 | `public/transfer.js` | how a project leaves this browser and how one arrives |
 | `public/store.js` | every persistent read and write, and nothing else does storage |
+| `public/perf.js` | performance recordings: the admin port, saving and importing one, and every aggregation over its samples |
+| `public/timeline.js` | the Timeline view: one time axis, the tracks on it, and the panel for whatever is picked |
 | `public/palette.js` | the command palette |
 | `public/about.js` | the About & security page — data, rendered by one function that only sets text |
 | `public/guide.js` | the Getting started walkthrough — same shape as About, but its mockups reuse the real screens' component classes |

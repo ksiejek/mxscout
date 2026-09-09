@@ -39,7 +39,7 @@
           ['Licence', 'GPL-3.0-or-later — the complete source is readable, unminified, with no build step between it and what runs'],
           ['Runtime', 'Node.js, standard library only (http, fs, path, crypto, url)'],
           ['Third-party dependencies', 'None. package.json declares no dependencies; there is no node_modules, no lockfile and no npm install step'],
-          ['Size', 'About 17,000 lines across 26 files — small enough to read end to end'],
+          ['Size', 'About 17,100 lines across 27 files — small enough to read end to end'],
           ['Install footprint', 'A folder. No installer, no administrator rights, no system service, no scheduled task, no registry or autostart entry, no PATH change'],
           ['Starting it', 'A script in that folder: start.sh, or MxScout.cmd / MxScout.command for a double-click. It runs Node.js on the files already there and opens the browser on 127.0.0.1. On a machine with no Node.js installed, and only after the person typing yes to the question, the launcher downloads the official Node build from nodejs.org into ./runtime — one folder, deleted like any other, no installer and no administrator rights. That is the only thing MxScout ever writes outside the browser, it happens in the launcher and never in the server process, and it never happens without being asked. Answering no, or having no network, leaves the folder untouched'],
           ['Runs as', 'The user who starts it, with that user’s permissions. Nothing is elevated'],
@@ -214,7 +214,7 @@
       ] },
 
       { id: 'source', title: 'Reading the source', blocks: [
-        { p: '26 files, no build step. What runs is what you read. The largest is under 2,400 lines.' },
+        { p: '27 files, no build step. What runs is what you read. The largest is under 2,400 lines.' },
         { kv: [
           ['server/index.js', 'The whole HTTP server: loopback bind, security headers, the same-origin gate, the route table, static files.'],
           ['server/routes/session.js', 'Every endpoint listed above, with its validation.'],
@@ -236,6 +236,7 @@
           ['public/mprImport.js', 'Picking a Mendix project — one folder pick on Chromium via the File System Access API, or the .mpr file plus its mprcontents folder if the format needs one — the progress dialog, and handing the finished model to app.js.'],
           ['public/comments.js', 'Comments: writing them, filtering them, the history that records when one was marked fixed, the whitelist that decides what leaves in a package, and the rule by which two copies of one comment reconcile.'],
           ['public/report.js', 'The two report outputs — the clipboard copy for Word, and the standalone encrypted HTML file. Also the one place in the codebase that assigns markup, named in Hardening above.'],
+          ['public/timeline.js', 'The performance Timeline: one time axis, the tracks drawn on it, and the panel for whatever is picked. It reads no samples of its own — every number it draws is handed to it by perf.js.'],
           ['public/version.js', 'Which version is running, what is in it, and the reasoning for not checking whether a newer one exists.'],
           ['public/about.js', 'This page. It is data — a list of sections and blocks — rendered by one function that only ever sets text.'],
           ['public/guide.js', 'The Getting started walkthrough. Same shape as this page — data, rendered by one function that only sets text — but every mockup on it is built from the real component classes the actual screens use, against a fictional project.'],
