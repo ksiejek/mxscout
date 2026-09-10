@@ -83,7 +83,7 @@ module.exports = async function (t) {
 
   // Second table: same file, a multi-line CREATE TABLE with an inline
   // "BLOB PRIMARY KEY NOT NULL" column — the exact shape a real .mpr's own
-  // Unit table uses (confirmed against Riverside.mpr's sqlite_master.sql).
+  // Unit table uses, confirmed against a real one.
   const unitLike = await mx.evaluate(`(function () {
     var t = window.MxSqlite.readTable(window.__fx, 'UnitLike');
     function hex(u8) {

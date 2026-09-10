@@ -14,7 +14,7 @@
  * behind both that fallback's folder step and "the whole project folder"
  * link, reads EVERY file under whatever folder is chosen, recursively, with
  * no way to ask for less — pointed at the whole project root, that is
- * thousands of irrelevant files (Northwind-sized real project: ~10,000 files
+ * thousands of irrelevant files (a real project of that size: ~10,000 files
  * project-wide vs. ~3,900 actually under mprcontents/) for every import;
  * pointed at just mprcontents/, it is only ever the files the model walk
  * actually reads. Dragging the whole project folder in one go still works,

@@ -17,7 +17,7 @@ tables:
   of overflow pages (`Id=9003`), and a negative INTEGER (`Id=-42`).
 - **`UnitLike`** — declared the same multi-line way, with the same inline
   `BLOB PRIMARY KEY NOT NULL`, that a real `.mpr`'s own `Unit` table uses
-  (confirmed against `Riverside.mpr`'s `sqlite_master.sql`) — the
+  (confirmed against a real project's `sqlite_master.sql`) — the
   column-name parser has to survive that shape, not just a simple one-line
   `CREATE TABLE`.
 
