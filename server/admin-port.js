@@ -194,11 +194,45 @@ function probeOnce(host, port, password) {
 // ---------- the sampling loop ----------
 // Only ever one, because MxScout is single-user and single-session by design
 // (see state.js). Kept as module state next to the calls it repeats.
+//
+// The loop CHAINS rather than ticks on a fixed interval: the next round is
+// scheduled when the previous one has answered, so the cadence is whatever
+// the admin port can actually keep up with, floored at MIN_GAP_MS so a fast
+// port cannot be hammered without limit. A fixed setInterval could only ever
+// be as fast as its slowest round — a round that overran simply skipped the
+// next tick, so the real gap jumped to a multiple of the interval.
+//
+// Why it matters, in Karol's words on a real recording (2026-09-10): a
+// microflow he had watched run "kilkadziesiąt razy" showed 4 calls in the
+// Call tree. A sampling profiler can only see what is running at the instant
+// it looks, so at one look every 62 ms a call shorter than that is a coin
+// toss. Two changes buy the resolution back:
+//
+//   - runtime_statistics is asked for on its OWN, slower schedule
+//     (STATS_EVERY_MS). It is the heavier of the two calls and describes the
+//     whole process — heap, database counters, sessions — none of which needs
+//     to be read as often as "what is running right now". Most rounds are now
+//     one HTTP call instead of two.
+//   - the gap between rounds is the floor, not a fixed period.
+//
+// What this does NOT do, and no change here could: turn the sampler into a
+// tracer. It is still a sample every ~20-30 ms, and every count derived from
+// it is "how often it was CAUGHT running", never how often it ran. The UI
+// says so wherever it shows one.
 let timer = null;
+let running = false;    // the loop's own state; `timer` is null between rounds
 let inFlight = false;   // never start a round before the last one settled
 let startedAt = 0;
+let lastStatsAt = 0;
 let failStreak = 0;
 let trouble = null;     // a sentence for the UI once the port has gone quiet for a while
+
+// The floor on how close two rounds may be, and how often the runtime-wide
+// statistics ride along. Both are here rather than passed in: they are facts
+// about how hard this file is willing to lean on someone else's runtime, and
+// the About page quotes them.
+const MIN_GAP_MS = 20;
+const STATS_EVERY_MS = 250;
 
 function nowMs() {
   const [s, ns] = process.hrtime();
@@ -214,23 +248,33 @@ function sizeOk(sample) {
 // shipped without this guard and the result was "always 0 samples": at 50 ms
 // a fresh pair of calls went out regardless of whether the previous pair had
 // answered, until every one of them queued and timed out. Same fix, same
-// reasoning, now on this side of the wire.
+// reasoning, now on this side of the wire — and the chained loop below makes
+// it structural rather than a check.
+//
+// Resolves when the round is over, whatever it found: the loop needs to know
+// when to schedule the next one, and "it failed" is as much an end as "it
+// answered".
 function tick(cfg) {
-  if (inFlight) return;
+  if (inFlight) return Promise.resolve();
   inFlight = true;
-  Promise.all([
+  // Statistics ride along only every so often. A round that skips them still
+  // produces a sample — one with `stats: null`, exactly the shape a round
+  // whose stats call failed already produced, which every reader in perf.js
+  // has always had to tolerate.
+  const wantStats = (nowMs() - lastStatsAt) >= STATS_EVERY_MS;
+  return Promise.all([
     invoke(cfg.host, cfg.port, cfg.password, 'get_current_runtime_requests'),
-    invoke(cfg.host, cfg.port, cfg.password, 'runtime_statistics')
+    wantStats ? invoke(cfg.host, cfg.port, cfg.password, 'runtime_statistics') : Promise.resolve(undefined)
   ]).then(([requests, stats]) => {
     inFlight = false;
-    if (!timer) return; // stopped while this round was in flight
+    if (!running) return; // stopped while this round was in flight
 
-    // Both null means the calls themselves did not answer — genuinely
-    // different from "the app is idle", which runtime_statistics still
-    // answers for. Worth saying out loud after a run of them, not the first:
-    // one blip is normal, ten straight is a real problem, and without this
-    // the only symptom is an empty recording.
-    if (requests === null && stats === null) {
+    // Nothing answered means the calls themselves did not answer — genuinely
+    // different from "the app is idle", which the admin port answers for with
+    // an empty object. Worth saying out loud after a run of them, not the
+    // first: one blip is normal, ten straight is a real problem, and without
+    // this the only symptom is an empty recording.
+    if (requests === null && (!wantStats || stats === null)) {
       failStreak++;
       if (failStreak === TROUBLE_AFTER_ROUNDS) {
         trouble = 'The admin port stopped answering — check that the app is still running, and that the password is still the one from this run.';
@@ -239,36 +283,55 @@ function tick(cfg) {
     }
     failStreak = 0;
     trouble = null;
+    if (wantStats && stats != null) lastStatsAt = nowMs();
 
-    const hasRequests = requests && typeof requests === 'object' && Object.keys(requests).length > 0;
-    if (!hasRequests && !stats) return; // nothing worth a sample this round
+    // A round that answered is a sample even when nothing was running. It is
+    // what makes the recording's own clock honest: every duration on the page
+    // is samples × the gap between them, and dropping the idle rounds would
+    // stretch that gap by however long the app sat still.
+    const hasRequests = requests && typeof requests === 'object';
     const sample = {
       t: Math.max(0, Math.round(nowMs() - startedAt)),
       requests: hasRequests ? requests : {},
-      stats: stats || null
+      stats: stats == null ? null : stats
     };
     if (sizeOk(sample)) cfg.onSample(sample);
   }).catch(() => { inFlight = false; });
 }
 
+// Round, wait out whatever is left of the floor, round again. cfg.intervalMs
+// is the caller's floor and MIN_GAP_MS the one this file will not go below,
+// so a caller can ask for a gentler cadence but not for a harder one.
+function loop(cfg) {
+  const roundStart = nowMs();
+  tick(cfg).then(() => {
+    if (!running) return;
+    const floor = Math.max(MIN_GAP_MS, cfg.intervalMs || 0);
+    const wait = Math.max(0, floor - (nowMs() - roundStart));
+    timer = setTimeout(() => { timer = null; loop(cfg); }, wait);
+    if (timer.unref) timer.unref(); // a recording must never hold the process open
+  });
+}
+
 function startSampling(cfg) {
   stopSampling();
   startedAt = nowMs();
+  lastStatsAt = 0; // the first round carries statistics, so a short recording has them
   inFlight = false;
   failStreak = 0;
   trouble = null;
-  timer = setInterval(() => tick(cfg), cfg.intervalMs);
-  if (timer.unref) timer.unref(); // a recording must never hold the process open
-  tick(cfg);
+  running = true;
+  loop(cfg);
 }
 
 function stopSampling() {
-  if (timer) { clearInterval(timer); timer = null; }
+  running = false;
+  if (timer) { clearTimeout(timer); timer = null; }
   inFlight = false;
   failStreak = 0;
 }
 
-function isSampling() { return !!timer; }
+function isSampling() { return running; }
 function getTrouble() { return trouble; }
 
 module.exports = {

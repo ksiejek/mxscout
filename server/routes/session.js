@@ -494,7 +494,12 @@ async function handleReportCommandResult(req, res) {
 // side of it, and every route below is SAME-ORIGIN: no part of the recorder
 // is reachable from another tab any more, which is three cross-origin
 // endpoints fewer than the bridge needed.
-const DEFAULT_INTERVAL_MS = 50;
+// The floor the recorder is asked for, not the cadence it achieves: the loop
+// in admin-port.js chains its rounds, so it goes as fast as the admin port
+// answers and never closer together than this. It was 50 ms, which after two
+// HTTP calls per round landed 62 ms apart — too coarse to catch a microflow
+// that runs for a few milliseconds at a time (Karol, 2026-09-10).
+const DEFAULT_INTERVAL_MS = 20;
 
 const CONNECT_MESSAGES = {
   blocked: (where) => 'MxScout connects only to local, test and acceptance environments — ' + where + ' is not one of them.',

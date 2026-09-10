@@ -140,7 +140,12 @@
 
   var FORMAT_VERSION = 1;
   var DEFAULT_ADMIN_PORT = 8090;
-  var DEFAULT_INTERVAL_MS = 50;
+  // What the recorder ASKED for, kept on the recording so the analyzer can
+  // say how far the achieved cadence fell short of it (renderVerdict). The
+  // number itself belongs to the server — this is the fallback for a
+  // recording that arrived without one, and it has to match
+  // routes/session.js's DEFAULT_INTERVAL_MS.
+  var DEFAULT_INTERVAL_MS = 20;
   var STATUS_POLL_MS = 1000;
 
   // ---------- storage: one row per recording, many per project ----------
@@ -1058,7 +1063,9 @@
       : '';
     return el('p', { class: 'perf-verdict', text:
       'Sampling profiler \u2014 it looked at what was running every ' + got + ' ms on average, ' +
-      'not a tracer. Durations are approximate to within that, and an action shorter than it may not get a row here at all.' + note });
+      'not a tracer. Durations are approximate to within that; an action shorter than it may not get a row here at all, ' +
+      'and every count of microflows or retrieves below is how often something was CAUGHT running, never how often it ran. ' +
+      'The database counters are the exception: the runtime counts those itself.' + note });
   }
 
   function recordingSummary(recording) {
@@ -1541,14 +1548,9 @@
       el('div', { class: 'card' }, [
         el('h3', { class: 'live-h', text: 'What this recording caught' }),
         el('p', { class: 'muted', text: 'Everything below is derived from the ' + samples + ' samples — nothing was measured twice.' }),
-        el('div', { class: 'stat-row' }, tiles.map(function (t) {
-          return el('div', { class: 'stat' }, [
-            el('div', { class: 'v', text: t.v }),
-            el('div', { class: 'k', text: t.k }),
-            t.n ? el('div', { class: 'n', text: t.n }) : null
-          ].filter(Boolean));
-        }))
+        statTiles(tiles)
       ]),
+      renderWorkCard(recording),
       shareRows.length ? el('div', { class: 'card' }, [
         el('h3', { class: 'live-h', text: 'Where the time went' }),
         el('p', { class: 'muted', text: 'Share of the time requests were visible in this recording, grouped by the microflow that started each one. A request that was already running when Start was pressed counts only from there.' }),
@@ -1557,6 +1559,85 @@
       ]) : null,
       renderRuntimeCard(recording)
     ].filter(Boolean));
+  }
+
+  // ---------- how much work the scenario did ----------
+  // The one card built to be read TWICE: record the scenario, change
+  // something, record it again, put the two side by side. Karol's ask,
+  // 2026-09-10 — "nagramy proces zrobiony błędnie i pokażemy: miałeś 2000
+  // selectów, pobrałeś 10 tysięcy obiektów, odpaliłeś 500 microflowów, a
+  // teraz zobacz" — and the comparison is his to make, between two recordings
+  // he opens himself. What this card owes him is that the numbers mean the
+  // same thing in both.
+  //
+  // Which is why they are split by HOW THEY WERE GOT, not by what they count.
+  // The database counters are the runtime's own; it increments them itself and
+  // MxScout only subtracts the first reading from the last, so 2 000 selects
+  // means two thousand selects. Everything about microflows and retrieves
+  // comes from looking at the stack every ~20 ms, so it is a FLOOR: what was
+  // caught, never what happened. Putting those two kinds of number in one row
+  // of tiles is what would make this card a lie.
+  function workTotals(recording) {
+    var flows = hotFlows(recording);
+    var queries = hotXpaths(recording);
+    var db = { total: 0 };
+    CB_OPS.forEach(function (op) { db[op] = 0; });
+    connectionbusSeries(recording).forEach(function (p) {
+      CB_OPS.forEach(function (op) { db[op] += p[op] || 0; });
+      db.total += p.total;
+    });
+    function sumCalls(list) { return list.reduce(function (n, r) { return n + r.calls; }, 0); }
+    return {
+      requests: buildRequestRows(recording).length,
+      flowRuns: sumCalls(flows), flowNames: flows.length,
+      retrieveRuns: sumCalls(queries), retrieveQueries: queries.length,
+      db: db, hasDb: connectionbusSeries(recording).length > 0
+    };
+  }
+
+  function statTiles(tiles) {
+    return el('div', { class: 'stat-row' }, tiles.map(function (t) {
+      return el('div', { class: 'stat' }, [
+        el('div', { class: 'v', text: t.v }),
+        el('div', { class: 'k', text: t.k }),
+        t.n ? el('div', { class: 'n', text: t.n }) : null
+      ].filter(Boolean));
+    }));
+  }
+
+  function renderWorkCard(recording) {
+    var w = workTotals(recording);
+    if (!w.flowRuns && !w.retrieveRuns && !w.hasDb) return null;
+    var kids = [
+      el('h3', { class: 'live-h', text: 'How much work this took' }),
+      el('p', { class: 'muted', text: 'The numbers to put beside another recording of the same scenario. Record it once, change something, record it again — these are what should move.' })
+    ];
+
+    if (w.hasDb) {
+      var rest = w.db.total - w.db.select;
+      kids.push(el('h4', { class: 'perf-sub-h', text: 'Counted by the runtime' }));
+      kids.push(statTiles([
+        { v: String(w.db.select), k: 'selects', n: w.requests ? (Math.round(w.db.select / w.requests) + ' per request') : '' },
+        { v: String(w.db.total), k: 'database operations', n: rest + ' of them not selects' },
+        { v: String(w.db.insert + w.db.update + w.db.delete), k: 'writes',
+          n: w.db.insert + ' insert · ' + w.db.update + ' update · ' + w.db.delete + ' delete' },
+        { v: String(w.db.transaction), k: 'transactions', n: 'as the runtime counts them' }
+      ]));
+    }
+
+    kids.push(el('h4', { class: 'perf-sub-h', text: 'Caught by the sampler — at least this many' }));
+    kids.push(statTiles([
+      { v: String(w.flowRuns), k: 'microflow runs seen',
+        n: w.flowNames + ' different microflow' + (w.flowNames === 1 ? '' : 's') },
+      { v: String(w.retrieveRuns), k: 'retrieves seen',
+        n: w.retrieveQueries + ' different quer' + (w.retrieveQueries === 1 ? 'y' : 'ies') },
+      { v: String(w.requests), k: 'requests', n: 'entry points into the runtime' }
+    ]));
+
+    kids.push(el('p', { class: 'muted', style: 'margin:14px 0 0;font-size:12px', text:
+      'How many ROWS those retrieves returned is not in this data at all — the admin port reports the query and the range it asked for, never the answer. The count of selects is the closest thing to it, and it is exact. The microflow and retrieve counts are not: a call that started and finished between two looks was never there to be seen, so treat them as a floor that moves the right way, not as a tally.' }));
+
+    return el('div', { class: 'card' }, kids);
   }
 
   // ---------- rendering: Runtime (Phase 2d) ----------
@@ -1573,7 +1654,6 @@
     if (!mem.length && !cb.length && !sessions) return null;
 
     var pools = poolSeries(recording);
-    var requestCount = buildRequestRows(recording).length;
 
     // Every tile carries what the number is measured AGAINST. "447 MB" is not
     // a fact anyone can act on; "447 MB of the 400 MB this runtime has
@@ -1600,22 +1680,12 @@
         });
       }
     }
-    if (cb.length) {
-      var totalOps = cb.reduce(function (sum, p) { return sum + p.total; }, 0);
-      var selects = cb.reduce(function (sum, p) { return sum + p.select; }, 0);
-      tiles.push({ v: String(totalOps), k: 'database operations', n: selects + ' of them selects' });
-      // The one number on this card that is a verdict on its own: a retrieve
-      // inside a loop shows up here and nowhere else on the Overview tab. It
-      // is a ratio of two things the admin port reports separately, so the
-      // sub-line says so rather than letting it read as a measurement.
-      if (requestCount) {
-        var perReq = Math.round(selects / requestCount);
-        tiles.push({
-          v: String(perReq), k: 'selects per request',
-          n: 'counted, not measured — ' + selects + ' ÷ ' + requestCount + ' requests'
-        });
-      }
-    }
+    // The database counters used to be two tiles here as well. They belong to
+    // the WORK the scenario did, not to the state of the runtime it ran in,
+    // and they are the first thing anyone comparing two recordings looks at —
+    // so they moved up to "How much work this took", including selects per
+    // request, and are deliberately not repeated here. What is left on this
+    // card is what the process was like while that work happened.
     if (sessions) {
       // `named_users` is how many user ACCOUNTS exist, not how many sessions
       // are open — a real recording reported 3 736 named_users with exactly
@@ -1633,13 +1703,7 @@
     return el('div', { class: 'card' }, [
       el('h3', { class: 'live-h', text: 'Runtime, while this ran' }),
       el('p', { class: 'muted', text: 'From the same admin port, alongside the requests above — heap and the database counters belong to the whole Mendix process, not only to this recording’s own requests. How they moved over time is on the Timeline tab, on the same ruler as the requests that moved them.' }),
-      tiles.length ? el('div', { class: 'stat-row' }, tiles.map(function (t) {
-        return el('div', { class: 'stat' }, [
-          el('div', { class: 'v', text: t.v }),
-          el('div', { class: 'k', text: t.k }),
-          t.n ? el('div', { class: 'n', text: t.n }) : null
-        ].filter(Boolean));
-      })) : null,
+      tiles.length ? statTiles(tiles) : null,
       renderHandlerTable(recording),
       el('p', { class: 'muted', style: 'margin:14px 0 0;font-size:12px', text:
         'Not in this data, and no chart will invent it: CPU, thread counts, how long a collection paused for, and how many rows a retrieve returned. A collection is inferred from used heap dropping between two samples — the admin port reports no such event.' })
@@ -1761,12 +1825,18 @@
         el('h4', { text: 'Call tree — the whole recording' }),
         el('span', { class: 'muted', text: 'identical paths merged · sorted by total' })
       ]),
-      el('p', { class: 'muted', style: 'margin-bottom:12px', text: 'Every call of the same microflow under the same parent is folded into one row, so a loop that ran many times reads as one line with a call count.' }),
+      // "Calls" read as a count of calls, and it never was one: it is how many
+      // separate times that path was CAUGHT on the stack. Karol, 2026-09-10,
+      // on a real recording: "widzę 4, a wiem że odpalił się kilkadziesiąt
+      // razy" — and he was right, the flow just kept finishing between two
+      // looks. The column says what it counts now, and says it in the header
+      // rather than in a note under the table nobody reads twice.
+      el('p', { class: 'muted', style: 'margin-bottom:12px', text: 'Every call of the same microflow under the same parent is folded into one row, so a loop that ran many times reads as one line. "Times seen" is how often that row was caught on the stack, not how often it ran — anything that finished between two looks was never there to count.' }),
       el('div', { style: 'overflow-x:auto' }, [
         el('table', { class: 'data-table' }, [
           el('thead', {}, [el('tr', {}, [
             el('th', { text: 'Microflow / retrieve' }),
-            el('th', { class: 'n', text: 'Calls' }),
+            el('th', { class: 'n', title: 'How many separate times this was caught running — a sampling profiler cannot count calls', text: 'Times seen' }),
             el('th', { class: 'n', text: 'Self' }),
             el('th', { class: 'n', text: 'Total' }),
             el('th', { text: '' })
@@ -1825,13 +1895,13 @@
     return el('div', { class: 'table-block' }, [
       el('div', { class: 'table-h' }, [
         el('h4', { text: 'Microflows' }),
-        el('span', { class: 'muted', text: 'self = time it was the deepest frame' })
+        el('span', { class: 'muted', text: 'self = time it was the deepest frame · times seen = how often it was caught running' })
       ]),
       el('div', { style: 'overflow-x:auto' }, [
         el('table', { class: 'data-table' }, [
           el('thead', {}, [el('tr', {}, [
             sortableHeader('Microflow', hotspotSort.flows, 'name'),
-            sortableHeader('Calls', hotspotSort.flows, 'calls', true),
+            sortableHeader('Times seen', hotspotSort.flows, 'calls', true),
             sortableHeader('Self', hotspotSort.flows, 'self', true),
             sortableHeader('Total', hotspotSort.flows, 'total', true),
             sortableHeader('Max call', hotspotSort.flows, 'max', true),
@@ -1862,16 +1932,16 @@
     return el('div', { class: 'table-block' }, [
       el('div', { class: 'table-h' }, [
         el('h4', { text: 'Retrieves' }),
-        el('span', { class: 'muted', text: 'grouped by the query itself' })
+        el('span', { class: 'muted', text: 'grouped by the query itself · row limit = the range the retrieve asked the database for' })
       ]),
       el('div', { style: 'overflow-x:auto' }, [
         el('table', { class: 'data-table' }, [
           el('thead', {}, [el('tr', {}, [
             sortableHeader('XPath', hotspotSort.xpath, 'xpath'),
-            sortableHeader('Calls', hotspotSort.xpath, 'calls', true),
+            sortableHeader('Times seen', hotspotSort.xpath, 'calls', true),
             sortableHeader('Avg', hotspotSort.xpath, 'avg', true),
             sortableHeader('Max', hotspotSort.xpath, 'max', true),
-            sortableHeader('Amount', hotspotSort.xpath, 'amount', true),
+            sortableHeader('Row limit', hotspotSort.xpath, 'amount', true),
             el('th', { text: 'Entity' })
           ])]),
           el('tbody', {}, rows.map(function (row) {
@@ -1886,7 +1956,7 @@
               el('td', { class: 'n', text: String(row.calls) }),
               el('td', { class: 'n', text: formatMs(row.avg) }),
               el('td', { class: 'n', text: formatMs(row.max) }),
-              el('td', { class: 'n', text: row.amount == null ? '—' : (row.amount === -1 ? 'unlimited' : String(row.amount)) }),
+              el('td', { class: 'n', title: 'The range this retrieve asked the database for — not how many rows came back, which the admin port never reports', text: row.amount == null ? '—' : (row.amount === -1 ? 'no limit' : String(row.amount)) }),
               el('td', {}, [entityCell, target ? el('span', { class: 'row-act', style: 'margin-left:8px' }, [findingButton(target)]) : null].filter(Boolean))
             ]);
           }))

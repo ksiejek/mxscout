@@ -310,7 +310,10 @@
     var nums = [['Started', '+' + formatMs(s.t0)], ['Finished', '+' + formatMs(s.t1)],
                 ['Wall', formatMs(wall)], ['Self', formatMs(s.self)],
                 ['Samples', String(Math.max(1, Math.round(wall / interval)))]];
-    if (s.amount != null) nums.push(['Amount asked', s.amount === -1 ? 'unlimited' : String(s.amount)]);
+    // The RANGE the retrieve asked the database for, which is not how many
+    // rows came back — the admin port never says that. 'unlimited' was the
+    // runtime's own word for -1 and read as a measurement (Karol, 2026-09-10).
+    if (s.amount != null) nums.push(['Row limit', s.amount === -1 ? 'no limit' : String(s.amount)]);
     if (s.returnsCount) nums.push(['Returns', 'a count']);
 
     var kids = [

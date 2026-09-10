@@ -135,6 +135,23 @@ module.exports = async function (t) {
   t.ok(!('feedback' in stopped.samples[0].requests) && !('feedback' in stopped.samples[0].stats),
     'and neither block is stored as the raw envelope');
 
+  // ---------- how fast the loop goes, and what rides along (2i) ----------
+  // A sampling profiler can only see what is running at the instant it looks,
+  // so the gap between looks IS the resolution. At 50 ms asked for and two
+  // HTTP calls per round it landed 62 ms apart, and a microflow Karol had
+  // watched run dozens of times showed 4 (2026-09-10). The loop chains its
+  // rounds now, and the heavier runtime_statistics call rides along on its own
+  // slower schedule instead of on every round.
+  const gaps = stopped.samples.slice(1).map((s, i) => s.t - stopped.samples[i].t).sort((a, b) => a - b);
+  const median = gaps[Math.floor(gaps.length / 2)];
+  t.ok(gaps.length > 3 && median < 50,
+    'rounds follow each other as fast as the admin port answers, not on a fixed 50 ms tick: median gap ' + median + ' ms over ' + JSON.stringify(gaps));
+  t.ok(stopped.samples.some((s) => s.stats === null),
+    'most rounds are one call — the runtime-wide statistics ride along only every so often: ' +
+    stopped.samples.filter((s) => s.stats).length + ' of ' + stopped.samples.length + ' samples carry stats');
+  t.ok(stopped.samples[0].stats,
+    'but the first round always carries them, so even a very short recording has a heap reading');
+
   // A stop that arrives twice for the SAME recording answers the same thing
   // twice. Browsers really do re-send a POST whose response was lost on a
   // reused keep-alive socket, and that is what the intermittent "0 samples
@@ -529,8 +546,8 @@ module.exports = async function (t) {
   // Timeline's tracks, where they share its ruler.
   t.ok(/of 400\.0 MB committed/.test(runtimeCardText),
     'the heap tile reads against committed heap, with the 16 GB max as an aside');
-  t.ok(/selects per request/.test(runtimeCardText) && /counted, not measured/.test(runtimeCardText),
-    'the one tile that is a verdict on its own is there, and admits it is a ratio rather than a measurement');
+  t.ok(!/database operations/.test(runtimeCardText) && !/selects per request/.test(runtimeCardText),
+    'the database counters are NOT repeated here — they are work the scenario did, not the state of the runtime: ' + runtimeCardText);
   t.ok(!/Heap used, over the recording/.test(runtimeCardText),
     'and the scaleless sparklines are gone from this card — the Timeline owns the time axis now');
   t.ok(/debugger\//.test(runtimeCardText),
@@ -540,6 +557,32 @@ module.exports = async function (t) {
   // same way the real runtime did.
   t.ok(/1open sessions/.test(runtimeCardText) && /3736 user accounts exist/.test(runtimeCardText),
     'the sessions tile counts open sessions, and keeps the account count as the aside it is');
+
+  // ---------- how much work this took (2i) ----------
+  // The card built to be read twice — record a scenario, change something,
+  // record it again (Karol, 2026-09-10). Its whole discipline is that the two
+  // kinds of number are kept apart: the database counters are the RUNTIME's
+  // own and are exact, everything about microflows and retrieves comes from
+  // looking at the stack and is a floor. A card that mixed them would invite
+  // exactly the reading that made "4 calls" look wrong.
+  const workCard = await mx.evaluate(`(function(){
+    var h = Array.from(document.querySelectorAll('h3')).find(function (n) { return n.textContent === 'How much work this took'; });
+    if (!h) return null;
+    var card = h.closest('.card');
+    return {
+      text: card.textContent,
+      heads: Array.from(card.querySelectorAll('.perf-sub-h')).map(function (n) { return n.textContent; }),
+      tiles: Array.from(card.querySelectorAll('.stat .k')).map(function (n) { return n.textContent; })
+    };
+  })()`);
+  t.ok(workCard && workCard.heads.length === 2 &&
+       /Counted by the runtime/.test(workCard.heads[0]) && /Caught by the sampler/.test(workCard.heads[1]),
+    'the two kinds of number are under two headings, exact ones first: ' + JSON.stringify(workCard && workCard.heads));
+  t.ok(workCard && workCard.tiles.indexOf('selects') !== -1 && workCard.tiles.indexOf('database operations') !== -1 &&
+       workCard.tiles.indexOf('microflow runs seen') !== -1 && workCard.tiles.indexOf('retrieves seen') !== -1,
+    'and it carries what two recordings are compared on: ' + JSON.stringify(workCard && workCard.tiles));
+  t.ok(workCard && /How many ROWS those retrieves returned is not in this data/.test(workCard.text),
+    'the number the admin port does NOT report is named, rather than approximated by something else');
 
   await app.close();
 
