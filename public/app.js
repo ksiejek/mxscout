@@ -2144,6 +2144,30 @@
     render();
   }
 
+  // The same popup, WITHOUT leaving the screen that asked for it. Every popup
+  // in MxScout is already an overlay over whatever `view` is showing, so this
+  // is jumpToObject minus the navigation: the entity or flow opens on top, and
+  // closing it puts the reader back exactly where they were.
+  //
+  // Karol, 2026-09-10, from the performance analyzer: "możemy nacisnąć na
+  // Entity albo na Microflow, ale niech się to pojawi w popupie i po
+  // kliknięciu nadal jesteśmy w tym miejscu, w którym teraz jesteśmy" — a
+  // recording takes real effort to make, and clicking a name in it to see
+  // what that microflow is threw the whole analyzer away, tab, zoom, picked
+  // span and all. Anywhere the object is an ASIDE to what is on screen this is
+  // the right door; jumpToObject stays for the palette and for a comment's
+  // "go to this object", where going there IS the point.
+  function peekObject(sectionKey, item) {
+    var kind = FLOW_KIND_OF[sectionKey] || null;
+    state.detail.selectedEntity = sectionKey === 'entities' ? item.qualifiedName : null;
+    state.detail.selectedFlow = kind ? { kind: kind, qualifiedName: item.qualifiedName } : null;
+    state.detail.flowTab = 'run';
+    state.detail.flowPick = {};
+    state.detail.flowScalars = {};
+    state.detail.flowOverrides = {};
+    render();
+  }
+
   function scopeToModule(moduleName, sectionKey) {
     state.detail.view = sectionKey || (state.detail.view === 'comments' || state.detail.view === 'settings' ? 'entities' : state.detail.view);
     state.detail.moduleScope = moduleName;
@@ -2284,7 +2308,9 @@
   window.MxPerf.init({
     el: el, state: state, store: store, render: render, setMessage: setMessage,
     api: api,
-    jumpToObject: jumpToObject, objectsOfSection: objectsOfSection,
+    // The analyzer opens objects as an ASIDE — over the recording, not instead
+    // of it — so it gets peekObject and deliberately not jumpToObject.
+    peekObject: peekObject, objectsOfSection: objectsOfSection,
     newId: newId, formatDate: formatDate, withMod: withMod, moduleColor: moduleColor,
     downloadText: downloadText, pickFile: pickModelFile, readFileText: readFileText
   });

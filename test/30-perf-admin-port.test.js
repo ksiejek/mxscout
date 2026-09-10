@@ -120,8 +120,14 @@ module.exports = async function (t) {
 
   await post('/api/session/perf/request', { token: s.token, active: false });
   const halted = await json(t.MX + '/api/session/perf/status');
+  // `startedAt` is in the message on purpose. A halt from the badge must leave
+  // the buffer alone, and the ONE thing that empties it is a full stop — which
+  // also clears this stamp. So a failure here saying `startedAt: null` means
+  // something drained the recording, not that sampling never happened, and
+  // those need looking at in completely different places.
   t.ok(halted.active === false && halted.sampleCount > 0,
-    'a stop from the app tab halts sampling but leaves the samples for MxScout to save: ' + JSON.stringify(halted));
+    'a stop from the app tab halts sampling but leaves the samples for MxScout to save: ' + JSON.stringify(halted) +
+    ' (started at ' + recording.startedAt + ' with ' + recording.sampleCount + ' samples)');
 
   const stopped = await json(t.MX + '/api/session/perf/stop', { method: 'POST' });
   t.ok(stopped.samples.length > 0 && stopped.samples[0].requests['req-1'],
@@ -805,14 +811,23 @@ module.exports = async function (t) {
        detail.actions.some(function (a) { return /finding/i.test(a); }),
     'and it can reach the model, the zoom and a finding from here: ' + JSON.stringify(detail.actions));
 
+  // Opening the object must not COST the recording. It used to navigate to the
+  // microflows view and open the popup there, so closing it left the reader in
+  // a list, with the analyzer's tab, zoom and picked span gone — for a
+  // recording that took a scenario to make (Karol, 2026-09-10). The popup is
+  // an overlay over whatever is on screen anyway, so it opens over the
+  // analyzer and closing it changes nothing else.
   await mx.evaluate(`Array.from(document.querySelectorAll('.perf-detail-actions button')).filter(function (b) { return /in the model$/.test(b.textContent); })[0].click()`);
   await mx.waitFor(`!!document.querySelector('.modal-detail')`, 5000, 'flow popup opened');
   t.ok(/CancelOrder/.test(await mx.evaluate(`document.querySelector('.modal-detail').textContent`)),
-    'clicking through jumps to that microflow, via the same jumpToObject the palette uses');
+    'clicking through opens that microflow');
+  t.ok(await mx.evaluate(`!!document.querySelector('.perf-analyzer-head') && !!document.querySelector('.perf-detail')`),
+    'and the recording is still there underneath it, span detail and all');
 
   await mx.evaluate(`(function(){ document.querySelector('.modal-backdrop') && document.querySelector('.modal-backdrop').click(); })()`);
-  await mx.evaluate(clickSection('Performance'));
-  await mx.waitFor(`!!document.querySelector('.perf-analyzer-head')`, 8000, 'back on the analyzer');
+  await mx.waitFor(`!document.querySelector('.modal-detail')`, 5000, 'the popup closed');
+  t.ok(await mx.evaluate(`!!document.querySelector('.perf-detail .perf-nums')`),
+    'closing it lands back on the recording, on the same span, with no navigation to undo');
 
   // Call tree — the fixture's stack is the retrieve, its microflow, and the
   // sub-microflow that comes and goes with the loop, so every call the flame
@@ -836,6 +851,15 @@ module.exports = async function (t) {
     return cell ? cell.textContent : null;
   })()`);
   t.ok(xpathCell && /Sales\.Order/.test(xpathCell), 'the Retrieves table shows the query text: ' + xpathCell);
+
+  // Same rule for a name in a Hotspots row: it opens the object over the
+  // rankings, not instead of them.
+  await mx.evaluate(`document.querySelector('.data-table .link-btn').click()`);
+  await mx.waitFor(`!!document.querySelector('.modal-detail')`, 5000, 'a Hotspots row name opens the object');
+  t.ok(await mx.evaluate(`!!document.querySelector('.perf-analyzer-head')`),
+    'and the rankings are still underneath — a recording is not something to lose by reading a row of it');
+  await mx.evaluate(`(function(){ document.querySelector('.modal-backdrop') && document.querySelector('.modal-backdrop').click(); })()`);
+  await mx.waitFor(`!document.querySelector('.modal-detail')`, 5000, 'and it closes back onto the Hotspots tab');
   await mx.evaluate(`Array.from(document.querySelectorAll('.row-act button')).find(function (b) { return b.textContent === 'Add as a finding'; }).click()`);
   await mx.waitFor(`!!document.querySelector('.editor')`, 5000, 'the finding editor opened from a Hotspots row');
   t.ok(/CancelOrder/.test(await mx.evaluate(`document.querySelector('.editor').textContent`)),

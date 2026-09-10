@@ -37,7 +37,7 @@
   'use strict';
 
   // Bound once, in init(). Named exactly as they were in app.js.
-  var el, state, store, render, setMessage, api, jumpToObject, objectsOfSection, newId, formatDate, withMod, moduleColor, downloadText, pickFile, readFileText;
+  var el, state, store, render, setMessage, api, peekObject, objectsOfSection, newId, formatDate, withMod, moduleColor, downloadText, pickFile, readFileText;
 
   function init(deps) {
     el = deps.el;
@@ -46,7 +46,7 @@
     render = deps.render;
     setMessage = deps.setMessage;
     api = deps.api;
-    jumpToObject = deps.jumpToObject;
+    peekObject = deps.peekObject;
     objectsOfSection = deps.objectsOfSection;
     newId = deps.newId;
     formatDate = deps.formatDate;
@@ -63,7 +63,7 @@
     // needs, which is the same rule, applied one level down. Everything below
     // is a function this file owns; nothing reaches the other way.
     window.MxTimeline.init({
-      el: el, withMod: withMod, jumpToObject: jumpToObject,
+      el: el, withMod: withMod, peekObject: peekObject,
       buildRequestRows: buildRequestRows, buildSpans: buildSpans,
       observedIntervalMs: observedIntervalMs, totalDurationMs: totalDurationMs,
       concurrencySeries: concurrencySeries, poolSeries: poolSeries, gcMarks: gcMarks,
@@ -1910,7 +1910,7 @@
           el('tbody', {}, rows.map(function (row) {
             var target = resolveFrame(model, row.frame);
             var nameCell = target
-              ? el('button', { class: 'link-btn', text: row.name, onclick: function () { jumpToObject(target.sectionKey, target.item); } })
+              ? el('button', { class: 'link-btn', text: row.name, onclick: function () { peekObject(target.sectionKey, target.item); } })
               : el('span', { text: row.name });
             return el('tr', {}, [
               el('td', { class: 'wide' }, [nameCell]),
@@ -1949,7 +1949,7 @@
             var entity = entityQn ? findByQualifiedName(objectsOfSection(model, 'entities'), entityQn) : null;
             var target = entity ? { sectionKey: 'entities', item: { name: entity.name, qualifiedName: entity.qualifiedName } } : null;
             var entityCell = target
-              ? el('button', { class: 'link-btn', text: entity.name, onclick: function () { jumpToObject('entities', target.item); } })
+              ? el('button', { class: 'link-btn', text: entity.name, onclick: function () { peekObject('entities', target.item); } })
               : el('span', { class: 'muted', text: entityQn || '—' });
             return el('tr', {}, [
               el('td', { class: 'wide', title: row.xpath, text: row.xpath }),

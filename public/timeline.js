@@ -23,7 +23,7 @@
 
   // Bound once, in init(). The app's own three, then the recording functions
   // perf.js owns — this file never reaches into another module for them.
-  var el, withMod, jumpToObject;
+  var el, withMod, peekObject;
   var buildRequestRows, buildSpans, observedIntervalMs, totalDurationMs,
       concurrencySeries, poolSeries, gcMarks, connectionbusSeries, sparklineSvg,
       formatMs, formatBytes, typeClass, moduleOf, xpathEntityQualifiedName,
@@ -32,7 +32,7 @@
   function init(deps) {
     el = deps.el;
     withMod = deps.withMod;
-    jumpToObject = deps.jumpToObject;
+    peekObject = deps.peekObject;
     buildRequestRows = deps.buildRequestRows;
     buildSpans = deps.buildSpans;
     observedIntervalMs = deps.observedIntervalMs;
@@ -350,7 +350,7 @@
     if (target) {
       acts.push(el('button', {
         class: 'btn btn-sm', text: 'Open ' + (s.qualifiedName || target.item.qualifiedName || target.item.name) + ' in the model',
-        onclick: function () { jumpToObject(target.sectionKey, target.item); }
+        onclick: function () { peekObject(target.sectionKey, target.item); }
       }));
     }
     acts.push(el('button', { class: 'btn btn-sm', text: 'Stretch to this call', onclick: function () { tlZoomTo(s.t0, s.t1, true); } }));
