@@ -291,6 +291,11 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 .msg { border-radius: 8px; padding: 9px 12px; font-size: 13px; margin-top: 12px; }
 .msg.error { background: color-mix(in srgb, var(--alarm) 14%, transparent); border: 1px solid color-mix(in srgb, var(--alarm) 40%, transparent); color: #ffc9c9; }
 .msg.ok { background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+/* Neither a failure nor a success: something worked, and there is a caveat the
+   reader has to carry away with it — a recording that stopped at its own
+   limit, say. It borrows the accent's outline and none of its fill, so it does
+   not read as a green tick, and unlike .ok it does NOT dismiss itself. */
+.msg.warn { background: color-mix(in srgb, var(--accent) 7%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); }
 .muted { color: var(--muted); }
 .hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
 

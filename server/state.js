@@ -73,7 +73,14 @@ let adminPassword = null;
 let perfActive = false;
 let perfSamples = [];        // { t, requests, stats }[], cleared on start() and on stop()
 let perfStartedAt = null;    // when the CURRENT recording began
-const PERF_SAMPLES_MAX = 50000; // a generous cap; older samples drop first
+// A last-resort cap, and no longer the thing that decides how long a recording
+// may run: admin-port.js stops the recorder itself at ten minutes or 64 MB,
+// and says which, long before this can be reached. It used to drop the OLDEST
+// samples when full, which is the worst of the three options — a recording
+// missing its beginning still looks complete, and every count on the Overview
+// would be short by an amount nobody could see. If this ever fires, the start
+// of the recording is the part worth keeping.
+const PERF_SAMPLES_MAX = 50000;
 
 // The last drain, kept so that a REPEATED stop of the same recording answers
 // the same thing instead of an empty recording. This is not defensive
@@ -86,6 +93,12 @@ const PERF_SAMPLES_MAX = 50000; // a generous cap; older samples drop first
 // the moment a new recording starts, so a replay can only ever answer the
 // stop it belongs to.
 let perfLastDrain = null;    // { at: ms, samples: [...] }
+// Why the recorder stopped itself, in the words the tester reads, or null for
+// a recording that was stopped by a person. It rides on the status routes and
+// on the stop response, and the page keeps it ON the saved recording — a
+// recording that ended early has to say so every time it is opened, not once
+// in a message that scrolls away.
+let perfLimit = null;
 const PERF_REPLAY_MS = 15000;
 
 function setAdminConnection(host, port, password) {
@@ -110,6 +123,7 @@ function startPerfRecording() {
   perfSamples = [];
   perfStartedAt = new Date().toISOString();
   perfLastDrain = null; // a new recording; the previous drain is no longer replayable
+  perfLimit = null;
 }
 // Flips the desired state to "stop" WITHOUT touching the buffer — this is
 // what the record button on the app tab's badge asks for. Only MxScout's own
@@ -140,11 +154,13 @@ function stopPerfRecording() {
 }
 function addPerfSample(sample) {
   if (!perfActive) return;
+  if (perfSamples.length >= PERF_SAMPLES_MAX) return; // see the comment on the cap
   perfSamples.push(sample);
-  if (perfSamples.length > PERF_SAMPLES_MAX) perfSamples.splice(0, perfSamples.length - PERF_SAMPLES_MAX);
 }
 function getPerfSampleCount() { return perfSamples.length; }
 function getPerfStartedAt() { return perfStartedAt; }
+function setPerfLimit(message) { perfLimit = message || null; }
+function getPerfLimit() { return perfLimit; }
 
 // Mint a fresh token and drop any prior report/command — starting a new scan
 // session invalidates every script pasted for the previous one.
@@ -219,5 +235,6 @@ module.exports = {
   setAdminConnection, clearAdminConnection, isAdminConnected,
   getAdminConnection, getAdminPassword,
   getPerfActive, startPerfRecording, requestStopPerfRecording, stopPerfRecording,
-  addPerfSample, getPerfSampleCount, getPerfStartedAt
+  addPerfSample, getPerfSampleCount, getPerfStartedAt,
+  setPerfLimit, getPerfLimit
 };

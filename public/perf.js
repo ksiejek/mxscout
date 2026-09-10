@@ -118,6 +118,10 @@
           adminUrl: parsed.adminUrl || null,
           started: parsed.started || new Date().toISOString(),
           stopped: parsed.stopped || null,
+          // Carried through like everything else the file says about itself: a
+          // recording that stopped at its own limit is still one when it is
+          // read on a machine that has no admin port at all.
+          limitedBy: typeof parsed.limitedBy === 'string' ? parsed.limitedBy : null,
           importedFrom: fileName || null,
           samples: parsed.samples
         };
@@ -364,6 +368,12 @@
         adminUrl: adminLabel(p) || null,
         started: (p.status && p.status.startedAt) || new Date().toISOString(),
         stopped: new Date().toISOString(),
+        // Why it ended, when it ended by itself — kept ON the recording, not
+        // only in the message below. A recording that stopped at its limit is
+        // shorter than the scenario that was being recorded, which is exactly
+        // the thing someone comparing two recordings has to know, and a
+        // message that scrolls away cannot tell them a week later.
+        limitedBy: resp.limit || null,
         samples: samples
       };
       return saveRecording(recording).then(function () { return loadRecordings(project.id); })
@@ -374,7 +384,8 @@
           state.detail.perf.selectedId = recording.id;
           state.detail.perf.tab = 'overview';
           window.MxTimeline.reset();
-          setMessage('Recording saved — ' + samples.length + ' sample' + (samples.length === 1 ? '' : 's') + '.', 'ok');
+          setMessage('Recording saved — ' + samples.length + ' sample' + (samples.length === 1 ? '' : 's') + '.' +
+            (recording.limitedBy ? ' ' + recording.limitedBy : ''), recording.limitedBy ? 'warn' : 'ok');
           render();
           fetchStatus();
         });
@@ -1072,6 +1083,11 @@
     var samples = (recording.samples || []).length;
     var parts = [samples + ' sample' + (samples === 1 ? '' : 's') + ' over ' + formatMs(totalDurationMs(recording))];
     if (recording.adminUrl) parts.push(recording.adminUrl);
+    // A recording that ended by itself is SHORTER than the scenario someone
+    // was recording, and that is the first thing to know about it \u2014 before any
+    // number below is compared with any number from another recording. So it
+    // is in the header, on every open, not only in the toast at save time.
+    if (recording.limitedBy) parts.push('stopped at its own limit');
     return parts.join(' \u00b7 ');
   }
 

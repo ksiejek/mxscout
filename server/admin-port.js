@@ -224,6 +224,7 @@ let running = false;    // the loop's own state; `timer` is null between rounds
 let inFlight = false;   // never start a round before the last one settled
 let startedAt = 0;
 let lastStatsAt = 0;
+let bufferedBytes = 0; // how much this recording has collected, against MAX_BUFFER_BYTES
 let failStreak = 0;
 let trouble = null;     // a sentence for the UI once the port has gone quiet for a while
 
@@ -241,14 +242,35 @@ let trouble = null;     // a sentence for the UI once the port has gone quiet fo
 const MIN_GAP_MS = 10;
 const STATS_EVERY_MS = 250;
 
+// How long, and how much, a single recording may collect before it stops
+// ITSELF. Both, because neither alone is a guarantee: ten minutes of an idle
+// app is a few megabytes and ten minutes of a busy one is tens of them, and a
+// megabyte budget alone would let a quiet app record all afternoon.
+//
+// Ten minutes is Karol's number, 2026-09-10 ("nie wyobrażam sobie, że będziemy
+// to na tak długo puszczać"). The byte budget is what actually keeps the
+// machine safe: everything collected has to survive being JSON in one HTTP
+// response, parsed in the browser, and written into IndexedDB as one row, and
+// each of those wants the whole thing in memory at once.
+//
+// Reaching either one STOPS the recording and says so (see onLimit). It does
+// not quietly drop the oldest samples, which is what the buffer's own cap used
+// to do: a recording missing its beginning still looks complete, and every
+// count on the Overview would be wrong by an amount nobody could see.
+const MAX_RECORDING_MS = 10 * 60 * 1000;
+const MAX_BUFFER_BYTES = 64 * 1024 * 1024;
+
 function nowMs() {
   const [s, ns] = process.hrtime();
   return s * 1000 + ns / 1e6;
 }
 
-function sizeOk(sample) {
-  try { return Buffer.byteLength(JSON.stringify(sample)) <= SAMPLE_MAX_BYTES; }
-  catch (e) { return false; }
+// The serialized size of one sample, or null if it cannot be serialized at
+// all. Measured once and used twice — the per-sample cap and the running total
+// for the recording — because measuring it is the expensive part.
+function sampleBytes(sample) {
+  try { return Buffer.byteLength(JSON.stringify(sample)); }
+  catch (e) { return null; }
 }
 
 // A slow admin port must sample SLOWER, never not at all. The pasted bridge
@@ -302,17 +324,44 @@ function tick(cfg) {
       requests: hasRequests ? requests : {},
       stats: stats == null ? null : stats
     };
-    if (sizeOk(sample)) cfg.onSample(sample);
+    const bytes = sampleBytes(sample);
+    if (bytes != null && bytes <= SAMPLE_MAX_BYTES) {
+      bufferedBytes += bytes;
+      cfg.onSample(sample);
+    }
   }).catch(() => { inFlight = false; });
+}
+
+// Which limit, if either, this recording has now reached. Checked between
+// rounds rather than inside one, so a recording that has stopped never has a
+// round in flight behind it. The time limit is checked even when nothing is
+// being collected — an app sitting idle for ten minutes is still a recording
+// that has been running for ten minutes.
+function limitReached(cfg) {
+  const maxMs = cfg.maxMs || MAX_RECORDING_MS;
+  const maxBytes = cfg.maxBytes || MAX_BUFFER_BYTES;
+  if (nowMs() - startedAt >= maxMs) return 'length';
+  if (bufferedBytes >= maxBytes) return 'size';
+  return null;
 }
 
 // Round, wait out whatever is left of the floor, round again. cfg.intervalMs
 // is the caller's floor and MIN_GAP_MS the one this file will not go below,
 // so a caller can ask for a gentler cadence but not for a harder one.
+//
+// A recording that has reached a limit stops HERE, itself, and hands the
+// reason back — it does not wait to be told, because the whole point of the
+// limit is the case where nobody is watching.
 function loop(cfg) {
   const roundStart = nowMs();
   tick(cfg).then(() => {
     if (!running) return;
+    const reason = limitReached(cfg);
+    if (reason) {
+      stopSampling();
+      if (cfg.onLimit) cfg.onLimit(reason);
+      return;
+    }
     const floor = Math.max(MIN_GAP_MS, cfg.intervalMs || 0);
     const wait = Math.max(0, floor - (nowMs() - roundStart));
     timer = setTimeout(() => { timer = null; loop(cfg); }, wait);
@@ -324,6 +373,7 @@ function startSampling(cfg) {
   stopSampling();
   startedAt = nowMs();
   lastStatsAt = 0; // the first round carries statistics, so a short recording has them
+  bufferedBytes = 0;
   inFlight = false;
   failStreak = 0;
   trouble = null;
@@ -343,6 +393,7 @@ function getTrouble() { return trouble; }
 
 module.exports = {
   ALLOWED_ACTIONS, isAllowedHost, unwrap,
+  MAX_RECORDING_MS, MAX_BUFFER_BYTES,
   invoke, verify,
   startSampling, stopSampling, isSampling, getTrouble
 };

@@ -53,6 +53,38 @@ module.exports = async function (t) {
   t.ok(statsAnswer !== null,
     'an allowlisted action against the same port does answer — so the refusal above is the allowlist, not a broken call');
 
+  // ---------- a recording stops ITSELF, and says which limit it hit ----------
+  // Ten minutes is Karol's number (2026-09-10) and 64 MB is what actually
+  // keeps the machine safe — everything collected has to survive being JSON in
+  // one response, parsed in the browser and written to IndexedDB as one row.
+  // Neither is testable at its real value, so both are overridable and the
+  // MECHANISM is what is checked here: it stops on its own, it names the
+  // reason, and it leaves no loop running behind it.
+  t.ok(adminApi.MAX_RECORDING_MS === 10 * 60 * 1000 && adminApi.MAX_BUFFER_BYTES === 64 * 1024 * 1024,
+    'the shipped limits are ten minutes and 64 MB: ' + adminApi.MAX_RECORDING_MS + ' ms / ' + adminApi.MAX_BUFFER_BYTES + ' bytes');
+
+  const hitLimit = (over) => new Promise((resolve) => {
+    let collected = 0;
+    adminApi.startSampling(Object.assign({
+      host: '127.0.0.1', port: adminPortNumber, password: ADMIN_PASSWORD, intervalMs: 10,
+      onSample: () => { collected++; },
+      onLimit: (reason) => resolve({ reason, collected })
+    }, over));
+  });
+
+  const byLength = await hitLimit({ maxMs: 300 });
+  t.ok(byLength.reason === 'length' && byLength.collected > 3,
+    'a recording that runs past its length stops itself and says so: ' + JSON.stringify(byLength));
+  t.ok(!adminApi.isSampling(), 'and it really stopped — no loop left running behind the limit');
+
+  // Two samples' worth of bytes, so this trips within a few rounds whatever
+  // the fixture answers with.
+  const bySize = await hitLimit({ maxBytes: 1200 });
+  t.ok(bySize.reason === 'size' && bySize.collected > 0,
+    'and one that collects more than it may hold stops on THAT instead: ' + JSON.stringify(bySize));
+  t.ok(!adminApi.isSampling(), 'also really stopped');
+  adminApi.stopSampling();
+
   // The m2ee admin API answers { feedback, result }, never the payload alone.
   // Storing the envelope as if it WERE the payload is the bug that made a
   // real recording draw two long grey bars called "feedback" and "result"
@@ -69,6 +101,8 @@ module.exports = async function (t) {
   const idle = await json(t.MX + '/api/session/perf/status');
   t.ok(idle.connected === false && idle.active === false && idle.sampleCount === 0,
     'status starts disconnected, idle, with nothing collected: ' + JSON.stringify(idle));
+  t.ok(idle.limit === null,
+    'and with no limit to report — that field only carries a sentence when a recording ended by itself: ' + JSON.stringify(idle.limit));
 
   t.ok((await post('/api/session/perf/start')).status === 409,
     'starting a recording with no admin port connected is refused, rather than recording nothing');
@@ -134,6 +168,8 @@ module.exports = async function (t) {
     'and MxScout collects what the admin port actually reported: ' +
     JSON.stringify({ count: stopped.samples.length, first: stopped.samples[0] || null }).slice(0, 300));
   if (!stopped.samples.length) throw new Error('the drain came back empty — nothing below can be checked');
+  t.ok(stopped.limit === null,
+    'a recording a person stopped carries no limit sentence — the field is how a recording that ended ITSELF says why: ' + JSON.stringify(stopped.limit));
   t.ok(typeof stopped.samples[0].t === 'number' && stopped.samples[0].t >= 0,
     'each sample is stamped with ms since the recording began');
   t.ok(stopped.samples[0].stats && stopped.samples[0].stats.note === 'fixture-stats',

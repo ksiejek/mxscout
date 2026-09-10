@@ -542,9 +542,27 @@ function beginRecording() {
     port: conn.port,
     password: state.getAdminPassword(),
     intervalMs: DEFAULT_INTERVAL_MS,
-    onSample: (sample) => state.addPerfSample(sample)
+    onSample: (sample) => state.addPerfSample(sample),
+    // A recording that ran into a limit stops itself, and the reason travels
+    // with it all the way to the saved recording — see LIMIT_MESSAGES. The
+    // page is already watching for `active` going false and finishes the
+    // recording when it does, so nothing else has to change here.
+    onLimit: (reason) => {
+      haltSampling();
+      state.setPerfLimit(LIMIT_MESSAGES[reason] || null);
+    }
   });
 }
+
+// What the tester is told when a recording ends by itself. Written out here,
+// beside CONNECT_MESSAGES, for the same reason: admin-port.js decides, in one
+// word, and the words a person reads live at the edge that has to say them.
+const LIMIT_MESSAGES = {
+  length: 'The recording stopped itself after ' + Math.round(adminApi.MAX_RECORDING_MS / 60000) +
+    ' minutes — that is as long as MxScout will record in one go. Everything up to that point was kept.',
+  size: 'The recording stopped itself: its samples reached ' + Math.round(adminApi.MAX_BUFFER_BYTES / (1024 * 1024)) +
+    ' MB, which is as much as MxScout will hold for one recording. Everything up to that point was kept.'
+};
 // Halts the admin-port calls and marks the recording stopped, but leaves the
 // buffer alone — see state.js's requestStopPerfRecording for why the draining
 // is MxScout's page's job and nobody else's.
@@ -609,7 +627,7 @@ function handlePerfStart(req, res) {
 function handlePerfStop(req, res) {
   haltSampling();
   const samples = state.stopPerfRecording();
-  sendJson(res, 200, { ok: true, samples });
+  sendJson(res, 200, { ok: true, samples, limit: state.getPerfLimit() });
 }
 
 // ---------- the app tab's record button ----------
@@ -638,6 +656,7 @@ function handlePerfPoll(req, res) {
     // stamp perf/status hands the UI. Both now say the same thing in the same
     // words while one recording runs.
     startedAt: state.getPerfStartedAt(),
+    limit: state.getPerfLimit(),
     trouble: adminApi.getTrouble()
   });
 }
@@ -678,6 +697,7 @@ function handlePerfStatus(req, res) {
     active: state.getPerfActive(),
     sampleCount: state.getPerfSampleCount(),
     startedAt: state.getPerfStartedAt(),
+    limit: state.getPerfLimit(),
     trouble: adminApi.getTrouble()
   });
 }
