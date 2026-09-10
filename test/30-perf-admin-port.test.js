@@ -125,13 +125,27 @@ module.exports = async function (t) {
 
   const stopped = await json(t.MX + '/api/session/perf/stop', { method: 'POST' });
   t.ok(stopped.samples.length > 0 && stopped.samples[0].requests['req-1'],
-    'and MxScout collects what the admin port actually reported');
+    'and MxScout collects what the admin port actually reported: ' +
+    JSON.stringify({ count: stopped.samples.length, first: stopped.samples[0] || null }).slice(0, 300));
+  if (!stopped.samples.length) throw new Error('the drain came back empty — nothing below can be checked');
   t.ok(typeof stopped.samples[0].t === 'number' && stopped.samples[0].t >= 0,
     'each sample is stamped with ms since the recording began');
   t.ok(stopped.samples[0].stats && stopped.samples[0].stats.note === 'fixture-stats',
     'the second, not-yet-parsed statistics block rides along in every sample');
   t.ok(!('feedback' in stopped.samples[0].requests) && !('feedback' in stopped.samples[0].stats),
     'and neither block is stored as the raw envelope');
+
+  // A stop that arrives twice for the SAME recording answers the same thing
+  // twice. Browsers really do re-send a POST whose response was lost on a
+  // reused keep-alive socket, and that is what the intermittent "0 samples
+  // over 0 ms" in this file turned out to be: one fetch on the page, two
+  // requests at the server, the second draining a buffer the first had
+  // already emptied — and THAT empty recording was the one saved and opened.
+  // Diagnosed 2026-09-10 by logging the drained count per request.
+  const stoppedAgain = await json(t.MX + '/api/session/perf/stop', { method: 'POST' });
+  t.ok(stoppedAgain.samples.length === stopped.samples.length,
+    'a repeated stop of the same recording replays it rather than handing back an empty one: ' +
+    stoppedAgain.samples.length + ' vs ' + stopped.samples.length);
 
   const afterStop = await json(t.MX + '/api/session/perf/status');
   t.ok(afterStop.active === false && afterStop.sampleCount === 0, 'stopping clears the buffer');
@@ -477,7 +491,27 @@ module.exports = async function (t) {
   // pressed here.
   await mx.waitFor(`!!document.querySelector('.perf-analyzer-head')`, 12000,
     'stopping from the app tab saves the recording and opens the analyzer in MxScout');
-  await mx.waitFor(`!!document.querySelector('.stat-row')`, 5000, 'the Overview tab shows its stat tiles');
+  // Diagnosed, not merely waited for — the same rule as the connect step
+  // above. This one failed intermittently saying only "timeout", which is the
+  // one thing already known; what is actually worth knowing is whether the
+  // recording that got saved has any samples in it at all.
+  const overviewDiag = await (async () => {
+    const deadline = Date.now() + 8000;
+    let last = null;
+    while (Date.now() < deadline) {
+      if (await mx.evaluate(`!!document.querySelector('.stat-row')`)) return { ok: true };
+      last = {
+        analyzerHead: await mx.evaluate(`(function(){ var h = document.querySelector('.perf-analyzer-head'); return h ? h.textContent : null; })()`),
+        cardText: await mx.evaluate(`(function(){ var c = document.querySelector('.perf-analyzer-head ~ * .card, .card'); return c ? c.textContent.slice(0, 220) : null; })()`),
+        serverStatus: await json(t.MX + '/api/session/perf/status')
+      };
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    return { ok: false, last: last };
+  })();
+  t.ok(overviewDiag.ok, 'the Overview tab shows its stat tiles' +
+    (overviewDiag.ok ? '' : ' — it did not: ' + JSON.stringify(overviewDiag.last)));
+  if (!overviewDiag.ok) throw new Error('cannot continue without a saved recording to analyze');
 
   // The Runtime card, off the SAME `stats` block fake-app.js's admin port
   // already answers with (real shape, trimmed — see its own comment) —
@@ -518,12 +552,29 @@ module.exports = async function (t) {
   await mx.evaluate(`document.querySelector('.perf-bar').click()`);
   await mx.waitFor(`document.querySelectorAll('.flame').length >= 2`, 5000, 'the flame shows both levels of the fixture stack');
   const flames = await mx.evaluate(`Array.from(document.querySelectorAll('.flame')).map(function (f) {
-    return { text: f.textContent, kind: Array.from(f.classList).filter(function (c) { return c.indexOf('kind-') === 0; })[0] };
+    return {
+      text: f.textContent, chip: (f.querySelector('.tl-type') || {}).textContent || null,
+      title: f.title, width: f.offsetWidth,
+      kind: Array.from(f.classList).filter(function (c) { return c.indexOf('kind-') === 0; })[0]
+    };
   })`);
-  t.ok(flames.some(function (f) { return f.text === 'Sales.CancelOrder' && f.kind === 'kind-flow'; }),
+  t.ok(flames.some(function (f) { return /Sales\.CancelOrder$/.test(f.text) && f.kind === 'kind-flow'; }),
     'the microflow frame is its own flow-kind span: ' + JSON.stringify(flames));
   t.ok(flames.some(function (f) { return f.kind === 'kind-xpath' && /Sales\.Order/.test(f.text); }),
     'the retrieve frame is its own xpath-kind span: ' + JSON.stringify(flames));
+
+  // A bar wide enough to carry both says what KIND of thing it is, in the same
+  // chip the request bars use for their type — "it looks like a microflow
+  // name" was a guess the reader had to make (Karol, 2026-09-10). A bar too
+  // narrow for the word keeps the name and drops the chip, and its tooltip
+  // still leads with the word.
+  const wideFlow = flames.filter(function (f) { return f.kind === 'kind-flow' && f.width >= 108; })[0];
+  t.ok(wideFlow && wideFlow.chip === 'microflow',
+    'a flame bar with room for it says it is a microflow: ' + JSON.stringify(wideFlow || flames));
+  t.ok(flames.every(function (f) { return /^(Microflow|Retrieve|Activity) — /.test(f.title); }),
+    'and every bar, however narrow, leads its tooltip with the same word: ' + JSON.stringify(flames.map(function (f) { return f.title; })));
+  t.ok(flames.every(function (f) { return f.width >= 108 || f.chip === null; }),
+    'a bar too narrow for both keeps the name and drops the chip: ' + JSON.stringify(flames));
 
   // ---------- the time axis (Phase 2f) ----------
   // Zoom is pixels per second, so stretching has to make the canvas WIDER
@@ -596,6 +647,21 @@ module.exports = async function (t) {
   t.ok(/of 400\.0 MB$/.test(heapRead),
     'and the heap reads against committed, not against a 16 GB max no chart can be drawn to: ' + heapRead);
 
+  // Nothing in the gutter may be cut off. "808 select · 307 ot…" hides the
+  // half of the line that carries the news, and there is nowhere else to read
+  // it (Karol, 2026-09-10) — so the readout wraps, and every row is as tall as
+  // the taller of its two sides rather than as tall as the canvas alone.
+  const gutterFit = await mx.evaluate(`Array.from(document.querySelectorAll('.tl-name')).map(function (n) {
+    var r = n.querySelector('.tl-read');
+    return {
+      name: n.querySelector('b').textContent,
+      clippedX: r.scrollWidth > r.clientWidth + 1,
+      clippedY: n.scrollHeight > n.clientHeight + 1
+    };
+  })`);
+  t.ok(gutterFit.every(function (g) { return !g.clippedX && !g.clippedY; }),
+    'every track name and readout fits in the gutter whole, wrapping rather than being cut: ' + JSON.stringify(gutterFit));
+
   // ---------- what a bar says (Phase 2f) ----------
   // The request bar carries its own name and the request type as a word;
   // colour is the module, the same identity channel the rest of MxScout uses.
@@ -627,6 +693,32 @@ module.exports = async function (t) {
   t.ok(stuck.shown && Math.abs((stuck.barLeft + stuck.labelOffset) - stuck.scrollLeft) < 3,
     'the label sits at the left edge of what is on screen, not at the left edge of the bar: ' + JSON.stringify(stuck));
 
+  // Dragging the window on the overview strip moves it BY the drag, not TO
+  // the cursor. It used to centre itself on the pointer, so the first pixel of
+  // a drag teleported the view — "zaczyna troszeczkę skakać" (Karol,
+  // 2026-09-10). Four pixels of strip is four pixels' worth of recording.
+  const miniDrag = await mx.evaluate(`(function(){
+    var mini = document.querySelector('.tl-mini');
+    var win = mini.querySelector('.tl-mini-win');
+    var sc = document.querySelector('.tl-scroll');
+    var wb = win.getBoundingClientRect();
+    var mb = mini.getBoundingClientRect();
+    var y = wb.top + 5, startX = wb.left + 6, dx = 4;
+    var before = sc.scrollLeft;
+    win.dispatchEvent(new MouseEvent('mousedown', { clientX: startX, clientY: y, bubbles: true }));
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: startX + dx, clientY: y, bubbles: true }));
+    return new Promise(function (resolve) {
+      requestAnimationFrame(function () { requestAnimationFrame(function () {
+        var live = document.querySelector('.tl-scroll');
+        var after = live.scrollLeft;
+        window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        resolve({ before: before, after: after, expected: (dx / mb.width) * document.querySelector('.tl-canvas').offsetWidth });
+      }); });
+    });
+  })()`);
+  t.ok(Math.abs((miniDrag.after - miniDrag.before) - miniDrag.expected) < 12,
+    'the overview window follows the drag by the same distance, instead of jumping to centre on the pointer: ' + JSON.stringify(miniDrag));
+
   // A repeated sub-microflow (the fixture's loop) collapses into one block
   // carrying a count, rather than a row of slivers too narrow to name — and
   // stretching splits it back apart.
@@ -644,7 +736,7 @@ module.exports = async function (t) {
   // Pick the microflow span. Picking selects it and opens the detail panel
   // below — a separate step from resolving it, unlike the old flat list
   // where the frame itself was the link.
-  await mx.evaluate(`Array.from(document.querySelectorAll('.flame')).filter(function (f) { return f.textContent === 'Sales.CancelOrder'; })[0].click()`);
+  await mx.evaluate(`Array.from(document.querySelectorAll('.flame')).filter(function (f) { return /Sales\\.CancelOrder$/.test(f.textContent); })[0].click()`);
   await mx.waitFor(`!!document.querySelector('.perf-detail .perf-nums')`, 5000, 'the span detail opens');
 
   // ---------- what the detail panel says (Phase 2f) ----------

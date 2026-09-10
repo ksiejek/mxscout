@@ -75,6 +75,19 @@ let perfSamples = [];        // { t, requests, stats }[], cleared on start() and
 let perfStartedAt = null;    // when the CURRENT recording began
 const PERF_SAMPLES_MAX = 50000; // a generous cap; older samples drop first
 
+// The last drain, kept so that a REPEATED stop of the same recording answers
+// the same thing instead of an empty recording. This is not defensive
+// programming for its own sake: browsers really do re-send a POST whose
+// response was lost on a reused keep-alive socket, and that is precisely what
+// the intermittent "0 samples over 0 ms" in the suite turned out to be — one
+// fetch on the page, two requests at the server, the second one draining a
+// buffer the first had already emptied and saving THAT as the recording
+// (diagnosed 2026-09-10 by logging the drained count per request). Cleared
+// the moment a new recording starts, so a replay can only ever answer the
+// stop it belongs to.
+let perfLastDrain = null;    // { at: ms, samples: [...] }
+const PERF_REPLAY_MS = 15000;
+
 function setAdminConnection(host, port, password) {
   adminHost = host;
   adminPort = port;
@@ -96,6 +109,7 @@ function startPerfRecording() {
   perfActive = true;
   perfSamples = [];
   perfStartedAt = new Date().toISOString();
+  perfLastDrain = null; // a new recording; the previous drain is no longer replayable
 }
 // Flips the desired state to "stop" WITHOUT touching the buffer — this is
 // what the record button on the app tab's badge asks for. Only MxScout's own
@@ -107,11 +121,21 @@ function requestStopPerfRecording() { perfActive = false; }
 // caller (the UI, stopping a recording) gets exactly what it needs to build a
 // recording, and a sample that lands a moment later cannot be appended to a
 // buffer nobody is reading anymore.
+// A second stop of the SAME recording — a browser re-sending a POST whose
+// answer was lost, or a double click — answers what the first one answered
+// rather than an empty recording. "The buffer is empty and I drained it a
+// moment ago, with no recording started since" is the only case this can
+// fire in: startPerfRecording clears the replay, so a genuinely empty
+// recording still reports itself as empty.
 function stopPerfRecording() {
   perfActive = false;
+  if (!perfSamples.length && perfLastDrain && (Date.now() - perfLastDrain.at) < PERF_REPLAY_MS) {
+    return perfLastDrain.samples;
+  }
   const samples = perfSamples;
   perfSamples = [];
   perfStartedAt = null;
+  perfLastDrain = { at: Date.now(), samples: samples };
   return samples;
 }
 function addPerfSample(sample) {

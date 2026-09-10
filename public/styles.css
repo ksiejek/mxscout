@@ -1770,15 +1770,21 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
   width: 3px; height: 16px; border-radius: 2px; background: var(--accent);
 }
 
+/* The gutter says what each track is and what it currently reads, and both
+   have to be readable IN FULL — an ellipsis there ("808 select · 307 ot…")
+   hides the half of the number that carries the news, and the reader has
+   nowhere else to go for it. So: a wider column, and text that wraps instead
+   of being cut. The row heights are reconciled in syncGutterHeights(), which
+   gives every row the taller of its two sides. */
 .tl-grid {
-  display: grid; grid-template-columns: 158px minmax(0, 1fr);
+  display: grid; grid-template-columns: 196px minmax(0, 1fr);
   border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
 }
 .tl-gutter-wrap { overflow: hidden; border-right: 1px solid var(--border); background: var(--panel); }
 .tl-name {
   padding: 5px 10px; border-bottom: 1px solid var(--border);
   display: flex; flex-direction: column; justify-content: center;
-  overflow: hidden; box-sizing: border-box;
+  box-sizing: border-box;
 }
 .tl-name:last-child { border-bottom: 0; }
 .tl-name b {
@@ -1788,9 +1794,12 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 .tl-read {
   display: block; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--text); font-variant-numeric: tabular-nums;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  white-space: normal; overflow-wrap: anywhere;
 }
-.tl-scroll { overflow: auto; max-height: 380px; overscroll-behavior-x: contain; }
+/* Deep enough for a real call stack. The flame grows a row per level of
+   nesting, and eight levels inside a 380 px box left the tracks above it and
+   the stack itself fighting for the same few pixels. */
+.tl-scroll { overflow: auto; max-height: min(72vh, 660px); overscroll-behavior-x: contain; }
 .tl-canvas { position: relative; outline: none; }
 .tl-canvas:focus-visible { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent); }
 /* overflow:hidden so nothing inside a track can make the canvas wider than
@@ -2002,6 +2011,10 @@ button.twist:hover { color: var(--text); }
 .perf-step.is-todo { opacity: 0.5; }
 .perf-step-body { padding: 12px 0 2px 31px; }
 .perf-step-body .scan-script { margin-top: 4px; }
+/* The connect strip above earns the full row's width; these two fields don't
+   — an address or a pasted password stretched edge-to-edge just strands the
+   Continue/Connect button far to the right of what it acts on. */
+.perf-step-body .live-url-row { max-width: 460px; }
 
 .perf-connect-strip { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .perf-connect-addr { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }

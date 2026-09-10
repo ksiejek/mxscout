@@ -286,6 +286,13 @@
       .then(function (s) {
         if (!state.detail || !state.detail.perf || !s) return;
         var p = state.detail.perf;
+        // A stop already being turned into a recording makes every answer
+        // still in flight stale — one of them can easily still say `active:
+        // true`, having been asked for before the stop happened, and letting
+        // that land would put the `true` back and make the NEXT answer read as
+        // a second stop of the same recording. The finish calls fetchStatus()
+        // itself when it is done, so nothing is lost by dropping these.
+        if (p._finishing) return;
         var wasConnected = !!p.status.connected;
         var wasActive = !!p.status.active;
         var wasKnown = !!p.statusKnown;

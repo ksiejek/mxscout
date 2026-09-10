@@ -243,23 +243,40 @@
   // On the RECORDING's axis, not on the request's own \u2014 that is what makes it
   // one timeline rather than two charts stacked. A call that ran at +7.4 s
   // sits under the +7.4 s tick, and under whatever else was running then.
+  // The word for what a span IS, in the same chip the request bars already use
+  // for their type. Karol, 2026-09-10: "fajnie jakby\u015bmy widzieli tam, gdzie
+  // mamy napisany na przyk\u0142ad Client, \u017ce to jest Microflow" \u2014 a name
+  // that reads like a microflow is a guess until the bar says so, and a
+  // retrieve sits on the row above the flow that ran it looking much like it.
+  function kindWord(kind) {
+    return kind === 'flow' ? 'microflow' : kind === 'xpath' ? 'retrieve' : 'activity';
+  }
+
+  // The chip costs width the NAME needs more, so it rides only a bar with room
+  // for both \u2014 the same rule as the label itself, one size up. Below that
+  // the row, the colour and the tooltip still say what the bar is.
+  var TL_CHIP_PX = 108;
+
   function renderFlameBar(item) {
     var s = item.items[0].s;
     var index = item.items[0].i;
     var count = item.items.length;
     var g = tlPlace(item.t0, item.t1);
+    var word = kindWord(s.kind);
     var bar = el('button', {
       class: 'flame kind-' + s.kind + (count > 1 ? ' is-cluster' : '') +
              (count === 1 && pickedSpanIndex === index ? ' is-picked' : ''),
       'data-x0': g.x0.toFixed(1),
       style: 'left:' + g.x0.toFixed(1) + 'px;width:' + g.w.toFixed(1) + 'px',
-      title: s.name + (count > 1 ? ' \u00d7' + count : '') + ' \u2014 ' + formatMs(item.t1 - item.t0),
+      title: word.charAt(0).toUpperCase() + word.slice(1) + ' \u2014 ' + s.name +
+             (count > 1 ? ' \u00d7' + count : '') + ' \u2014 ' + formatMs(item.t1 - item.t0),
       onclick: count > 1
         ? function () { tlZoomTo(item.t0, item.t1, true); }
         : function () { pickedSpanIndex = index; repaintTimeline(); },
       ondblclick: function () { tlZoomTo(item.t0, item.t1, true); }
     }, [
       el('span', { class: 'tl-lbl' }, [
+        g.w >= TL_CHIP_PX ? el('span', { class: 'tl-type', text: word }) : null,
         el('span', { text: s.name }),
         count > 1 ? el('span', { class: 'tl-count', text: '\u00d7' + count }) : null
       ].filter(Boolean))
@@ -435,7 +452,9 @@
     if (db) tracks.push({ name: 'Database', read: dbReadout(recording), h: 40, body: db });
 
     tracks.push({ name: 'Call stack',
-      read: selectedRow ? (selectedRow.entry || selectedRow.id).split('.').pop() : 'pick a request',
+      // The whole entry point, not its last dot-segment: the gutter wraps now,
+      // so there is nothing to be gained by hiding which module it came from.
+      read: selectedRow ? (selectedRow.entry || selectedRow.id) : 'pick a request',
       h: 0, body: selectedRow ? renderFlame(spans) : el('p', { class: 'muted perf-hint', text: 'Click a request bar above.' }) });
     tracks.forEach(function (tr) {
       gutter.appendChild(el('div', { class: 'tl-name' + (tr.h ? '' : ' is-auto'), style: tr.h ? 'height:' + tr.h + 'px' : null }, [
@@ -481,12 +500,19 @@
     });
   }
 
-  // The gutter is a separate column, so its cells have to be told how tall the
-  // canvas rows next to them turned out.
+  // The gutter is a separate column, so the two have to agree on how tall each
+  // row turned out. The TALLER of the pair wins, both ways: the flame grows
+  // with call depth and the canvas is what knows that, while a track name that
+  // wrapped onto a second line is what the gutter knows — and a gutter forced
+  // down to the canvas's height is exactly how "808 select · 307 ot…" lost its
+  // own ending (Karol, 2026-09-10).
   function syncGutterHeights(gutter, canvas) {
     var names = gutter.children, rowsEls = canvas.querySelectorAll('.tl-row');
     for (var i = 0; i < names.length && i < rowsEls.length; i++) {
-      names[i].style.height = rowsEls[i].offsetHeight + 'px';
+      names[i].style.height = '';
+      var h = Math.max(names[i].offsetHeight, rowsEls[i].offsetHeight);
+      names[i].style.height = h + 'px';
+      rowsEls[i].style.height = h + 'px';
     }
   }
 
@@ -549,29 +575,69 @@
     wrap.querySelector('.tl-mini-shade.is-right').setAttribute('style', 'left:' + (l + w) + '%;right:0');
   }
 
+  // Dragging here used to fight back, and for three separate reasons (Karol,
+  // 2026-09-10: "jak próbujesz to rozszerzać tam, gdzie masz ten sampling, to
+  // zaczyna troszeczkę skakać"):
+  //
+  //   1. Grabbing the window CENTRED it under the cursor, so the first pixel
+  //      of a drag teleported the view. You grab it where you grabbed it now —
+  //      the offset into the window is kept for the whole drag.
+  //   2. Every mousemove ran a full repaintTimeline(), which tears the whole
+  //      panel down and builds it again — including the strip being dragged.
+  //      Moves are coalesced to one per animation frame now, and a plain pan
+  //      does not repaint at all: it sets scrollLeft and lets the scroll
+  //      handler move the window, the same path the scrollbar takes.
+  //   3. positionMiniWindow() was called on the element captured at mousedown,
+  //      which a repaint had already replaced — so the window stopped tracking
+  //      the pointer mid-drag. Everything below re-reads the live nodes.
+  //
+  // Zooming by dragging a range is still a zoom, so one crumb is pushed for
+  // the whole gesture — "← back" undoes the drag, not the last frame of it.
+  function liveScroller() { return document.querySelector('#perf-timeline-area .tl-scroll'); }
+  function liveMini() { return document.querySelector('#perf-timeline-area .tl-mini'); }
+
   function onMiniDown(e, wrap, lenMs) {
     var box = wrap.getBoundingClientRect();
     var grip = e.target.getAttribute && e.target.getAttribute('data-grip');
-    var startT = ((e.clientX - box.left) / box.width) * lenMs;
-    var scroller = document.querySelector('#perf-timeline-area .tl-scroll');
+    var atT = function (clientX) { return Math.max(0, Math.min(lenMs, ((clientX - box.left) / box.width) * lenMs)); };
+    var startT = atT(e.clientX);
+    var scroller = liveScroller();
     var shownMs = tlT(scroller ? scroller.clientWidth : 700);
     var a0 = tlT(tlScrollLeft), b0 = a0 + shownMs;
-    var mode = grip ? 'grip-' + grip : (e.target.classList.contains('tl-mini-win') ? 'move' : 'new');
-    function move(ev) {
-      var t = Math.max(0, Math.min(lenMs, ((ev.clientX - box.left) / box.width) * lenMs));
+    var onWindow = e.target.classList && (e.target.classList.contains('tl-mini-win') || e.target.classList.contains('tl-mini-grip'));
+    var mode = grip ? 'grip-' + grip : (onWindow ? 'move' : 'new');
+    // How far into the window the grab landed, so the window keeps its
+    // position under the pointer instead of jumping to be centred on it.
+    var grabOffset = Math.max(0, Math.min(shownMs, startT - a0));
+    if (mode !== 'move') tlCrumbs.push({ pps: tlPps, left: tlScrollLeft });
+
+    var pending = null, frame = null;
+    function apply() {
+      frame = null;
+      var t = pending;
+      if (t == null) return;
       if (mode === 'move') {
-        tlScrollLeft = Math.max(0, tlX(t - shownMs / 2));
-        var sc = document.querySelector('#perf-timeline-area .tl-scroll');
-        if (sc) sc.scrollLeft = tlScrollLeft;
-        positionMiniWindow(wrap, lenMs);
+        var sc = liveScroller();
+        var maxLeft = Math.max(0, tlX(lenMs) - (sc ? sc.clientWidth : 700));
+        tlScrollLeft = Math.max(0, Math.min(maxLeft, tlX(t - grabOffset)));
+        if (sc) sc.scrollLeft = tlScrollLeft; // the scroll handler moves the window
+        else { var m = liveMini(); if (m) positionMiniWindow(m, lenMs); }
       } else if (mode === 'new') tlZoomTo(Math.min(startT, t), Math.max(startT, t), false);
       else if (mode === 'grip-l') tlZoomTo(Math.min(t, b0 - 20), b0, false);
       else tlZoomTo(a0, Math.max(t, a0 + 20), false);
     }
-    function up() { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); }
+    function move(ev) {
+      pending = atT(ev.clientX);
+      if (!frame) frame = requestAnimationFrame(apply);
+    }
+    function up() {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      if (frame) { cancelAnimationFrame(frame); apply(); }
+    }
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
-    if (mode !== 'move') move(e);
+    if (mode !== 'move') { pending = startT; apply(); }
     e.preventDefault();
   }
 
