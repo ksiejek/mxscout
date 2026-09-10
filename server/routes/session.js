@@ -498,8 +498,10 @@ async function handleReportCommandResult(req, res) {
 // in admin-port.js chains its rounds, so it goes as fast as the admin port
 // answers and never closer together than this. It was 50 ms, which after two
 // HTTP calls per round landed 62 ms apart — too coarse to catch a microflow
-// that runs for a few milliseconds at a time (Karol, 2026-09-10).
-const DEFAULT_INTERVAL_MS = 20;
+// that runs for a few milliseconds at a time (Karol, 2026-09-10). A first cut
+// at 20 ms achieved 32; Karol asked for the floor to go to 10, the resolution
+// being the whole point of the recording.
+const DEFAULT_INTERVAL_MS = 10;
 
 const CONNECT_MESSAGES = {
   blocked: (where) => 'MxScout connects only to local, test and acceptance environments — ' + where + ' is not one of them.',

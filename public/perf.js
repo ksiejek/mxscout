@@ -145,7 +145,7 @@
   // number itself belongs to the server — this is the fallback for a
   // recording that arrived without one, and it has to match
   // routes/session.js's DEFAULT_INTERVAL_MS.
-  var DEFAULT_INTERVAL_MS = 20;
+  var DEFAULT_INTERVAL_MS = 10;
   var STATUS_POLL_MS = 1000;
 
   // ---------- storage: one row per recording, many per project ----------

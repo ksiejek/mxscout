@@ -148,9 +148,16 @@ module.exports = async function (t) {
   // watched run dozens of times showed 4 (2026-09-10). The loop chains its
   // rounds now, and the heavier runtime_statistics call rides along on its own
   // slower schedule instead of on every round.
+  // The floor is 10 ms (Karol's call, 2026-09-10, after a first cut at 20
+  // achieved 32). The threshold here is deliberately looser than what this
+  // machine actually gets — 17 ms against a fixture that answers instantly,
+  // the rest being Windows' ~15.6 ms timer granularity — because the number
+  // worth defending is "it chains" and not "it is exactly this fast": a
+  // regression to a fixed 50 ms tick lands at 62 and fails, a slower CI box
+  // does not.
   const gaps = stopped.samples.slice(1).map((s, i) => s.t - stopped.samples[i].t).sort((a, b) => a - b);
   const median = gaps[Math.floor(gaps.length / 2)];
-  t.ok(gaps.length > 3 && median < 50,
+  t.ok(gaps.length > 3 && median < 35,
     'rounds follow each other as fast as the admin port answers, not on a fixed 50 ms tick: median gap ' + median + ' ms over ' + JSON.stringify(gaps));
   t.ok(stopped.samples.some((s) => s.stats === null),
     'most rounds are one call — the runtime-wide statistics ride along only every so often: ' +

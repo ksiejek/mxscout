@@ -216,7 +216,7 @@ function probeOnce(host, port, password) {
 //   - the gap between rounds is the floor, not a fixed period.
 //
 // What this does NOT do, and no change here could: turn the sampler into a
-// tracer. It is still a sample every ~20-30 ms, and every count derived from
+// tracer. It is still a sample every ~10-20 ms, and every count derived from
 // it is "how often it was CAUGHT running", never how often it ran. The UI
 // says so wherever it shows one.
 let timer = null;
@@ -231,7 +231,14 @@ let trouble = null;     // a sentence for the UI once the port has gone quiet fo
 // statistics ride along. Both are here rather than passed in: they are facts
 // about how hard this file is willing to lean on someone else's runtime, and
 // the About page quotes them.
-const MIN_GAP_MS = 20;
+//
+// 10 ms is Karol's call, 2026-09-10, after seeing 32 ms come out of a 20 ms
+// floor: the resolution is what decides whether a short microflow is caught
+// at all, and he would rather pay for it. It is a floor on a LOOPBACK request
+// to a dev or test runtime — the only kind this file may open at all — and
+// the round trip itself is most of what an interval this small actually
+// costs, so the true cadence lands wherever that admin port can keep up.
+const MIN_GAP_MS = 10;
 const STATS_EVERY_MS = 250;
 
 function nowMs() {
