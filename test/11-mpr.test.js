@@ -1,15 +1,20 @@
 /* MxMpr.buildModel — turning a decoded .mpr Unit table into MxScout's
  * canonical model shape. Exercised against two small, committed synthetic
- * fixtures (see test/fixtures/README.md) encoding the SAME tiny fake app —
- * one module ("Sales"), two entities ("Customer"/"Order") linked by an
- * association, an access rule (including the marker-prefixed array shape
- * that once silently emptied a one-role AllowedModuleRoles list), a
- * microflow nested two levels deep under a Folder (exercising
- * resolveOwningModule's walk-up), and one user role — once in v1 shape
+ * fixtures (see test/fixtures/README.md and the generator next to them)
+ * encoding the SAME tiny fake app — one module ("Sales"), two entities
+ * ("Customer"/"Order") linked by an association, an access rule (including
+ * the marker-prefixed array shape that once silently emptied a one-role
+ * AllowedModuleRoles list), a microflow nested two levels deep under a
+ * Folder (exercising resolveOwningModule's walk-up) — once in v1 shape
  * (Contents inline in the Unit table) and once in v2 shape (Contents in
  * separate mprcontents-style files, read here through an in-memory map
  * instead of real files — the real-file path is exercised end-to-end by
- * test/12-mpr-import-ui.test.js). Both must produce the identical model. */
+ * test/13-mpr-import-ui.test.js).
+ *
+ * Both must produce the identical model, with ONE deliberate exception:
+ * their _MetaData tables have the two different column shapes a Mendix 9 and
+ * a Mendix 11 project really have, so the reader's tolerance for both is
+ * tested rather than assumed. */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -39,7 +44,7 @@ module.exports = async function (t) {
   // ---- v1: Contents inline, no readContentsFile needed at all ----
   const v1 = await mx.evaluate(`(async function () {
     var bytes = Uint8Array.from(atob("${v1b64}"), function (c) { return c.charCodeAt(0); }).buffer;
-    var model = await window.MxMpr.buildModel({ mprBytes: bytes, readContentsFile: function () { throw new Error('v1 must not read content files'); } });
+    var model = await window.MxMpr.buildModel({ mprBytes: bytes, appName: 'Sales', readContentsFile: function () { throw new Error('v1 must not read content files'); } });
     delete model.meta.generatedAt;
     return model;
   })()`);
@@ -57,6 +62,7 @@ module.exports = async function (t) {
     var seen = [];
     var model = await window.MxMpr.buildModel({
       mprBytes: bytes,
+      appName: 'Sales',
       readContentsFile: function (relPath) {
         seen.push(relPath);
         return Promise.resolve(Object.prototype.hasOwnProperty.call(sidecar, relPath) ? b64ToBuffer(sidecar[relPath]) : null);
@@ -66,10 +72,37 @@ module.exports = async function (t) {
     return { model: model, filesRead: seen.length };
   })()`);
 
-  t.ok(v2.filesRead === 4, 'v2 reads exactly the four unit files a real project would need for this fixture: ' + v2.filesRead);
+  // Twelve of the fourteen units: the Folder and the module-security unit are
+  // never opened, because nothing the walk needs is inside them.
+  t.ok(v2.filesRead === 12, 'v2 opens only the units the walk actually needs: ' + v2.filesRead);
+
+  // ---- the two formats are the same app, and say so in the same words ----
+  // Everything except meta must come out byte-identical from both shapes.
+  // Meta is the ONE deliberate difference: the v1 fixture carries the
+  // three-column _MetaData a Mendix 9 project has, the v2 fixture the
+  // four-column one an 11.12 project has, so both shapes get exercised.
+  function withoutMeta(m) {
+    var copy = JSON.parse(JSON.stringify(m));
+    delete copy.meta;
+    return copy;
+  }
+  t.ok(JSON.stringify(withoutMeta(v1)) === JSON.stringify(withoutMeta(v2.model)),
+    'v1 (Contents inline) and v2 (Contents in per-unit files) build the identical model');
+
+  // ---- project metadata off the _MetaData table ----
+  t.ok(v1.meta.mendixVersion === '9.24.33.59499',
+    'the Mendix 9 shape of _MetaData — three columns, no _FormatVersion — is read: ' + v1.meta.mendixVersion);
+  t.ok(v2.model.meta.mendixVersion === '11.12.0',
+    'and so is the four-column Mendix 11 shape: ' + v2.model.meta.mendixVersion);
+  t.ok(v1.meta.mprFormat === 1 && v2.model.meta.mprFormat === 2,
+    'the on-disk format is decided by the Unit table’s own columns, not by that version number: ' +
+    v1.meta.mprFormat + ' / ' + v2.model.meta.mprFormat);
+  t.ok(/^\{SHA256\}/.test(v1.meta.schemaHash) && /^\{SHA256\}/.test(v2.model.meta.schemaHash),
+    'the schema hash comes through as written, prefix and all');
+  t.ok(v1.meta.appName === 'Sales' && v2.model.meta.appName === 'Sales',
+    'the app name is the .mpr’s own file name — nothing inside the file carries it');
 
   const expected = {
-    meta: { source: 'mpr', appName: null, mendixVersion: null },
     modules: [{ name: 'Sales', fromAppStore: false }],
     entities: [
       {
@@ -77,11 +110,12 @@ module.exports = async function (t) {
         tableName: null, generalization: null, persistable: true,
         attributes: [
           { name: 'Name', type: 'String', length: 200, defaultValue: null, enumerationQualifiedName: null },
-          { name: 'Age', type: 'Integer', length: null, defaultValue: null, enumerationQualifiedName: null }
+          { name: 'Age', type: 'Integer', length: null, defaultValue: null, enumerationQualifiedName: null },
+          { name: 'Status', type: 'Enumeration', length: null, defaultValue: null, enumerationQualifiedName: 'Sales.Status' }
         ],
         accessRules: [
           {
-            moduleRole: 'Sales.User', defaultAccess: 'r', attrAccess: { Name: 'rw', Age: 'r' }, assocAccess: {},
+            moduleRole: 'Sales.User', defaultAccess: 'r', attrAccess: { Name: 'rw', Age: 'r', Status: 'r' }, assocAccess: {},
             xpathConstraint: '[Age > 0]', xpathReferencedEntities: [], allowCreate: true, allowDelete: false
           }
         ]
@@ -95,31 +129,29 @@ module.exports = async function (t) {
     ],
     associations: [
       { name: 'Order_Customer', module: 'Sales', owner: 'Sales.Order', ownerMultiplicity: null, other: 'Sales.Customer', otherMultiplicity: null, type: 'Reference' }
-    ],
-    userRoles: [{ name: 'User', moduleRoles: ['Sales.User'] }],
-    microflows: [
-      {
-        module: 'Sales', name: 'CreateOrder', qualifiedName: 'Sales.CreateOrder',
-        allowedModuleRoles: ['Sales.User'], applyEntityAccess: true,
-        parameters: [{ name: 'Customer', type: 'Object', entityQualifiedName: 'Sales.Customer', enumerationQualifiedName: null, isList: false }],
-        calledBy: [], javaActionCalls: [], entityRefs: [], constantRefs: [], enumerationRefs: []
-      }
-    ],
-    nanoflows: [], pages: [], javaActions: [], constants: [], enumerations: []
+    ]
   };
 
-  function withoutMeta(m) {
-    var copy = JSON.parse(JSON.stringify(m));
-    copy.meta = { source: copy.meta.source, appName: copy.meta.appName, mendixVersion: copy.meta.mendixVersion };
-    return copy;
-  }
+  // The domain model is the part of this shape everything else in MxScout
+  // renders, so it is pinned exactly rather than sampled.
+  const core = JSON.stringify({
+    modules: v1.modules, entities: v1.entities, associations: v1.associations
+  });
+  const expectedCore = JSON.stringify({
+    modules: expected.modules, entities: expected.entities, associations: expected.associations
+  });
+  t.ok(core === expectedCore,
+    'modules, entities and associations come out exactly as expected:\n  got:      ' + core + '\n  expected: ' + expectedCore);
 
-  const v1Actual = JSON.stringify(withoutMeta(v1));
-  const v2Actual = JSON.stringify(withoutMeta(v2.model));
-  const expectedStr = JSON.stringify(expected);
-
-  t.ok(v1Actual === expectedStr, 'v1 (Contents inline) builds exactly the expected canonical model:\n  got:      ' + v1Actual + '\n  expected: ' + expectedStr);
-  t.ok(v2Actual === expectedStr, 'v2 (Contents via mprcontents-style files) builds the SAME model as v1:\n  got:      ' + v2Actual + '\n  expected: ' + expectedStr);
+  const flow = v1.microflows.filter(function (f) { return f.qualifiedName === 'Sales.CreateOrder'; })[0];
+  t.ok(!!flow && flow.applyEntityAccess === true &&
+    JSON.stringify(flow.allowedModuleRoles) === JSON.stringify(['Sales.User']),
+    'a microflow two folders deep is found, attributed to its module, and carries its roles: ' + JSON.stringify(flow && flow.allowedModuleRoles));
+  t.ok(!!flow && JSON.stringify(flow.parameters) === JSON.stringify(
+    [{ name: 'Customer', type: 'Object', entityQualifiedName: 'Sales.Customer', enumerationQualifiedName: null, isList: false }]),
+    'and its object parameter resolves to the entity it points at: ' + JSON.stringify(flow && flow.parameters));
+  t.ok(v1.pages.length === 1 && v1.pages[0].qualifiedName === 'Sales.Order_Overview',
+    'pages are read the same way: ' + JSON.stringify(v1.pages.map(function (p) { return p.qualifiedName; })));
 
   // ---- errors are loud, not silent ----
   const noUnitTable = await mx.evaluate(`(async function () {

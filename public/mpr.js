@@ -208,6 +208,38 @@
       javaActions: [], constants: [], enumerations: []
     };
   }
+
+  // The .mpr's own _MetaData table: which Studio Pro wrote this project.
+  //
+  // Three shapes exist and a reader has to survive all of them — MEASURED,
+  // not assumed: a Mendix 9 project's table has three columns and no
+  // _FormatVersion at all, an 11.12 project's has four INCLUDING it (a
+  // published account of this format claims that column disappears after
+  // 11.6.2; a real 11.12 file still has it, which is exactly why nothing
+  // here is read by position), and a file with no _MetaData at all is not an
+  // error — just a project that cannot say. Read by column name, every field
+  // optional, never throw: the version is a label on a screen, and no part of
+  // reading the model depends on it. Which on-disk format this is stays
+  // decided by the Unit table's own columns, not by this number.
+  //
+  // The table MxScout deliberately does NOT read is the other one in here:
+  // _Transaction, whose single UUID is how Studio Pro notices that something
+  // outside it changed the project. Nothing in MxScout writes to a .mpr, so
+  // nothing in MxScout has any business touching the row that would tell
+  // Studio Pro a write happened.
+  function readMetaData(mprBytes) {
+    var table;
+    try { table = root.MxSqlite.readTable(mprBytes, '_MetaData'); } catch (e) { return {}; }
+    if (!table.rows.length) return {};
+    var col = {};
+    table.columns.forEach(function (name, i) { col[name] = i; });
+    var row = table.rows[0];
+    function str(name) {
+      var v = col[name] === undefined ? null : row[col[name]];
+      return typeof v === 'string' && v ? v : null;
+    }
+    return { productVersion: str('_ProductVersion'), buildVersion: str('_BuildVersion'), schemaHash: str('_SchemaHash') };
+  }
   // fromAppStore mirrors the Module document's own FromAppStore flag — the
   // same bit Studio Pro's App Explorer uses to bucket a module under its
   // "Marketplace modules" folder rather than listing it as one of the
@@ -235,6 +267,7 @@
   // ---------------- the model builder ----------------
   // input: { mprBytes: Uint8Array|ArrayBuffer,
   //          readContentsFile: (relativePath) => Promise<ArrayBuffer|null>,
+  //          appName?: string,
   //          onProgress?: (phase, done, total) => void }
   // readContentsFile is only ever called for v2 projects; v1's Contents are
   // already sitting in the one Unit-table scan. Always async so both formats
@@ -293,6 +326,14 @@
     }
 
     var result = emptyModel();
+    var meta = readMetaData(input.mprBytes);
+    result.meta.mendixVersion = meta.productVersion;
+    result.meta.schemaHash = meta.schemaHash;
+    result.meta.mprFormat = version;
+    // A Mendix project's .mpr is named after the app, so the file name IS the
+    // app name — there is no other place in the file that carries it.
+    if (typeof input.appName === 'string' && input.appName) result.meta.appName = input.appName;
+
     var entityById = new Map(); // hex($ID) -> { qn, entity }
     var parsedModules = [];
     var moduleUnitIndex = new Map(); // hex(module unit's own UnitID) -> moduleName

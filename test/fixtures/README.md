@@ -57,21 +57,34 @@ con.close()
 
 ## `mpr-v1.db` / `mpr-v2.db` / `mpr-v2-contents.json`
 
-For `test/11-mpr.test.js`. Both encode the SAME tiny fake Mendix app — one
-module ("Sales"), two entities ("Customer"/"Order") linked by an association,
-an access rule (including a marker-prefixed single-item `AllowedModuleRoles`
-array — the exact shape that once silently emptied a one-role list, see
-`payload()` in `public/mpr.js`), a microflow nested two levels deep under a
-Folder unit (exercises `resolveOwningModule`'s walk-up), and one user role —
-once in v1 shape (`mpr-v1.db`'s `Unit` table has an inline `Contents` BLOB
-column) and once in v2 shape (`mpr-v2.db`'s `Unit` table has no `Contents`
-column; the four units' BSON bodies live in `mpr-v2-contents.json`, keyed by
-the same `xx/yy/guid.mxunit` relative path a real `mprcontents/` folder would
-use, base64-encoded — an in-memory stand-in for real files, since the actual
-`File`-reading path is exercised end to end by
-`test/12-mpr-import-ui.test.js` instead).
+For `test/11-mpr.test.js` (and read by `12-mpr-worker`, `13-mpr-import-ui`,
+`14-mpr-replace` and `16-mpr-directory-pick`). Both encode the SAME tiny fake
+Mendix app — one module ("Sales"), two entities ("Customer"/"Order") linked by
+an association, an access rule (including a marker-prefixed single-item
+`AllowedModuleRoles` array), a microflow nested two levels deep under a Folder
+unit (exercises `resolveOwningModule`'s walk-up), a microflow with a body, a
+page, an enumeration, a constant, a Java action, a published REST service, a
+scheduled event, module roles, navigation home pages, and a project security
+document carrying the whole Security screen — once in v1 shape (`mpr-v1.db`'s
+`Unit` table has an inline `Contents` BLOB column) and once in v2 shape
+(`mpr-v2.db`'s `Unit` table has no `Contents` column; each unit's BSON body
+lives in `mpr-v2-contents.json`, keyed by the same `xx/yy/guid.mxunit`
+relative path a real `mprcontents/` folder would use, base64-encoded — an
+in-memory stand-in for real files, since the actual `File`-reading path is
+exercised end to end by `test/13-mpr-import-ui.test.js` instead).
 
-Regenerated with a small one-off Python script that hand-encodes each BSON
-document (a ~40-line encoder mirroring `public/bson.js`'s decoder) and writes
-both `Unit` tables via the stdlib `sqlite3` module — see the git history of
-this file for the exact script if it ever needs regenerating.
+The one deliberate difference between the two: their `_MetaData` tables have
+the two different column shapes that really exist — three columns and no
+`_FormatVersion` for the Mendix 9 file, four columns for the Mendix 11 one —
+and only the v2 file has a `_Transaction` table, because only a v2-era
+project does. Both shapes then have to come out as the same model.
+
+Regenerate with:
+
+```sh
+node test/fixtures/build-mpr-fixtures.js
+```
+
+That script (committed next to these files) uses nothing but Node's own
+stdlib — `node:sqlite` for the databases, plus a ~60-line BSON encoder
+mirroring `public/bson.js`'s decoder. It is never run by `npm test`.

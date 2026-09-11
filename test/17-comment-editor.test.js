@@ -24,6 +24,14 @@ module.exports = async function (t) {
   await mx.waitFor(`!!Array.from(document.querySelectorAll('button,a')).find(n => n.textContent.trim() === 'Demo')`, 10000, 'project in sidebar');
   await mx.evaluate(`(function(){ var e = Array.from(document.querySelectorAll('button,a')).filter(n => n.textContent.trim() === 'Demo'); e[e.length-1].click(); return true; })()`);
 
+  // The click above opened the project; its section list renders a beat
+  // later. Without this the next line filtered an empty list and called
+  // .click() on undefined — about once in twenty-odd runs, taking the rest of
+  // this file's assertions down with it. openSeededProject covers the same
+  // gap with a 700 ms sleep; a condition is the better guard, and it is what
+  // every other step in this file already uses.
+  await mx.waitFor(`!!Array.from(document.querySelectorAll('button,a')).find(n => /^Entities/i.test(n.textContent.trim()))`,
+    8000, 'the project opened and its sections are listed');
   await mx.evaluate(`Array.from(document.querySelectorAll('button,a')).filter(n => /^Entities/i.test(n.textContent.trim()))[0].click()`);
   await mx.waitFor(`!!Array.from(document.querySelectorAll('*')).find(n => n.textContent.trim() === 'Order')`, 8000, 'entity list');
   await mx.evaluate(`(function(){

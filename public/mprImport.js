@@ -77,6 +77,14 @@
 
   // The legacy whole-folder path: entries rooted at the picked project
   // folder's own name, mprcontents/ found wherever it sits inside that tree.
+  // A Mendix project's .mpr is named after the app, and nothing inside the
+  // file says the app's name — so this is where it comes from, for the
+  // model's own meta.appName as much as for the project name MxScout
+  // suggests.
+  function appNameOf(mprFileName) {
+    return String(mprFileName || '').replace(/\.mpr$/i, '');
+  }
+
   function groupFileEntries(entries) {
     var mprCandidates = entries.filter(function (e) { return /\.mpr$/i.test(e.relativePath); });
     if (!mprCandidates.length) {
@@ -351,7 +359,7 @@
 
   function toReady(imp, grouped) {
     imp.grouped = grouped;
-    if (imp.mode === 'create') imp.name = grouped.mprFileName.replace(/\.mpr$/i, '');
+    if (imp.mode === 'create') imp.name = appNameOf(grouped.mprFileName);
     imp.error = null;
     imp.step = 'ready';
     render();
@@ -497,7 +505,7 @@
         imp.error = 'The import worker failed: ' + e.message;
         render();
       };
-      worker.postMessage({ mprBuffer: mprBuffer, contentsFiles: imp.grouped.contentsByRelPath });
+      worker.postMessage({ mprBuffer: mprBuffer, contentsFiles: imp.grouped.contentsByRelPath, appName: appNameOf(imp.grouped.mprFileName) });
     }, function (err) {
       imp.step = 'error';
       imp.error = (err && err.message) || 'Could not read that .mpr file.';

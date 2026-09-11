@@ -6,7 +6,7 @@
  * is the main thread calling worker.terminate() — nothing here needs to know
  * about that, a terminated worker just stops mid-postMessage.
  *
- * Message in:  { mprBuffer: ArrayBuffer, contentsFiles: Map<relativePath, File> }
+ * Message in:  { mprBuffer: ArrayBuffer, contentsFiles: Map<relativePath, File>, appName }
  * Messages out:
  *   { type: 'progress', phase, done, total }  — zero or more
  *   { type: 'done', model }                   — exactly one, on success
@@ -30,7 +30,7 @@ self.onmessage = function (ev) {
     self.postMessage({ type: 'progress', phase: phase, done: done, total: total });
   }
 
-  MxMpr.buildModel({ mprBytes: mprBuffer, readContentsFile: readContentsFile, onProgress: onProgress })
+  MxMpr.buildModel({ mprBytes: mprBuffer, readContentsFile: readContentsFile, appName: ev.data.appName, onProgress: onProgress })
     .then(function (model) { self.postMessage({ type: 'done', model: model }); })
     .catch(function (err) { self.postMessage({ type: 'error', message: (err && err.message) || String(err) }); });
 };

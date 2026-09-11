@@ -28,14 +28,14 @@ module.exports = async function (t) {
         if (ev.data.type === 'error') { clearTimeout(timeout); w.terminate(); reject(new Error('worker error: ' + ev.data.message)); }
       };
       w.onerror = function (e) { clearTimeout(timeout); reject(new Error('worker threw: ' + e.message)); };
-      w.postMessage({ mprBuffer: bytes, contentsFiles: new Map() });
+      w.postMessage({ mprBuffer: bytes, contentsFiles: new Map(), appName: 'Sales' });
     });
   })()`);
   t.ok(v1.messages.indexOf('progress') !== -1, 'the worker reports progress before finishing: ' + JSON.stringify(v1.messages));
   t.ok(v1.messages[v1.messages.length - 1] === 'done', 'and finishes with done: ' + JSON.stringify(v1.messages));
   t.ok(v1.model.modules.length === 1 && v1.model.modules[0].name === 'Sales', 'the model that comes back is the real one: ' + JSON.stringify(v1.model.modules));
-  t.ok(v1.model.microflows.length === 1 && v1.model.microflows[0].qualifiedName === 'Sales.CreateOrder',
-    'including a microflow resolved through the worker end to end: ' + JSON.stringify(v1.model.microflows));
+  t.ok(v1.model.microflows.length === 2 && v1.model.microflows.map(function (f) { return f.qualifiedName; }).indexOf('Sales.CreateOrder') !== -1,
+    'including a microflow resolved through the worker end to end: ' + JSON.stringify(v1.model.microflows.map(function (f) { return f.qualifiedName; })));
 
   // ---- v2: contentsFiles is a real Map<relativePath, File> ----
   const v2 = await mx.evaluate(`(function () {
@@ -62,7 +62,7 @@ module.exports = async function (t) {
       w.postMessage({ mprBuffer: bytes, contentsFiles: files });
     });
   })()`);
-  t.ok(v2.entities.length === 2 && v2.userRoles.length === 1,
+  t.ok(v2.entities.length === 2 && v2.userRoles.length === 3,
     'a real File-backed Map survives the postMessage structured clone into the worker: ' + JSON.stringify({ entities: v2.entities.length, userRoles: v2.userRoles.length }));
 
   // ---- errors come back as a message, not as a thrown/unhandled worker error ----

@@ -26,7 +26,11 @@ const OLD_MODEL = {
     { module: 'Sales', name: 'Legacy', qualifiedName: 'Sales.Legacy', attributes: [], accessRules: [] }        // removed by the new model
   ],
   associations: [],
-  userRoles: [{ name: 'User', moduleRoles: ['Sales.User'] }], // unchanged
+  userRoles: [ // unchanged — the same three roles the fixture's model has
+    { name: 'User', moduleRoles: ['Sales.User'] },
+    { name: 'Guest', moduleRoles: [] },
+    { name: 'Owner', moduleRoles: ['Sales.User'] }
+  ],
   microflows: [{ module: 'Sales', name: 'OldFlow', qualifiedName: 'Sales.OldFlow', allowedModuleRoles: [], parameters: [] }], // removed
   nanoflows: [], pages: []
 };
