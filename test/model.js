@@ -2,7 +2,35 @@
  * here exists because some assertion reads it. */
 module.exports = {
   modules: [{ name: 'Sales' }, { name: 'Admin' }],
-  userRoles: [{ name: 'Agent', moduleRoles: ['Sales.Agent'] }, { name: 'Viewer', moduleRoles: ['Sales.Viewer'] }],
+  // Production security, no anonymous access: the case that needs no banner,
+  // so every other test's screen text stays what it was. The Prototype and
+  // Off cases — and the anonymous role — get their own model inside
+  // test/29-security.test.js rather than being forced on every other test.
+  security: {
+    level: 'CheckEverything',
+    checkSecurity: true,
+    strictMode: false,
+    strictPageUrlCheck: true,
+    guestAccess: false,
+    guestUserRole: null,
+    demoUsersEnabled: true,
+    demoUsers: [{ userName: 'demo_agent', userRoles: ['Agent'], passwordSet: true }],
+    adminUserName: 'MxAdmin',
+    adminUserRole: 'Agent',
+    adminPasswordSet: true,
+    passwordPolicy: { minimumLength: 8, requireDigit: true, requireMixedCase: false, requireSymbol: false }
+  },
+  userRoles: [
+    { name: 'Agent', moduleRoles: ['Sales.Agent'], manageAllRoles: true, manageableRoles: [] },
+    { name: 'Viewer', moduleRoles: ['Sales.Viewer'], manageAllRoles: false, manageableRoles: [] }
+  ],
+  // Sales.Archivist is declared by the module and held by nobody — the case
+  // only a module's own role list can show, since no rule mentions it.
+  moduleRoles: [
+    { module: 'Sales', name: 'Agent', qualifiedName: 'Sales.Agent', description: 'Handles orders.' },
+    { module: 'Sales', name: 'Viewer', qualifiedName: 'Sales.Viewer', description: null },
+    { module: 'Sales', name: 'Archivist', qualifiedName: 'Sales.Archivist', description: 'Left over from the old archive screen.' }
+  ],
   entities: [{
     qualifiedName: 'Admin.Setting', name: 'Setting', module: 'Admin',
     attributes: [{ name: 'Key', type: 'String', length: 50 }, { name: 'Value', type: 'String', length: 200 }],

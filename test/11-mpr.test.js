@@ -72,9 +72,9 @@ module.exports = async function (t) {
     return { model: model, filesRead: seen.length };
   })()`);
 
-  // Twelve of the fourteen units: the Folder and the module-security unit are
-  // never opened, because nothing the walk needs is inside them.
-  t.ok(v2.filesRead === 12, 'v2 opens only the units the walk actually needs: ' + v2.filesRead);
+  // Thirteen of the fourteen units: the Folder is never opened, because
+  // nothing the walk needs is inside one.
+  t.ok(v2.filesRead === 13, 'v2 opens only the units the walk actually needs: ' + v2.filesRead);
 
   // ---- the two formats are the same app, and say so in the same words ----
   // Everything except meta must come out byte-identical from both shapes.
@@ -152,6 +152,48 @@ module.exports = async function (t) {
     'and its object parameter resolves to the entity it points at: ' + JSON.stringify(flow && flow.parameters));
   t.ok(v1.pages.length === 1 && v1.pages[0].qualifiedName === 'Sales.Order_Overview',
     'pages are read the same way: ' + JSON.stringify(v1.pages.map(function (p) { return p.qualifiedName; })));
+
+  // ---- the project's Security screen ----
+  const sec = v1.security;
+  t.ok(!!sec && sec.level === 'CheckEverything',
+    'the security level is read — it decides whether everything else MxScout shows about roles is enforced at all: ' + (sec && sec.level));
+  t.ok(sec.guestAccess === true && sec.guestUserRole === 'Guest',
+    'anonymous access, and which role a visitor who has not signed in gets: ' + JSON.stringify([sec.guestAccess, sec.guestUserRole]));
+  t.ok(sec.strictMode === false && sec.strictPageUrlCheck === true,
+    'strict mode and the page URL check come through as the two separate settings they are');
+  t.ok(!!sec.passwordPolicy && sec.passwordPolicy.minimumLength === 6 &&
+    sec.passwordPolicy.requireDigit === true && sec.passwordPolicy.requireSymbol === false,
+    'the password policy is read field by field: ' + JSON.stringify(sec.passwordPolicy));
+  t.ok(sec.adminUserName === 'MxAdmin' && sec.adminUserRole === 'User',
+    'the administrator account is named: ' + JSON.stringify([sec.adminUserName, sec.adminUserRole]));
+
+  // Secrets are read as facts, never as values — the fixture's admin password
+  // is "hunter2" and its demo user's is "letmein", and neither string may
+  // appear anywhere in the model that gets stored, packaged and reported on.
+  t.ok(sec.adminPasswordSet === true, 'that the admin password is set in the model IS recorded');
+  t.ok(sec.demoUsersEnabled === true && sec.demoUsers.length === 1 &&
+    sec.demoUsers[0].userName === 'demo_user' && sec.demoUsers[0].passwordSet === true &&
+    JSON.stringify(sec.demoUsers[0].userRoles) === JSON.stringify(['User']),
+    'and so is each demo account, by name and role: ' + JSON.stringify(sec.demoUsers));
+  const serialized = JSON.stringify(v1);
+  t.ok(serialized.indexOf('hunter2') === -1 && serialized.indexOf('letmein') === -1,
+    'but NO password value reaches the model — nothing to leak into the browser’s database, a package or a report');
+
+  // ---- user roles carry what they can hand out ----
+  const owner = v1.userRoles.filter(function (r) { return r.name === 'Owner'; })[0];
+  const guest = v1.userRoles.filter(function (r) { return r.name === 'Guest'; })[0];
+  t.ok(!!owner && owner.manageAllRoles === true, 'a role that can assign every other role says so');
+  t.ok(!!guest && guest.manageAllRoles === false && guest.moduleRoles.length === 0,
+    'and a role that unlocks nothing comes through as unlocking nothing, not as missing');
+
+  // ---- module roles, from the module rather than from the rules ----
+  t.ok(v1.moduleRoles.length === 2 &&
+    JSON.stringify(v1.moduleRoles.map(function (r) { return r.qualifiedName; })) ===
+    JSON.stringify(['Sales.Auditor', 'Sales.User']),
+    'every role a module declares is read, including one no access rule mentions: ' +
+    JSON.stringify(v1.moduleRoles.map(function (r) { return r.qualifiedName; })));
+  t.ok(v1.moduleRoles[0].description === 'Reads everything, changes nothing.',
+    'with the one line of text in which somebody said what the role is for: ' + v1.moduleRoles[0].description);
 
   // ---- errors are loud, not silent ----
   const noUnitTable = await mx.evaluate(`(async function () {

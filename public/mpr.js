@@ -203,9 +203,67 @@
   function emptyModel() {
     return {
       meta: { source: 'mpr', generatedAt: new Date().toISOString(), appName: null, mendixVersion: null },
-      modules: [], entities: [], associations: [], userRoles: [],
+      modules: [], entities: [], associations: [], userRoles: [], moduleRoles: [],
       microflows: [], nanoflows: [], pages: [],
-      javaActions: [], constants: [], enumerations: []
+      javaActions: [], constants: [], enumerations: [],
+      security: null
+    };
+  }
+
+  // A Mendix property left at its default value is NOT written to the .mpr at
+  // all, so an absent field says "nobody touched this", not "false". Reading
+  // it as the default Mendix itself applies gives the same answer the running
+  // app does; reading it as `!!doc.Thing` silently turns every unset default
+  // into false. Only used where the Mendix default is actually known.
+  function bool(doc, key, mendixDefault) {
+    var v = doc ? doc[key] : undefined;
+    return typeof v === 'boolean' ? v : mendixDefault;
+  }
+  function str(doc, key) {
+    var v = doc ? doc[key] : undefined;
+    return typeof v === 'string' && v ? v : null;
+  }
+
+  // The rest of the project's Security screen, the part that decides whether
+  // everything else MxScout shows about roles is enforced at run time at all.
+  //
+  // SECRETS ARE READ AS FACTS, NEVER AS VALUES. The admin password and every
+  // demo user's password sit in this document in plain text — that they are
+  // set is worth knowing and worth saying; the values themselves are not
+  // MxScout's to carry, because carrying them would put somebody else's
+  // passwords into this browser's database and into every .mxscout package
+  // made from it. So: a boolean, and the user names and roles that go with
+  // them. Deliberate, and the About page says it in these terms.
+  function readProjectSecurity(doc) {
+    var policy = doc.PasswordPolicySettings;
+    return {
+      // Off / Prototype / Production on the Security screen. Absent means the
+      // project did not record one rather than "none" — every real project
+      // measured writes it, but guessing a default here would be guessing
+      // about the one field that governs the truth of everything else.
+      level: str(doc, 'SecurityLevel'),
+      checkSecurity: bool(doc, 'CheckSecurity', null),
+      strictMode: bool(doc, 'StrictMode', null),
+      strictPageUrlCheck: bool(doc, 'StrictPageUrlCheck', null),
+      guestAccess: bool(doc, 'EnableGuestAccess', false),
+      guestUserRole: str(doc, 'GuestUserRole'),
+      demoUsersEnabled: bool(doc, 'EnableDemoUsers', false),
+      demoUsers: payload(doc.DemoUsers).filter(function (u) { return u && u.UserName; }).map(function (u) {
+        return {
+          userName: String(u.UserName),
+          userRoles: payload(u.UserRoles).filter(function (r) { return typeof r === 'string'; }),
+          passwordSet: typeof u.Password === 'string' && u.Password !== ''
+        };
+      }),
+      adminUserName: str(doc, 'AdminUserName'),
+      adminUserRole: str(doc, 'AdminUserRole'),
+      adminPasswordSet: typeof doc.AdminPassword === 'string' && doc.AdminPassword !== '',
+      passwordPolicy: policy && typeof policy === 'object' ? {
+        minimumLength: typeof policy.MinimumLength === 'number' ? policy.MinimumLength : null,
+        requireDigit: bool(policy, 'RequireDigit', false),
+        requireMixedCase: bool(policy, 'RequireMixedCase', false),
+        requireSymbol: bool(policy, 'RequireSymbol', false)
+      } : null
     };
   }
 
@@ -261,6 +319,7 @@
     model.microflows.sort(function (a, b) { return a.qualifiedName.localeCompare(b.qualifiedName); });
     model.nanoflows.sort(function (a, b) { return a.qualifiedName.localeCompare(b.qualifiedName); });
     model.pages.sort(function (a, b) { return a.qualifiedName.localeCompare(b.qualifiedName); });
+    model.moduleRoles.sort(function (a, b) { return a.qualifiedName.localeCompare(b.qualifiedName); });
     return model;
   }
 
@@ -541,10 +600,19 @@
       report('Reading microflows, nanoflows and pages', d + 1, documentRows.length);
     }
 
-    // Pass 3: the project's Security screen — bundles per-module Module
-    // Roles (e.g. "Sales.Manager") into the app-level roles a user is
-    // actually assigned (e.g. "Manager"). Lives alongside Navigation/
-    // Settings/Texts under the small 'ProjectDocuments' containment slot.
+    // Pass 3: the project's Security screen. Two things live here.
+    //
+    // The one MxScout always had: user roles, which bundle per-module Module
+    // Roles (e.g. "Sales.Manager") into the app-level role a user is actually
+    // assigned (e.g. "Manager"). The rest of this document is the OTHER half
+    // of the same screen, and MxScout used to drop it on the floor — which
+    // mattered, because whether the running app enforces any of what the role
+    // filter shows is decided right here, by SecurityLevel. A project set to
+    // CheckNothing has an access matrix that means nothing at run time, and
+    // saying so is the difference between a true picture and a plausible one.
+    //
+    // Lives alongside Navigation/Settings/Texts under the small
+    // 'ProjectDocuments' containment slot.
     var projectDocRows = byContainment.get('ProjectDocuments') || [];
     for (var p = 0; p < projectDocRows.length; p++) {
       var pdoc = await decodeUnit(projectDocRows[p][col.UnitID]);
@@ -553,11 +621,37 @@
         if (!ur || ur['$Type'] !== 'Security$UserRole' || !ur.Name) return;
         result.userRoles.push({
           name: ur.Name,
-          moduleRoles: payload(ur.ModuleRoles).filter(function (r) { return typeof r === 'string'; })
+          moduleRoles: payload(ur.ModuleRoles).filter(function (r) { return typeof r === 'string'; }),
+          // A role that can hand out roles can hand out its own superiors'.
+          manageAllRoles: !!ur.ManageAllRoles,
+          manageableRoles: payload(ur.ManageableRoles).filter(function (r) { return typeof r === 'string'; })
+        });
+      });
+      result.security = readProjectSecurity(pdoc);
+    }
+    result.userRoles.sort(function (a, b) { return a.name.localeCompare(b.name); });
+
+    // Pass 4: module roles. Every role a module declares lives in its own
+    // one-per-module unit — which is the ONLY place a role that no access
+    // rule happens to mention is written down at all. Without this a role
+    // granted to a user but never used in a rule is invisible, and so is the
+    // one line of text in which somebody explained what the role is for.
+    var moduleSecurityRows = byContainment.get('ModuleSecurity') || [];
+    for (var ms = 0; ms < moduleSecurityRows.length; ms++) {
+      var msRow = moduleSecurityRows[ms];
+      var owner = resolveOwningModule(msRow[col.ContainerID]);
+      if (!owner) continue;
+      var msDoc = await decodeUnit(msRow[col.UnitID]);
+      if (!msDoc || msDoc['$Type'] !== 'Security$ModuleSecurity') continue;
+      payload(msDoc.ModuleRoles).forEach(function (mr) {
+        if (!mr || mr['$Type'] !== 'Security$ModuleRole' || !mr.Name) return;
+        result.moduleRoles.push({
+          module: owner, name: mr.Name, qualifiedName: owner + '.' + mr.Name,
+          description: typeof mr.Description === 'string' && mr.Description ? mr.Description : null
         });
       });
     }
-    result.userRoles.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    result.moduleRoles.sort(function (a, b) { return a.qualifiedName.localeCompare(b.qualifiedName); });
 
     return sortModel(result);
   }

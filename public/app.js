@@ -233,7 +233,8 @@
         return Object.assign({}, r, {
           moduleRoles: (r.moduleRoles || []).filter(function (mr) { return !hiddenNames[String(mr).split('.')[0]]; })
         });
-      })
+      }),
+      moduleRoles: (model.moduleRoles || []).filter(function (r) { return !r || !hiddenNames[r.module]; })
     });
   }
 
@@ -630,6 +631,9 @@
     { key: 'microflows', label: 'Microflows', countKey: 'microflows' },
     { key: 'nanoflows', label: 'Nanoflows', countKey: 'nanoflows' },
     { key: 'pages', label: 'Pages', countKey: 'pages' },
+    // No count: the honest one would be "how many roles", and a number next
+    // to "Security" reads as a problem count, which it is not.
+    { key: 'security', label: 'Security', countKey: null },
     { key: 'performance', label: 'Performance', countKey: null },
     { key: 'comments', label: 'Comments', countKey: null },
     { key: 'live', label: 'Live app', countKey: null, apart: true },
@@ -1255,8 +1259,14 @@
     var optAll = el('option', { value: 'all', text: 'Everything' });
     if (state.detail.role === 'all') optAll.setAttribute('selected', 'selected');
     select.appendChild(optAll);
+    // "Which role does a visitor who has not signed in get" is the first
+    // question asked of an app that allows one at all, and until the project's
+    // security document was read, that role sat in this list looking like any
+    // other. It is named here rather than left to be recognised.
+    var guestRole = model.security && model.security.guestAccess ? model.security.guestUserRole : null;
     roles.forEach(function (r) {
-      var o = el('option', { value: r.name, text: r.name });
+      var isGuest = guestRole && r.name === guestRole;
+      var o = el('option', { value: r.name, text: r.name + (isGuest ? ' (not signed in)' : '') });
       if (r.name === state.detail.role) o.setAttribute('selected', 'selected');
       select.appendChild(o);
     });
@@ -1907,6 +1917,9 @@
     } else if (state.detail.view === 'pages') {
       controls = el('div', { class: 'view-controls' }, [renderFilterInput('Filter pages…'), showModuleChips].filter(Boolean));
       body = renderFlowList(model, 'pages', 'pages');
+    } else if (state.detail.view === 'security') {
+      controls = null;
+      body = window.MxSecurity.renderPanel(model);
     } else if (state.detail.view === 'live') {
       controls = null;
       body = window.MxLive.renderPanel(model, project);
@@ -1929,7 +1942,13 @@
     // role someone picks afterwards.
     var roleFilterApplies = state.detail.view !== 'comments' &&
       state.detail.view !== 'settings' &&
+      state.detail.view !== 'security' &&
       state.detail.view !== 'performance';
+    // If the app does not enforce its access rules, a role filter showing
+    // "Manager can read Order" is describing an intention, not a behaviour —
+    // so the views that filter by role say so before showing anything. The
+    // Security section carries its own copy of this and does not need it
+    // twice; a Production project is the normal case and gets no banner.
     return el('div', { class: 'detail' }, [
       el('div', { class: 'detail-head' }, [
         title,
@@ -1938,6 +1957,7 @@
           actions
         ].filter(Boolean))
       ]),
+      roleFilterApplies ? window.MxSecurity.renderLevelWarning(model) : null,
       controls,
       el('div', { class: 'view-body' }, [body])
     ].filter(Boolean));
@@ -2319,6 +2339,7 @@
     finishCreatingProject: finishCreatingProject, finishReplacingProject: finishReplacingProject,
     openProject: openProject, findProject: findProject
   });
+  window.MxSecurity.init({ el: el, state: state, moduleColor: moduleColor, withMod: withMod });
   window.MxPalette.init({
     el: el, state: state, render: render, sections: PROJECT_SECTIONS,
     findProject: findProject, openProject: openProject, goToSection: goToSection,
