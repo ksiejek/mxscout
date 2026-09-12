@@ -61,6 +61,19 @@ module.exports = async function (t) {
   t.ok(/Left over from the old archive screen/.test(panel),
     'with the one line of description somebody wrote for it');
 
+  // ---- what the app publishes, which no role filter can answer ----
+  t.ok(/Open to the outside/.test(panel) && /orders/.test(panel),
+    'the services the app publishes get their own block — none of them go through the access rules the other views show');
+  t.ok(/Basic/.test(panel), 'with what stands between the service and a caller');
+  t.ok(/nothing gates it/.test(panel),
+    'and a service with neither a role list nor authentication is marked as exactly that');
+
+  // ---- what runs with nobody signed in ----
+  t.ok(/Runs without a user/.test(panel) && /NightlyTotals/.test(panel) && /every day/.test(panel),
+    'a scheduled event is listed with what it runs and when — it executes outside every role in the model');
+  t.ok(/Sales\.RecalculateTotals/.test(panel), 'naming the microflow it sets off');
+  t.ok(/off/.test(panel), 'and a queue or event that is switched off says so rather than looking live');
+
   // ---- an enumeration attribute says what it may hold ----
   // The entity popup used to name the enumeration and stop there; the values
   // are one document away and are what anybody reading a row actually needs.

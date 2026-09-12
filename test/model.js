@@ -41,6 +41,34 @@ module.exports = {
     module: 'Sales', name: 'Priority', qualifiedName: 'Sales.Priority',
     values: [{ name: 'low', caption: 'Low' }, { name: 'high', caption: 'Rather urgent' }]
   }],
+  // Two things no role filter can answer: what the app publishes, and what
+  // runs on a timer with nobody signed in.
+  publishedServices: [
+    {
+      kind: 'REST', module: 'Sales', name: 'orders', qualifiedName: 'Sales.orders',
+      path: 'orders/', version: '1.0.0',
+      allowedModuleRoles: ['Sales.Agent'], authentication: ['Basic'],
+      authenticationMicroflow: null, exposes: ['POST order → Sales.CancelOrder']
+    },
+    {
+      // Nothing gates it — a real shape, and a deliberate one for an OIDC
+      // callback, which is why it is shown rather than flagged as a fault.
+      kind: 'REST', module: 'Sales', name: 'discovery', qualifiedName: 'Sales.discovery',
+      path: 'sso/', version: null,
+      allowedModuleRoles: [], authentication: [], authenticationMicroflow: null, exposes: []
+    }
+  ],
+  automation: [
+    {
+      kind: 'scheduled event', module: 'Sales', name: 'NightlyTotals',
+      qualifiedName: 'Sales.NightlyTotals', enabled: true,
+      microflow: 'Sales.RecalculateTotals', schedule: 'every day', timeZone: 'UTC', parallelism: null
+    },
+    {
+      kind: 'queue', module: 'Sales', name: 'Task', qualifiedName: 'Sales.Task',
+      enabled: false, microflow: null, schedule: null, timeZone: null, parallelism: '5'
+    }
+  ],
   entities: [{
     qualifiedName: 'Admin.Setting', name: 'Setting', module: 'Admin',
     attributes: [{ name: 'Key', type: 'String', length: 50 }, { name: 'Value', type: 'String', length: 200 }],

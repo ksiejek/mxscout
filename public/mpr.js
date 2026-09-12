@@ -5,13 +5,19 @@
  * MxSqlite/MxBson instead of `sql.js`/`bson`, and trimmed to the fields
  * MxScout's UI actually renders.
  *
- * SCOPE CUT, checked by grep across public/*.js before writing this: MxScout
- * never reads `calledBy`, `javaActionCalls`, `entityRefs`, `constantRefs`,
- * `enumerationRefs`, `xpathReferencedEntities`, or the `javaActions` /
- * `constants` / `enumerations` lists — that is MxSonar's architecture-graph
- * feature, which MxScout doesn't have. Those fields stay on the model shape
- * (empty), so a real MxSonar export still loads unmodified, but nothing here
- * computes them — no deepFindByType call-graph scanning.
+ * WHAT IS READ, and what is deliberately not. The original port cut every
+ * field MxScout's UI did not render; most of those have since been earned
+ * back, because a question was asked that needed them:
+ *   - `calledBy` — what reaches a flow no role can trigger (collectReferences)
+ *   - `activity`, `entityRefs`, `javaActionCalls` — what a flow DOES, read
+ *     from its own body before anybody presses Run (readFlowActivity)
+ *   - `enumerations` — the values an enumeration attribute may hold
+ *   - `security`, `moduleRoles` — the project's whole Security screen
+ *   - `publishedServices`, `automation` — what the app exposes, and what runs
+ *     on a timer with no user behind it
+ * Still empty, and still on the shape only so an MxSonar export loads
+ * unmodified: `constantRefs`, `enumerationRefs`, `xpathReferencedEntities`,
+ * and the `javaActions` / `constants` lists. Nothing renders them.
  *
  * Two on-disk .mpr formats (see mprDirectSource.js's own comment for the
  * full story): v1 has a `Contents` BSON blob inline in the `Unit` table;
@@ -206,6 +212,7 @@
       modules: [], entities: [], associations: [], userRoles: [], moduleRoles: [],
       microflows: [], nanoflows: [], pages: [],
       javaActions: [], constants: [], enumerations: [],
+      publishedServices: [], automation: [],
       security: null
     };
   }
@@ -469,6 +476,87 @@
     return english || first || null;
   }
 
+  // ---------------- what the app exposes, and what runs with no user ------
+  // Two questions the role filter cannot answer, because neither has a user
+  // behind it. A published REST or OData service is reachable by whoever can
+  // reach the app at all, gated by its own role list and its own
+  // authentication; a scheduled event runs a microflow on a timer, in no
+  // session, as nobody. Both are in the file, and MxScout read neither.
+
+  // A schedule is stored as a child object whose TYPE is the unit — Minute,
+  // Day, Week — and whose Multiplier is the count. The legacy Interval /
+  // IntervalType pair sits in the same document and is NOT kept in step by
+  // Studio Pro, so reading it would give a number that was true once.
+  function scheduleText(doc) {
+    var schedule = doc && doc.Schedule;
+    if (!schedule || typeof schedule !== 'object') return null;
+    var unit = String(schedule['$Type'] || '').replace(/^.*\$/, '').replace(/Schedule$/, '').toLowerCase();
+    if (!unit) return null;
+    var every = typeof schedule.Multiplier === 'number' ? schedule.Multiplier : 1;
+    return every === 1 ? 'every ' + unit : 'every ' + every + ' ' + unit + 's';
+  }
+
+  function readPublishedRest(doc) {
+    var exposes = [];
+    payload(doc.Resources).forEach(function (resource) {
+      if (!resource) return;
+      payload(resource.Operations).forEach(function (op) {
+        if (!op) return;
+        var method = typeof op.HttpMethod === 'string' ? op.HttpMethod.toUpperCase() : '';
+        var where = [resource.Name, op.OperationPath].filter(Boolean).join('/');
+        exposes.push((method ? method + ' ' : '') + (where || op.Name || '') +
+          (typeof op.Microflow === 'string' && op.Microflow ? ' → ' + op.Microflow : ''));
+      });
+    });
+    return {
+      kind: 'REST',
+      path: str(doc, 'Path'), version: str(doc, 'Version'),
+      allowedModuleRoles: payload(doc.AllowedRoles).filter(function (r) { return typeof r === 'string'; }),
+      authentication: payload(doc.AuthenticationTypes).filter(function (a) { return typeof a === 'string'; }),
+      authenticationMicroflow: str(doc, 'AuthenticationMicroflow'),
+      exposes: exposes
+    };
+  }
+
+  function readPublishedOData(doc) {
+    return {
+      kind: 'OData',
+      path: str(doc, 'Path'), version: str(doc, 'Version'),
+      allowedModuleRoles: payload(doc.AllowedModuleRoles).filter(function (r) { return typeof r === 'string'; }),
+      authentication: payload(doc.AuthenticationTypes).filter(function (a) { return typeof a === 'string'; }),
+      authenticationMicroflow: str(doc, 'AuthenticationMicroflow'),
+      exposes: payload(doc.EntitySets).filter(function (s) { return s && s.ExposedName; })
+        .map(function (s) { return String(s.ExposedName); })
+    };
+  }
+
+  // A published web service authenticates per version, with a header rather
+  // than a role list — so there is no role list to report, and saying "no
+  // roles" would read as "open to everyone", which is a different claim.
+  function readPublishedWebService(doc) {
+    var versions = payload(doc.VersionedWebServices).filter(function (v) { return v && typeof v === 'object'; });
+    var auth = [];
+    versions.forEach(function (v) {
+      if (typeof v.HeaderAuthentication === 'string' && v.HeaderAuthentication && auth.indexOf(v.HeaderAuthentication) === -1) {
+        auth.push(v.HeaderAuthentication);
+      }
+    });
+    var exposes = [];
+    versions.forEach(function (v) {
+      payload(v.Operations).forEach(function (op) {
+        if (op && op.Name) exposes.push(String(op.Name));
+      });
+    });
+    return {
+      kind: 'web service',
+      path: null, version: null,
+      allowedModuleRoles: null, // not how a SOAP service is gated
+      authentication: auth,
+      authenticationMicroflow: null,
+      exposes: exposes
+    };
+  }
+
   // ---------------- what can reach a flow ----------------
   // Nearly half the microflows in a real project have no allowed roles at all
   // (339 of 713 in one measured here). MxScout used to say "no user role can
@@ -595,6 +683,8 @@
     model.pages.sort(function (a, b) { return a.qualifiedName.localeCompare(b.qualifiedName); });
     model.moduleRoles.sort(function (a, b) { return a.qualifiedName.localeCompare(b.qualifiedName); });
     model.enumerations.sort(function (a, b) { return a.qualifiedName.localeCompare(b.qualifiedName); });
+    model.publishedServices.sort(function (a, b) { return a.qualifiedName.localeCompare(b.qualifiedName); });
+    model.automation.sort(function (a, b) { return a.qualifiedName.localeCompare(b.qualifiedName); });
     return model;
   }
 
@@ -910,6 +1000,31 @@
               });
             }
           }
+        } else if (ownerModule && (type === 'Rest$PublishedRestService' ||
+            type === 'WebServices$PublishedService' || /PublishedODataService/.test(type))) {
+          var service = type === 'Rest$PublishedRestService' ? readPublishedRest(raw)
+            : type === 'WebServices$PublishedService' ? readPublishedWebService(raw)
+            : readPublishedOData(raw);
+          service.module = ownerModule;
+          service.name = raw.Name;
+          service.qualifiedName = ownerModule + '.' + raw.Name;
+          result.publishedServices.push(service);
+        } else if (ownerModule && (type === 'ScheduledEvents$ScheduledEvent' || type === 'Queues$Queue')) {
+          var config = raw.Config && typeof raw.Config === 'object' ? raw.Config : null;
+          result.automation.push({
+            kind: type === 'Queues$Queue' ? 'queue' : 'scheduled event',
+            module: ownerModule, name: raw.Name, qualifiedName: ownerModule + '.' + raw.Name,
+            // A scheduled event that is switched off still exists, and the
+            // difference matters more than the event does.
+            enabled: bool(raw, 'Enabled', true),
+            microflow: str(raw, 'Microflow'),
+            schedule: scheduleText(raw),
+            timeZone: str(raw, 'TimeZone'),
+            // Stored as an expression, not a number — it can be a constant.
+            // An expression, so it can be a constant reference; and it can
+            // arrive with the newline somebody typed after it.
+            parallelism: config && str(config, 'ParallelismExpression') ? String(config.ParallelismExpression).trim() : null
+          });
         } else if (type === 'Enumerations$Enumeration' && ownerModule) {
           // An entity's enumeration attribute has only ever carried the
           // enumeration's NAME. What a person needs is the values it can

@@ -29,6 +29,11 @@
  *                          adminPasswordSet, passwordPolicy }
  *   model.userRoles[]  = { name, moduleRoles[], manageAllRoles, manageableRoles[] }
  *   model.moduleRoles[]= { module, name, qualifiedName, description }
+ *   model.publishedServices[] = { kind, module, name, qualifiedName, path,
+ *                          version, allowedModuleRoles[]|null, authentication[],
+ *                          authenticationMicroflow, exposes[] }
+ *   model.automation[] = { kind, module, name, qualifiedName, enabled,
+ *                          microflow, schedule, timeZone, parallelism }
  */
 (function () {
   'use strict';
@@ -284,9 +289,106 @@
     ].concat(groups));
   }
 
+  // ---------- open to the outside ----------
+  // The role filter cannot answer this one: a published REST or OData service
+  // is reachable by anything that can reach the app, gated by its own role
+  // list and its own authentication rather than by the access rules every
+  // other view shows. A service with neither is worth seeing plainly — it
+  // may be entirely deliberate (an OIDC callback has to be reachable before
+  // anybody is signed in), which is exactly why it is shown rather than
+  // flagged.
+  function publishedBlock(model) {
+    var services = model.publishedServices || [];
+    if (!services.length) return null;
+    var rows = services.map(function (s) {
+      var open = Array.isArray(s.allowedModuleRoles) && !s.allowedModuleRoles.length &&
+        !(s.authentication || []).length && !s.authenticationMicroflow;
+      var access;
+      if (s.allowedModuleRoles === null) {
+        // A SOAP service is not gated by roles at all, and printing "no
+        // roles" for it would read as "open to everyone".
+        access = [el('span', { class: 'muted', text: 'not gated by roles' })];
+      } else if (s.allowedModuleRoles.length) {
+        access = s.allowedModuleRoles.map(function (mr) {
+          var chip = el('span', { class: 'chip on', text: mr });
+          chip.style.setProperty('--mod', moduleColor(String(mr).split('.')[0]));
+          return chip;
+        });
+      } else {
+        access = [el('span', { class: 'sec-off', text: 'no roles listed' })];
+      }
+      var auth = (s.authentication || []).slice();
+      if (s.authenticationMicroflow) auth.push('microflow ' + s.authenticationMicroflow);
+      return el('tr', {}, [
+        el('td', {}, [
+          el('strong', { text: s.name }),
+          el('span', { class: 'muted sec-note', text: s.kind + (s.path ? ' · ' + s.path : '') + (s.version ? ' · v' + s.version : '') }),
+          open ? el('span', { class: 'badge badge-none', title: 'No role list and no authentication: anything that can reach the app can call this', text: 'nothing gates it' }) : null
+        ].filter(Boolean)),
+        el('td', {}, access),
+        el('td', {}, [auth.length
+          ? el('span', { text: auth.join(', ') })
+          : el('span', { class: 'sec-off', text: 'none' })]),
+        el('td', {}, [(s.exposes || []).length
+          ? el('span', { text: s.exposes.length + ' · ' + s.exposes.slice(0, 3).join(', ') + (s.exposes.length > 3 ? ' …' : ''), title: s.exposes.join('\n') })
+          : el('span', { class: 'muted', text: '—' })])
+      ]);
+    });
+    return el('div', { class: 'card' }, [
+      el('h3', { text: 'Open to the outside' }),
+      el('p', { class: 'hint', text: 'What this app publishes, and what stands between it and a caller. None of it goes through the access rules the other views show — a published service is gated by its own role list and its own authentication.' }),
+      el('table', { class: 'sec-table' }, [
+        el('thead', {}, [el('tr', {}, [
+          el('th', { text: 'Service' }), el('th', { text: 'Roles' }),
+          el('th', { text: 'Authentication' }), el('th', { text: 'Exposes' })
+        ])]),
+        el('tbody', {}, rows)
+      ])
+    ]);
+  }
+
+  // ---------- runs without a user ----------
+  // A scheduled event executes a microflow on a timer, in no session, as
+  // nobody — outside every role in the model and therefore outside every
+  // other view in MxScout.
+  function automationBlock(model) {
+    var items = model.automation || [];
+    if (!items.length) return null;
+    var rows = items.map(function (a) {
+      var what = [];
+      if (a.schedule) what.push(a.schedule);
+      if (a.timeZone) what.push(a.timeZone);
+      if (a.parallelism) what.push(a.parallelism + ' at a time');
+      return el('tr', {}, [
+        el('td', {}, [
+          el('strong', { text: a.name }),
+          el('span', { class: 'muted sec-note', text: a.kind }),
+          a.enabled === false ? el('span', { class: 'badge badge-none', title: 'Defined, but switched off', text: 'off' }) : null
+        ].filter(Boolean)),
+        el('td', {}, [a.microflow
+          ? el('span', { class: 'trig-name', text: a.microflow })
+          : el('span', { class: 'muted', text: '—' })]),
+        el('td', {}, [what.length
+          ? el('span', { text: what.join(' · ') })
+          : el('span', { class: 'muted', text: '—' })])
+      ]);
+    });
+    return el('div', { class: 'card' }, [
+      el('h3', { text: 'Runs without a user' }),
+      el('p', { class: 'hint', text: 'A scheduled event runs a microflow on a timer, in no session and as nobody — outside every role in this model, and so outside every other view here. A queue runs work the same way, handed to it by whatever put it there.' }),
+      el('table', { class: 'sec-table' }, [
+        el('thead', {}, [el('tr', {}, [
+          el('th', { text: 'Name' }), el('th', { text: 'Runs' }), el('th', { text: 'When' })
+        ])]),
+        el('tbody', {}, rows)
+      ])
+    ]);
+  }
+
   // ---------- the section ----------
   function renderPanel(model) {
-    if (!model.security && !(model.moduleRoles || []).length) {
+    if (!model.security && !(model.moduleRoles || []).length &&
+        !(model.publishedServices || []).length && !(model.automation || []).length) {
       return el('div', { class: 'empty' }, [
         el('p', { text: 'This model does not carry the project’s security settings.' }),
         el('p', { class: 'muted', text: 'It was imported from a JSON export, or from a project folder before MxScout read them. Replace the model from the Mendix project folder to fill this in — the user roles below come from the model either way.' }),
@@ -297,7 +399,9 @@
       model.security ? renderLevelWarning(model) : null,
       model.security ? settingsBlock(model) : null,
       userRolesBlock(model),
-      moduleRolesBlock(model)
+      moduleRolesBlock(model),
+      publishedBlock(model),
+      automationBlock(model)
     ].filter(Boolean));
   }
 
