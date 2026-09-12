@@ -1,6 +1,10 @@
 /* One small model, shared by the browser tests. Small on purpose: every field
  * here exists because some assertion reads it. */
 module.exports = {
+  // Says this model was built by a reader that worked out what calls what.
+  // Without it an empty calledBy means "nobody looked", and the UI has to say
+  // that instead of "nothing reaches this".
+  meta: { source: 'mpr', knowsCallSites: true },
   modules: [{ name: 'Sales' }, { name: 'Admin' }],
   // Production security, no anonymous access: the case that needs no banner,
   // so every other test's screen text stays what it was. The Prototype and
@@ -96,11 +100,24 @@ module.exports = {
         inLoop: { reads: 1, creates: 0, changes: 0, deletes: 0, commits: 1 }
       }
     },
+    // No role AND nothing in the model naming it: the genuinely unreachable
+    // case, which the card has to tell apart from "nobody has looked".
+    {
+      qualifiedName: 'Sales.OrphanSweep', name: 'OrphanSweep', module: 'Sales',
+      allowedModuleRoles: [], parameters: [], calledBy: []
+    },
     // No allowedModuleRoles and no parameters: the "called from other logic"
-    // case, which the Run tab has to warn about rather than pretend about.
+    // case, which the Run tab has to warn about rather than pretend about —
+    // and now name the two things that actually reach it.
     {
       qualifiedName: 'Sales.RecalculateTotals', name: 'RecalculateTotals', module: 'Sales',
       allowedModuleRoles: [], parameters: [],
+      // No role can set it off, but two things in the model do: one of them
+      // is a flow MxScout can open, the other a scheduled event it cannot.
+      calledBy: [
+        { kind: 'microflow', name: 'Sales.CancelOrder' },
+        { kind: 'scheduled event', name: 'Sales.NightlyTotals' }
+      ],
       // A read-only flow: the case that must NOT be marked on the card, so
       // that a marked card means something.
       activity: {

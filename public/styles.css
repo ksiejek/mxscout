@@ -2212,3 +2212,22 @@ button.twist:hover { color: var(--text); }
 }
 .flow-writes.act-danger { background: var(--alarm); color: #180a0a; }
 .flow-writes.act-warn { border: 1px solid var(--alarm); color: var(--alarm); padding: 0 5px; }
+
+/* ---------- "Reached from": what runs a flow nothing can trigger ---------- */
+.trig-list { display: flex; flex-direction: column; gap: 5px; }
+.trig-row { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; }
+.trig-kind {
+  flex: none; width: 96px; color: var(--muted);
+  font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase;
+}
+.trig-name { flex: 1; min-width: 0; overflow-wrap: anywhere; text-align: left; }
+button.trig-name { padding: 0; font-size: 12.5px; }
+
+/* A flow nothing in the model reaches. Dashed, not alarmed: unreachable in
+   the model is a strong hint and not a proof — a workflow, a widget MxScout
+   does not read, or something outside the project could still call it. */
+.internal-chip.internal-orphan {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--alarm) 55%, var(--border));
+  color: color-mix(in srgb, var(--alarm) 70%, var(--muted));
+}

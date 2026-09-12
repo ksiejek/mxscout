@@ -118,7 +118,8 @@ module.exports = async function (t) {
   await mx.waitFor(`document.querySelectorAll('.popup-tab').length === 2`, 5000, 'second popup');
   const noParams = await mx.waitFor(`document.querySelector('.modal').textContent`, 5000, 'no-param flow');
   t.ok(/Takes no input/.test(noParams), 'a flow with no parameters says so');
-  t.ok(/called from other logic/.test(noParams), 'a flow no role may trigger says it is called from other logic');
+  t.ok(/No user role can trigger this directly/.test(noParams),
+    'a flow no role may trigger says so plainly — and, in its own panel, names what does reach it instead of guessing that something must');
   t.ok(/will most likely refuse it/.test(noParams),
     'and warns that the app will probably refuse it, rather than failing mysteriously');
 

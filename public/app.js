@@ -1718,10 +1718,28 @@
   // roles, not spell every one out. A flow with no allowed roles at all isn't
   // gated, it's an internal helper, so it gets one muted icon instead of an
   // empty stack.
-  function roleIndicator(allowed) {
+  function roleIndicator(allowed, flow) {
     if (!allowed.length) {
+      // "Called from other logic" was a guess dressed as a fact. Now that the
+      // model knows what names this flow, the icon can say which of three
+      // things is true — reached from N places, reached from nothing, or (on
+      // an older model) nobody has looked.
+      var knows = state.detail && state.detail.model.meta && state.detail.model.meta.knowsCallSites;
+      var sources = (flow && flow.calledBy) || [];
+      var title;
+      if (sources.length) {
+        title = 'Not directly runnable — reached from ' + sources.length +
+          ' place' + (sources.length === 1 ? '' : 's') + ' in the model';
+      } else if (knows) {
+        title = 'Nothing in this model reaches this — no flow, page, scheduled event or published service names it';
+      } else {
+        title = 'Not directly runnable — this model does not record where things are called from';
+      }
       return el('div', { class: 'role-stack' }, [
-        el('span', { class: 'internal-chip', title: 'Not directly runnable — called from other logic' }, [internalIcon()])
+        el('span', {
+          class: 'internal-chip' + (knows && !sources.length ? ' internal-orphan' : ''),
+          title: title
+        }, [internalIcon()])
       ]);
     }
     return el('div', { class: 'role-stack' }, allowed.map(function (mr) {
@@ -1805,7 +1823,7 @@
           var card = withMod(el('div', { class: 'flow-card' }, [
             el('div', { class: 'flow-card-name', text: f.name }),
             el('div', { class: 'flow-card-meta' }, [
-              roleIndicator(row.allowed),
+              roleIndicator(row.allowed, f),
               el('div', { class: 'meta-spacer' }),
               inputIndicator(params)
             ]),

@@ -454,6 +454,78 @@
     return out;
   }
 
+  // ---------------- what can reach a flow ----------------
+  // Nearly half the microflows in a real project have no allowed roles at all
+  // (339 of 713 in one measured here). MxScout used to say "no user role can
+  // trigger this directly", which is true about the client and says nothing
+  // about the application: those flows run from a scheduled event, from a
+  // published REST operation, from an entity event, or from another flow.
+  //
+  // Every one of those references is a plain qualified-name STRING in the
+  // BSON, under a property called Microflow, Nanoflow, Form or Page — which
+  // is what makes one rule enough: walk any decoded document, collect every
+  // string under one of those four names, and keep the ones that match
+  // something in the finished model. Nothing has to know which $Type holds
+  // which reference, so a shape this has never seen still resolves, and a
+  // name that matches nothing is simply dropped. Measured across two real
+  // projects the rule finds calls, page actions, snippet and layout uses,
+  // scheduled events, REST and OData operations, entity events, calculated
+  // attributes, mapping calls, rule calls and navigation home pages.
+  //
+  // Deliberately NOT matched: ConcurrencyErrorMicroflow and friends, because
+  // they are different property names. AuthenticationMicroflow is listed
+  // explicitly — a service's authentication microflow really does run.
+  var REFERENCE_KEYS = { Microflow: 1, Nanoflow: 1, Form: 1, Page: 1, AuthenticationMicroflow: 1 };
+
+  function collectReferences(doc, into) {
+    if (!doc || typeof doc !== 'object' || doc instanceof Uint8Array) return into;
+    if (Array.isArray(doc)) {
+      for (var i = 0; i < doc.length; i++) collectReferences(doc[i], into);
+      return into;
+    }
+    var keys = Object.keys(doc);
+    for (var k = 0; k < keys.length; k++) {
+      var value = doc[keys[k]];
+      if (typeof value === 'string') {
+        if (REFERENCE_KEYS[keys[k]] === 1 && value) into[value] = true;
+      } else {
+        collectReferences(value, into);
+      }
+    }
+    return into;
+  }
+
+  // What a source IS, in the words a tester would use for it. Anything not
+  // listed falls back to the type's own name rather than being dropped — a
+  // reference from a shape this does not recognise is still a reference.
+  var SOURCE_KIND = {
+    'Microflows$Microflow': 'microflow',
+    'Microflows$Nanoflow': 'nanoflow',
+    'Microflows$Rule': 'rule',
+    'Forms$Page': 'page',
+    'Forms$Snippet': 'snippet',
+    'Forms$Layout': 'layout',
+    'Forms$BuildingBlock': 'building block',
+    'Forms$PageTemplate': 'page template',
+    'DomainModels$DomainModel': 'domain model',
+    'ScheduledEvents$ScheduledEvent': 'scheduled event',
+    'Rest$PublishedRestService': 'published REST service',
+    'Rest$ConsumedODataService': 'consumed OData service',
+    'ODataPublish$PublishedODataService2': 'published OData service',
+    'WebServices$PublishedService': 'published web service',
+    'Navigation$NavigationDocument': 'navigation',
+    'Menus$MenuDocument': 'menu',
+    'Workflows$Workflow': 'workflow',
+    'ImportMappings$ImportMapping': 'import mapping',
+    'ExportMappings$ExportMapping': 'export mapping',
+    'Queues$Queue': 'queue'
+  };
+  function sourceKindOf(type) {
+    if (SOURCE_KIND[type]) return SOURCE_KIND[type];
+    return String(type || 'document').replace(/^.*\$/, '').replace(/Impl$/, '')
+      .replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+  }
+
   // The .mpr's own _MetaData table: which Studio Pro wrote this project.
   //
   // Three shapes exist and a reader has to survive all of them — MEASURED,
@@ -582,6 +654,16 @@
 
     var entityById = new Map();      // hex($ID) -> { qn, entity }
     var associationById = new Map(); // hex($ID) -> the association it names
+    // One entry per document that names anything: { kind, name, refs }. The
+    // names cannot be resolved while this is being collected — the document
+    // doing the naming is often read before the one being named — so they are
+    // resolved in one pass at the end.
+    var referenceSources = [];
+    function noteReferences(kindType, name, doc) {
+      var refs = collectReferences(doc, {});
+      var names = Object.keys(refs);
+      if (names.length) referenceSources.push({ kind: sourceKindOf(kindType), name: name, refs: names });
+    }
     var parsedModules = [];
     var moduleUnitIndex = new Map(); // hex(module unit's own UnitID) -> moduleName
 
@@ -597,6 +679,9 @@
         var doc = await decodeUnit(dmRow[col.UnitID]);
         if (doc) {
           parsedModules.push({ moduleName: moduleName, doc: doc });
+          // A domain model names microflows too: entity event handlers and
+          // calculated attributes both run one.
+          noteReferences(doc['$Type'], moduleName, doc);
           addModule(result, moduleName, moduleDoc.FromAppStore);
           moduleUnitIndex.set(idHex(dmRow[col.ContainerID]), moduleName);
           payload(doc.Entities).forEach(function (raw) {
@@ -764,8 +849,14 @@
       var raw = await decodeUnit(docRow[col.UnitID]);
       if (raw && typeof raw.Name === 'string' && raw.Name) {
         var type = raw['$Type'];
+        var ownerModule = resolveOwningModule(docRow[col.ContainerID]);
+        // EVERY document is a possible source of a reference, not only the
+        // three kinds MxScout models: a scheduled event, a published REST
+        // operation, a snippet's button and a menu item all name a flow, and
+        // a flow nothing else names is the whole point of reading them.
+        noteReferences(type, (ownerModule ? ownerModule + '.' : '') + raw.Name, raw);
         if (type === 'Microflows$Microflow' || type === 'Microflows$Nanoflow' || type === 'Forms$Page') {
-          var moduleName = resolveOwningModule(docRow[col.ContainerID]);
+          var moduleName = ownerModule;
           if (moduleName) {
             var qn = moduleName + '.' + raw.Name;
             var allowedModuleRoles = payload(raw.AllowedModuleRoles).filter(function (r) { return typeof r === 'string'; });
@@ -824,7 +915,11 @@
     var projectDocRows = byContainment.get('ProjectDocuments') || [];
     for (var p = 0; p < projectDocRows.length; p++) {
       var pdoc = await decodeUnit(projectDocRows[p][col.UnitID]);
-      if (!pdoc || pdoc['$Type'] !== 'Security$ProjectSecurity') continue;
+      if (!pdoc) continue;
+      // Navigation sits in this same slot, and a role's home page is the one
+      // way into an application that no flow or page names.
+      noteReferences(pdoc['$Type'], typeof pdoc.Name === 'string' && pdoc.Name ? pdoc.Name : null, pdoc);
+      if (pdoc['$Type'] !== 'Security$ProjectSecurity') continue;
       payload(pdoc.UserRoles).forEach(function (ur) {
         if (!ur || ur['$Type'] !== 'Security$UserRole' || !ur.Name) return;
         result.userRoles.push({
@@ -860,6 +955,34 @@
       });
     }
     result.moduleRoles.sort(function (a, b) { return a.qualifiedName.localeCompare(b.qualifiedName); });
+
+    // Pass 5: resolve every collected reference onto the thing it names.
+    // A name that matches nothing in the model is dropped without ceremony:
+    // it is a layout, a snippet, a page template or a document type MxScout
+    // does not model, and none of those are things this can be wrong about.
+    var targetByName = new Map();
+    ['microflows', 'nanoflows', 'pages'].forEach(function (key) {
+      result[key].forEach(function (item) { targetByName.set(item.qualifiedName, item); });
+    });
+    referenceSources.forEach(function (source) {
+      source.refs.forEach(function (name) {
+        var target = targetByName.get(name);
+        if (!target || target.qualifiedName === source.name) return;
+        if (target.calledBy.some(function (c) { return c.name === source.name && c.kind === source.kind; })) return;
+        target.calledBy.push({ kind: source.kind, name: source.name });
+      });
+    });
+    targetByName.forEach(function (target) {
+      // A source with no name of its own — the project's navigation document
+      // is the one that matters — sorts by what it IS instead.
+      target.calledBy.sort(function (a, b) {
+        return (a.name || a.kind).localeCompare(b.name || b.kind);
+      });
+    });
+    // Says that this model was built by a reader that looked. Without it, an
+    // empty calledBy on an older model would read as "nothing reaches this",
+    // which is a very different claim from "nobody checked".
+    result.meta.knowsCallSites = true;
 
     return sortModel(result);
   }

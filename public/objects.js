@@ -19,7 +19,7 @@
   'use strict';
 
   // Bound in init(), under the names the code already used.
-  var el, state, render, setMessage, withMod, moduleRoleSetFor, listHitsSet, findEntity;
+  var el, state, render, setMessage, withMod, moduleRoleSetFor, listHitsSet, findEntity, peekObject;
 
   function init(deps) {
     el = deps.el;
@@ -30,6 +30,7 @@
     moduleRoleSetFor = deps.moduleRoleSetFor;
     listHitsSet = deps.listHitsSet;
     findEntity = deps.findEntity;
+    peekObject = deps.peekObject;
   }
 
   var FLOW_SECTION_OF = { microflow: 'microflows', nanoflow: 'nanoflows', page: 'pages' };
@@ -456,8 +457,10 @@
       var kids = [el('h4', { text: sel.kind === 'page' ? 'Can be opened by' : 'Can be triggered by' })];
       if (!allowed.length) {
         kids.push(el('p', { class: 'muted', text: sel.kind === 'page'
-          ? 'No user role can open this directly \u2014 the model marks it as reached from other logic.'
-          : 'No user role can trigger this directly \u2014 the model marks it as called from other logic.' }));
+          // What DOES reach it is the panel below's job, now that MxScout
+          // works that out instead of guessing at it here.
+          ? 'No user role can open this directly.'
+          : 'No user role can trigger this directly.' }));
       } else {
         kids.push(el('div', { class: 'rule-badges' }, allowed.map(function (r) {
           var mine = !set || set[r];
@@ -471,6 +474,71 @@
               : state.detail.role + ' cannot ' + verb + ' this ' + noun + ' \u2014 the roles above are not part of it.'
           }));
         }
+      }
+      return el('div', { class: 'popup-section' }, kids);
+    }
+
+    // ---- What reaches this, when no role does ----
+    // "No user role can trigger this directly" is true about the client and
+    // says nothing about the application: measured on a real project, 363 of
+    // its documents have no role at all and 278 of those ARE reached by
+    // something — another flow, a page's button, a scheduled event, a
+    // published REST operation, an entity event. That is the answer somebody
+    // opening a role-less flow actually wants.
+    //
+    // A model that predates this reader has an empty calledBy that means
+    // "nobody looked", which is a completely different claim from "nothing
+    // reaches this" — so meta.knowsCallSites decides which sentence is said.
+    function triggeredFromPane() {
+      var knows = !!(model.meta && model.meta.knowsCallSites);
+      var sources = flow.calledBy || [];
+      // A model from a JSON export carries plain strings here; normalise so
+      // one renderer handles both without pretending to know the kind.
+      var rows = sources.map(function (s) {
+        return typeof s === 'string' ? { kind: null, name: s } : s;
+      }).filter(function (s) { return s && (s.name || s.kind); });
+
+      if (!knows && !rows.length) {
+        if (allowed.length) return null; // a role can reach it; nothing is missing
+        return el('div', { class: 'popup-section' }, [
+          el('h4', { text: 'Reached from' }),
+          el('p', { class: 'muted', text: 'This model does not record where things are called from. Replace it from the Mendix project folder and MxScout will work it out.' })
+        ]);
+      }
+      if (!rows.length) {
+        if (allowed.length) return null;
+        return el('div', { class: 'popup-section' }, [
+          el('h4', { text: 'Reached from' }),
+          el('p', { class: 'warn-text', text: 'Nothing in this model reaches this ' + noun + ' — no flow, page, scheduled event or published service names it.' })
+        ]);
+      }
+
+      var kids = [el('h4', { text: 'Reached from (' + rows.length + ')' })];
+      kids.push(el('div', { class: 'trig-list' }, rows.map(function (s) {
+        var target = s.name ? findFlow(model, 'microflow', s.name) || findFlow(model, 'nanoflow', s.name) || findFlow(model, 'page', s.name) : null;
+        var kindLabel = el('span', { class: 'trig-kind', text: s.kind || 'names it' });
+        if (!target) {
+          // A scheduled event, a published service, a snippet: real, named,
+          // and not something MxScout has a page for. Say it plainly rather
+          // than offering a link that goes nowhere.
+          return el('div', { class: 'trig-row' }, [
+            kindLabel,
+            el('span', { class: 'trig-name', text: s.name || '—' })
+          ]);
+        }
+        var sectionKey = target === findFlow(model, 'microflow', s.name) ? 'microflows'
+          : target === findFlow(model, 'nanoflow', s.name) ? 'nanoflows' : 'pages';
+        return el('div', { class: 'trig-row' }, [
+          kindLabel,
+          el('button', {
+            class: 'link-btn trig-name', text: s.name,
+            title: 'Open ' + s.name + ' over this one',
+            onclick: function () { peekObject(sectionKey, target); }
+          })
+        ]);
+      })));
+      if (!allowed.length) {
+        kids.push(el('p', { class: 'hint', text: 'No role can set this ' + noun + ' off from the client — it runs because one of the above runs it.' }));
       }
       return el('div', { class: 'popup-section' }, kids);
     }
@@ -846,13 +914,13 @@
         ? ['info', 'Inputs', function () {
             return el('div', { class: 'flow-cols' }, [
               el('div', { class: 'flow-col-run' }, [pageInfoPane()]),
-              el('div', { class: 'flow-col-side' }, [accessPane(), activityPane()].filter(Boolean))
+              el('div', { class: 'flow-col-side' }, [accessPane(), triggeredFromPane(), activityPane()].filter(Boolean))
             ]);
           }]
         : ['run', 'Run', function () {
             return el('div', { class: 'flow-cols' }, [
               el('div', { class: 'flow-col-run' }, [runPane()]),
-              el('div', { class: 'flow-col-side' }, [accessPane(), activityPane()].filter(Boolean))
+              el('div', { class: 'flow-col-side' }, [accessPane(), triggeredFromPane(), activityPane()].filter(Boolean))
             ]);
           }],
       ['comments', 'Comments', function () { return renderCommentsTab(commentTarget); }]

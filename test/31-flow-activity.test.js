@@ -31,7 +31,7 @@ module.exports = async function (t) {
   // Everything, not one role: a flow no role can trigger is hidden under a
   // role filter, and RecalculateTotals is exactly that case.
   await mx.evaluate(`(function(){ var s = document.querySelector('.role-select'); s.value = 'all'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
-  await mx.waitFor(`document.querySelectorAll('.flow-card').length === 5`, 8000, 'all flows');
+  await mx.waitFor(`document.querySelectorAll('.flow-card').length === 6`, 8000, 'all flows');
 
   const cards = await mx.evaluate(`(function(){
     var out = {};
@@ -69,6 +69,41 @@ module.exports = async function (t) {
   t.ok(/Inside a loop: a retrieve and a commit/.test(pane),
     'a retrieve or a commit inside a loop is pointed out — that is one database round trip per row: ' + pane.slice(0, 300));
   t.ok(/once per item/.test(pane), 'in words that say why it matters, not just that it is there');
+
+  // ---- what reaches a flow no role can trigger ----
+  // "No user role can trigger this directly" is true about the client and
+  // says nothing about the application. On one real project, 278 of the 363
+  // role-less documents ARE reached by something in the model.
+  await mx.evaluate(`(function(){ var b = document.querySelector('.modal-backdrop'); if (b) b.click(); return true; })()`);
+  await mx.waitFor(`!document.querySelector('.popup-tabs')`, 5000, 'popup closed');
+  await openFlow(mx, 'RecalculateTotals');
+  const side = await mx.waitFor(`document.querySelector('.trig-list') && document.querySelector('.flow-col-side').textContent`, 8000, 'reached-from');
+  t.ok(/Reached from \(2\)/.test(side),
+    'a flow no role can trigger still says what runs it: ' + side.slice(0, 140));
+  t.ok(/scheduled event/.test(side) && /Sales\.NightlyTotals/.test(side),
+    'including a source MxScout has no page for — a scheduled event is named, not hidden');
+  t.ok(/runs because one of the above runs it/.test(side),
+    'and the sentence that ties the two panels together is there');
+
+  const link = await mx.evaluate(`(function(){
+    var b = Array.from(document.querySelectorAll('.trig-name')).filter(function (n) { return n.tagName === 'BUTTON'; });
+    return b.length + ':' + (b[0] ? b[0].textContent : ''); })()`);
+  t.ok(link === '1:Sales.CancelOrder',
+    'the one source that IS in the model is a link, and the one that is not stays plain text: ' + link);
+
+  // Clicking it opens that flow OVER this one — the same rule the performance
+  // analyzer already follows, so looking at a caller costs nothing.
+  await mx.evaluate(`Array.from(document.querySelectorAll('.trig-name')).filter(function (n) { return n.tagName === 'BUTTON'; })[0].click()`);
+  t.ok(await mx.waitFor(`/CancelOrder/.test(document.querySelector('.modal').textContent)`, 5000, 'caller opened'),
+    'and clicking it opens that caller without leaving the list behind');
+
+  // ---- a flow nothing reaches, on a model that DID look ----
+  await mx.evaluate(`(function(){ var b = document.querySelector('.modal-backdrop'); if (b) b.click(); return true; })()`);
+  await mx.waitFor(`!document.querySelector('.popup-tabs')`, 5000, 'popup closed');
+  await openFlow(mx, 'OrphanSweep');
+  const orphan = await mx.waitFor(`document.querySelector('.flow-col-side') && document.querySelector('.flow-col-side').textContent`, 8000, 'orphan side');
+  t.ok(/Nothing in this model reaches this microflow/.test(orphan),
+    'a flow nothing names is told so outright — that is the whole point of reading call sites: ' + orphan.slice(0, 160));
 
   // ---- a flow whose body was never read shows nothing rather than "nothing"
   await mx.evaluate(`(function(){ var b = document.querySelector('.modal-backdrop'); if (b) b.click(); return true; })()`);
