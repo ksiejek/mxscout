@@ -59,7 +59,11 @@ other views show. Scheduled events and queues get theirs: what they run, how
 often, and whether they are switched on.
 
 **An enumeration attribute says what it may hold**, captions included, instead
-of only naming the enumeration.
+of only naming the enumeration — and the **Data tab shows those captions**
+instead of the stored key. A Mendix app answers with `wf_in_progress`; the
+caption is a design-time translation the data layer never carries, so MxScout
+supplies it from the model and keeps the key on the cell, where an XPath
+needs it.
 
 ### Notes
 

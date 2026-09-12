@@ -103,6 +103,34 @@ module.exports = async function (t) {
   t.ok(await mx.evaluate(`!!document.querySelector('.data-write-legend')`),
     'a legend says what the green means');
 
+  // An enumeration attribute comes back from the app as its stored KEY —
+  // "wf_in_progress", not "In progress" — because the caption is a
+  // design-time translation the data layer never carries. The captions are in
+  // the model, so the table shows them; the key is what an XPath is written
+  // against, so it stays reachable on the cell rather than being thrown away.
+  const status = await mx.evaluate(`(function(){
+    var head = Array.from(document.querySelectorAll('.data-table th')).map(function (h) { return h.textContent; });
+    var i = head.indexOf('Status');
+    if (i === -1) return 'no Status column';
+    return JSON.stringify(Array.from(document.querySelectorAll('.data-table tbody tr')).map(function (tr) {
+      return { text: tr.children[i].textContent, title: tr.children[i].getAttribute('title') };
+    }));
+  })()`);
+  const cells = JSON.parse(status);
+  const inProgress = cells.filter(function (c) { return c.text === 'In progress'; });
+  t.ok(inProgress.length > 0,
+    'an enumeration value is shown by its caption, not by the key the app answered with: ' + status.slice(0, 140));
+  t.ok(inProgress.every(function (c) { return /stored as wf_in_progress/.test(c.title); }),
+    'and the key is still on the cell — it is what comes back from the API and what an XPath is written against');
+  t.ok(cells.some(function (c) { return c.text === 'Done'; }),
+    'every declared value is translated, not just the first one');
+
+  const unknown = cells.filter(function (c) { return c.text === 'wf_archived'; });
+  t.ok(unknown.length > 0,
+    'a key this model does not declare is shown exactly as it arrived, never passed off as a caption');
+  t.ok(unknown.every(function (c) { return /not a value Sales\.Status declares/.test(c.title); }),
+    'and says why: the running app has a value this model has not heard of');
+
   await mx.evaluate(`Array.from(document.querySelectorAll('.data-pager button')).filter(b => /Next/.test(b.textContent))[0].click()`);
   const p2 = await mx.waitFor(`document.querySelector('.data-summary').textContent === '11–20 of 253' && document.querySelector('.data-table tbody tr td').textContent`, 15000, 'page 2');
   t.ok(p2 === '1011', 'Next pages forward');

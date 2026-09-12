@@ -684,6 +684,43 @@
     return from + '\u2013' + to + (d.more ? '+' : '');
   }
 
+  // ---------- showing a value ----------
+  // An enumeration attribute comes back from the app as its KEY — the app
+  // answers obj.get('Status') with "wf_in_progress", not with "In progress",
+  // because the caption is a design-time translation the client renders and
+  // the data layer never carries. So the table used to print the key, which
+  // is the one column of a Mendix data grid that a tester cannot read.
+  //
+  // The captions are in the model (see the enumerations list mpr.js builds),
+  // so this is a lookup and nothing more. The KEY is never thrown away: it is
+  // what comes back from the API, what an XPath is written against and what
+  // somebody would paste into a query, so it stays on the cell's title.
+  //
+  // A model without enumerations — a JSON export, or a project imported
+  // before they were read — falls straight through to the raw value.
+  function enumValueOf(qualifiedName, key) {
+    var list = ((state.detail && state.detail.model.enumerations) || []).filter(function (e) {
+      return e && e.qualifiedName === qualifiedName;
+    })[0];
+    if (!list || !list.values) return null;
+    return list.values.filter(function (v) { return v && v.name === key; })[0] || null;
+  }
+
+  function displayCell(entity, column, raw) {
+    var text = String(raw);
+    var attr = (entity && entity.attributes || []).filter(function (a) { return a && a.name === column; })[0];
+    if (!attr || !attr.enumerationQualifiedName) return { text: text, title: text };
+    var value = enumValueOf(attr.enumerationQualifiedName, text);
+    if (!value) {
+      // A key the model does not know: shown exactly as it arrived, and said
+      // to be unknown rather than quietly passed off as a caption. Usually it
+      // means the app is running a newer model than the one loaded here.
+      return { text: text, title: text + ' — not a value ' + attr.enumerationQualifiedName + ' declares in this model' };
+    }
+    if (!value.caption || value.caption === text) return { text: text, title: text };
+    return { text: value.caption, title: value.caption + ' — stored as ' + text };
+  }
+
   // Did the app say this value is writable on this row? Only an explicit true
   // counts: a runtime that would not answer leaves it null, and nothing is
   // marked rather than something marked wrongly.
@@ -732,8 +769,9 @@
         // rows it covers \u2014 the same attribute can be writable on one row and
         // read-only on the next.
         if (c !== 'id' && isWritable(row, c)) cls += (cls ? ' ' : '') + 'data-write';
-        var td = el('td', { class: cls || null, text: v == null ? '\u2014' : String(v) });
-        if (v != null) td.setAttribute('title', String(v));
+        var shown = v == null ? null : (c === 'id' ? { text: String(v), title: String(v) } : displayCell(entity, c, v));
+        var td = el('td', { class: cls || null, text: shown ? shown.text : '\u2014' });
+        if (shown) td.setAttribute('title', shown.title);
         return td;
       }));
       function toggle() {
@@ -1001,7 +1039,10 @@
           var v = c === 'id' ? item.id : (item.cells || {})[c];
           var cls = v == null ? 'data-null' : '';
           if (c !== 'id' && isWritable(item, c)) cls += (cls ? ' ' : '') + 'data-write';
-          return el('td', { class: cls || null, text: v == null ? '—' : String(v) });
+          var shown = v == null ? null : (c === 'id' ? { text: String(v), title: String(v) } : displayCell(entity, c, v));
+          var td = el('td', { class: cls || null, text: shown ? shown.text : '—' });
+          if (shown) td.setAttribute('title', shown.title);
+          return td;
         });
         var tr = el('tr', { class: onPick ? ('data-pickable' + (t.pickedId === item.id ? ' is-picked' : '')) : '' }, tds);
         if (onPick) tr.addEventListener('click', function () { t.pickedId = item.id; onPick(item.id); render(); });

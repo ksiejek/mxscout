@@ -222,6 +222,14 @@ client itself makes behind every paged data grid (`retrieve_by_xpath` with
 recounts; typing a bare number finds that one object by its id. The id column
 is highlighted because it is the one value you copy out of here.
 
+An **enumeration** column shows the caption a user would see, not the stored
+key the app answers with — a Mendix client returns `wf_in_progress`, and the
+caption is a design-time translation the data layer never carries, so MxScout
+supplies it from the model. The key stays on the cell: it is what comes back
+from the API and what an XPath is written against. A key the model does not
+declare is shown exactly as it arrived and says so, which usually means the
+running app is a newer build than the model you loaded.
+
 A value shown in **green** is one this session may **write**. That is asked of
 the app per row, not per column — the application itself answers, for each
 object it returned, whether each of its values is editable under this session's

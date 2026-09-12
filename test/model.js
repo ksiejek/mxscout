@@ -40,6 +40,14 @@ module.exports = {
   enumerations: [{
     module: 'Sales', name: 'Priority', qualifiedName: 'Sales.Priority',
     values: [{ name: 'low', caption: 'Low' }, { name: 'high', caption: 'Rather urgent' }]
+  }, {
+    // Deliberately does NOT declare wf_archived, which the fake app returns:
+    // a key the model has never heard of must show as itself.
+    module: 'Sales', name: 'Status', qualifiedName: 'Sales.Status',
+    values: [
+      { name: 'wf_in_progress', caption: 'In progress' },
+      { name: 'wf_done', caption: 'Done' }
+    ]
   }],
   // Two things no role filter can answer: what the app publishes, and what
   // runs on a timer with nobody signed in.
@@ -78,7 +86,10 @@ module.exports = {
     attributes: [
       { name: 'Number', type: 'String', length: 20 },
       { name: 'Customer', type: 'String', length: 100 },
-      { name: 'Total', type: 'Decimal' }
+      { name: 'Total', type: 'Decimal' },
+      // An enumeration attribute: the app answers with the stored key, and
+      // the Data tab has to show the caption while keeping the key reachable.
+      { name: 'Status', type: 'Enumeration', enumerationQualifiedName: 'Sales.Status' }
     ],
     // An association is a member of the entity exactly as an attribute is, and
     // the rule grants access on it the same way — so Order_Setting is written,

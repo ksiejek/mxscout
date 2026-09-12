@@ -5,8 +5,14 @@ const http = require('http');
 const PORT = Number(process.env.FAKE_PORT) || 4501;
 
 const ROWS = [];
+// Status is an ENUMERATION attribute, and a real Mendix client answers
+// obj.get() for one with the stored KEY, never the caption — the caption is a
+// design-time translation the data layer does not carry. So these are keys,
+// on purpose, and wf_archived is deliberately one the test model does not
+// declare: a value the model has never heard of has to show as itself.
+const STATUS_KEYS = ['wf_in_progress', 'wf_done', 'wf_archived'];
 for (let i = 1; i <= 253; i++) {
-  ROWS.push({ id: String(1000 + i), Number: 'ORD-' + String(i).padStart(4, '0'), Customer: (i % 3 === 0 ? 'Acme' : (i % 3 === 1 ? 'Globex' : 'Initech')) + ' ' + i, Total: String(i * 7.5) });
+  ROWS.push({ id: String(1000 + i), Number: 'ORD-' + String(i).padStart(4, '0'), Customer: (i % 3 === 0 ? 'Acme' : (i % 3 === 1 ? 'Globex' : 'Initech')) + ' ' + i, Total: String(i * 7.5), Status: STATUS_KEYS[i % 3] });
 }
 // A second entity with different fields, so a test can catch a page of rows
 // coming back with the wrong entity's columns.
