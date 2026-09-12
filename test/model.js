@@ -95,12 +95,23 @@ module.exports = {
     // the rule grants access on it the same way — so Order_Setting is written,
     // Order_Note is explicitly denied, and the popup's matrix has to show both
     // as rows of its own.
+    // Two rules for ONE role, which is normal — a role gets one rule per
+    // constraint. Here they are also the two cases the "check against the
+    // app" button exists to tell apart: the first is the ordinary "their own
+    // rows" idiom and the fake app matches a real subset for it; the second
+    // reaches a user role through System, which MxScout cannot follow, and
+    // the fake app matches nothing.
     accessRules: [{
       moduleRole: 'Sales.Agent',
       attrAccess: { Number: 'r', Customer: 'rw' },
       assocAccess: { Order_Setting: 'rw', Order_Note: 'none' },
       allowCreate: true, allowDelete: false,
-      xpathConstraint: "[Owner = '[%CurrentUser%]']"
+      xpathConstraint: "[System.owner = '[%CurrentUser%]']"
+    }, {
+      moduleRole: 'Sales.Agent',
+      attrAccess: { Number: 'r' }, assocAccess: {},
+      allowCreate: false, allowDelete: false,
+      xpathConstraint: "[System.owner/System.UserRoles/System.UserRole/Name = 'Administrator']"
     }]
   }, {
     // Three row-level rules, one per case the constraint checker has to tell

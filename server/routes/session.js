@@ -64,7 +64,24 @@ function handleStartSession(req, res) {
 // one bridge in the app tab serves both, so the user pastes one snippet
 // instead of two. They are still validated separately below — a query carries
 // no object parameters and can never become a run.
-const KIND_OK = { microflow: 1, nanoflow: 1, query: 1, lookup: 1, create: 1, observed: 1 };
+const KIND_OK = { microflow: 1, nanoflow: 1, query: 1, lookup: 1, create: 1, observed: 1, count: 1 };
+// `count` is the ONE command that carries an XPath predicate MxScout supplies
+// rather than one the bridge builds from an entity and a search term. It
+// exists to answer a question nothing else can: how many rows an access
+// rule's own row-level constraint actually matches in the running app.
+//
+// It is deliberately the NARROWEST command on this channel, not a widening of
+// `query`: it names an entity and a constraint, and it can only ever come
+// back with two numbers. It has no columns, so no attribute of any row can
+// travel with it; it returns no rows and no object ids at all. A `query`,
+// which has existed all along, can already return a hundred rows of real
+// data — this can return nothing but "how many".
+//
+// The constraint itself is text out of the model the user loaded, on a route
+// that is same-origin and token-gated. It is bounded here rather than parsed:
+// pretending to validate XPath would reject real constraints and prove
+// nothing, so the honest control is the narrow command shape above.
+const MAX_CONSTRAINT = 2000;
 const GUID_RE = /^\d{1,25}$/;
 const PENDING_COMMAND_TTL_MS = 30000; // a command nobody picks up shouldn't wait forever
 const LONG_POLL_MS = 25000;          // how long a bridge poll is held open before replying empty
@@ -204,7 +221,7 @@ function clampInt(value, min, max, fallback) {
 async function handleSetCommand(req, res) {
   const body = await readJsonBody(req);
   const kind = typeof body.kind === 'string' ? body.kind : '';
-  if (!KIND_OK[kind]) { sendJson(res, 400, { error: 'kind must be one of microflow, nanoflow, query, lookup, create, observed' }); return; }
+  if (!KIND_OK[kind]) { sendJson(res, 400, { error: 'kind must be one of microflow, nanoflow, query, count, lookup, create, observed' }); return; }
   const qualifiedName = typeof body.qualifiedName === 'string' ? body.qualifiedName.slice(0, 300) : '';
   // `observed` asks the bridge about its OWN watch buffer — what guids went
   // past. It names no entity or flow, so it alone needs no qualifiedName.
@@ -224,6 +241,24 @@ async function handleSetCommand(req, res) {
     command.objectParams = [];
     state.setPendingCommand(command);
     console.log('bridge ' + kind + ': requested');
+    sendJson(res, 200, { ok: true, commandId: command.id });
+    return;
+  }
+
+  // `count` asks the app two questions about one entity — how many rows this
+  // session can see, and how many of those match one access rule's own
+  // constraint — and can answer with nothing else. No columns, no search, no
+  // parameters, no rows: everything that could carry data is simply absent
+  // from the command rather than emptied.
+  if (kind === 'count') {
+    const constraint = typeof body.constraint === 'string' ? body.constraint.slice(0, MAX_CONSTRAINT) : '';
+    if (!constraint) { sendJson(res, 400, { error: 'constraint is required' }); return; }
+    command.objectParams = [];
+    command.constraint = constraint;
+    state.setPendingCommand(command);
+    // The entity, never the constraint: a row-level rule can name a value
+    // (a department, an account number) that is itself the customer's data.
+    console.log('bridge count:', qualifiedName);
     sendJson(res, 200, { ok: true, commandId: command.id });
     return;
   }
@@ -316,6 +351,11 @@ function dispatchIfAny(res) {
     objectParams: pending.objectParams,
     scalarParams: pending.scalarParams || []
   };
+  // A count hands over the entity and the constraint, and nothing else —
+  // this projection is where "the command carries no columns" stops being a
+  // claim about the arming route and becomes a property of what the app tab
+  // is actually told.
+  if (pending.kind === 'count') command.constraint = pending.constraint;
   if (pending.kind === 'query' || pending.kind === 'lookup' || pending.kind === 'create') {
     command.search = pending.search;
     command.offset = pending.offset;
@@ -416,6 +456,10 @@ function sanitizeQueryData(raw) {
       return { id: row.id == null ? null : String(row.id).slice(0, 60), cells, writable };
     }).filter(Boolean),
     total: typeof raw.total === 'number' && Number.isFinite(raw.total) ? raw.total : null,
+    // Only a `count` fills this in: how many of those rows matched the access
+    // rule's constraint. A number or nothing — there is no shape here that
+    // could carry a row.
+    matched: typeof raw.matched === 'number' && Number.isFinite(raw.matched) ? raw.matched : null,
     offset: clampInt(raw.offset, 0, 1e7, 0),
     amount: clampInt(raw.amount, 1, MAX_PAGE_SIZE, 10),
     more: !!raw.more

@@ -713,6 +713,40 @@
         });
         return;
       }
+      // Two counts and nothing else: how many rows of this entity the session
+      // can see, and how many of those match one access rule's own row-level
+      // constraint. Both are retrieve_by_xpath with count:true and amount:1 —
+      // the same call the paged grid already makes for its total, asked twice.
+      // No object is loaded, so no value of any row is read, and nothing but
+      // the two numbers can come back.
+      //
+      // Worth being precise about what the answer means: the runtime applies
+      // THIS session's own access rules to both queries. So the pair is "rows
+      // you can see" and "rows you can see that also match the constraint",
+      // not the rule's own population — MxScout says so where it shows them.
+      if (cmd.kind === 'count') {
+        setBadge('Counting ' + cmd.qualifiedName + '…');
+        var base = '//' + cmd.qualifiedName;
+        var constrained = base + String(cmd.constraint || '');
+        var out = { rows: [], total: null, matched: null, offset: 0, amount: 1, more: false, error: null };
+        var left = 2;
+        function settleCount() {
+          if (--left > 0) return;
+          setBadge('Connected as ' + (session.user || 'unknown') + (session.guest ? ' (guest)' : ''));
+          // A constraint the runtime cannot evaluate comes back as no count
+          // at all. That is an answer — "the app would not run this" — and it
+          // must not be shown as zero matching rows.
+          if (out.total === null && out.matched === null) out.error = 'The app did not answer either count.';
+          else if (out.matched === null) out.error = 'The app would not evaluate this constraint.';
+          post(CFG.origin + '/api/session/data', {
+            token: CFG.token, commandId: cmd.id, ok: !out.error, message: out.error, data: out
+          }).catch(function () {});
+          finishOurNet();
+        }
+        countByXpath(base, function (n) { out.total = n; settleCount(); });
+        countByXpath(constrained, function (n) { out.matched = n; settleCount(); });
+        return;
+      }
       if (cmd.kind === 'lookup') {
         setBadge('Looking up ' + cmd.qualifiedName + ' ' + cmd.guid + '…');
         mxGet({

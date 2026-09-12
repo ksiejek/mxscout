@@ -420,6 +420,88 @@
       ]);
     }
 
+    // ---------- asking the app what a row-level rule really matches ----------
+    // The one question the model cannot answer. Everything else on this popup
+    // is read out of the file; whether a constraint actually selects anything
+    // is a property of the running application and of the data in it, so the
+    // only honest way to know is to ask — which MxScout can, because it is
+    // already connected to that app for the Data tab.
+    //
+    // Two numbers come back and nothing else (see the `count` command in
+    // server/routes/session.js): how many rows of this entity this session can
+    // see, and how many of those also match the constraint. That pairing is
+    // the whole point — "0 matched" means nothing if the table is empty, and
+    // everything if the entity has ten thousand rows.
+    //
+    // What it is NOT: the rule's own population. The runtime applies the
+    // rights of whoever is signed in on the app tab to both counts, so the
+    // answer is about THAT session's rows. MxScout has no way to know which
+    // module roles that session holds — the app tells it a user name, not a
+    // role list — so the caveat is stated every time rather than guessed at
+    // from the view's role dropdown, which is a setting here and says nothing
+    // about anyone's real rights.
+    function constraintCheck(ent, rule, ruleIndex) {
+      if (!rule.xpathConstraint) return null;
+      if (!window.MxLive.connected()) return null; // the Data tab already explains how to connect
+
+      var key = ent.qualifiedName + '#' + ruleIndex;
+      var got = state.detail.constraintCounts[key];
+
+      function ask() {
+        state.detail.constraintCounts[key] = { busy: true };
+        render();
+        window.MxLive.countConstraint(ent.qualifiedName, rule.xpathConstraint, function (err, data) {
+          state.detail.constraintCounts[key] = err
+            ? { error: err.message || String(err) }
+            : { total: data ? data.total : null, matched: data ? data.matched : null };
+          render();
+        });
+      }
+
+      var kids = [];
+      if (got && got.busy) {
+        kids.push(el('span', { class: 'con-check-busy' }, [el('span', { class: 'spinner' }), el('span', { text: ' asking the app…' })]));
+      } else {
+        kids.push(el('button', {
+          class: 'link-btn con-check-btn',
+          text: got ? 'Check again' : 'Check against the app',
+          title: 'Ask the connected app how many rows this rule’s constraint actually matches',
+          onclick: ask
+        }));
+      }
+
+      if (got && got.error) {
+        kids.push(el('div', { class: 'con-check warn-text', text: got.error }));
+      } else if (got && !got.busy) {
+        var total = got.total, matched = got.matched;
+        var line, tone;
+        if (matched === null || total === null) {
+          line = 'The app did not answer with a number.';
+          tone = 'warn-text';
+        } else if (total === 0) {
+          // Nothing to conclude, and saying so beats a zero that reads as a
+          // finding: an empty table matches no constraint either.
+          line = 'This session sees no rows of ' + ent.name + ' at all, so this says nothing about the rule.';
+          tone = 'muted';
+        } else if (matched === 0) {
+          line = 'Matches none of the ' + total + ' row' + (total === 1 ? '' : 's') + ' this session can see.';
+          tone = 'warn-text';
+        } else {
+          line = 'Matches ' + matched + ' of the ' + total + ' row' + (total === 1 ? '' : 's') + ' this session can see.';
+          tone = 'ok-text';
+        }
+        kids.push(el('div', { class: 'con-check ' + tone, text: line }));
+        // The caveat that keeps the number honest. Always said, because it is
+        // always true and MxScout cannot tell when it stops mattering.
+        if (total !== null) {
+          kids.push(el('div', { class: 'con-check muted',
+            text: 'Counted with the rights of the session signed in on the app tab, whatever those are — if it does not hold ' +
+              rule.moduleRole + ', these are its rows and not the rows this rule governs.' }));
+        }
+      }
+      return el('div', { class: 'con-check-box' }, kids);
+    }
+
     // The member matrix: a row per attribute AND per owned association, with a
     // traffic-light dot for its access under the current selection, and a cell
     // per applicable rule giving that rule's read / read+write level. The
@@ -427,7 +509,7 @@
     // entity name).
     function accessMatrix(attrs, assocs, rules) {
       var headCells = [el('th', { class: 'am-h-attr', text: 'Member' }), el('th', { class: 'am-h-type', text: 'Type' })];
-      rules.forEach(function (r) {
+      rules.forEach(function (r, ruleIndex) {
         // Role name, then directly under it the rows that rule lets it see.
         // Same .con-line as before — same tokens, same raw XPath on the
         // title — just moved to where its column is, which is the only place
@@ -440,7 +522,8 @@
           // Said where the rule is, not in a list somewhere else: the reader
           // who is about to trust this line is the one who needs to know it
           // was not checked.
-          note ? el('div', { class: 'con-unfollowed', title: note.title, text: note.label }) : null
+          note ? el('div', { class: 'con-unfollowed', title: note.title, text: note.label }) : null,
+          constraintCheck(entity, r, ruleIndex)
         ].filter(Boolean)));
       });
 

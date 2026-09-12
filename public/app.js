@@ -314,6 +314,11 @@
         flowOverrides: {},       // paramName -> { attrName: rawValue } — attribute values to set on the chosen object before the run
         objectPicker: null,      // { paramName, entityQualifiedName, isList } while its picker is open
         createObject: null,      // qualifiedName of a non-persistable entity whose "create" popup is open
+        // "entityQn#ruleIndex" -> { busy } | { total, matched } | { error }
+        // What the running app answered when somebody asked how many rows a
+        // row-level rule's constraint really matches. Keyed by entity so an
+        // answer can never be shown against a different entity's rule.
+        constraintCounts: {},
         data: null,              // the page of live rows a Data tab is showing
         transient: null,         // non-persistable entity: looked-up/created objects this session
         // Performance tab (see perf.js): what THIS PAGE knows about the

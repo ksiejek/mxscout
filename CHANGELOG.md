@@ -76,6 +76,14 @@ and points at the running app. The ordinary case — a rule ending at
 marked; it was every one of the 28 System-touching rules measured across three
 real projects, and marking it would make the marker mean nothing.
 
+**And a rule can now be checked against the running app.** Whether a
+constraint actually selects anything is a fact about the application, not
+about the file, so MxScout asks: how many rows the constraint matches, next to
+how many rows of that entity the session can see at all. Zero matched means
+nothing on an empty table and everything on a full one, so both numbers are
+always shown — and so is whose rights they were counted with, since MxScout is
+told the app session's user name and never its role list.
+
 ### Notes
 
 - Passwords are read as facts, never as values. A Mendix project stores the

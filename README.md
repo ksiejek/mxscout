@@ -214,7 +214,12 @@ arrive:
   System module and keeps going, or that names something this model does not
   contain — is marked as exactly that, with the reason. It is not marked as
   broken: MxScout says what it could not check and points at the running app,
-  which is the only thing that can answer.
+  which is the only thing that can answer — and when an app is connected,
+  **Check against the app** asks it. It comes back with how many rows the
+  rule's constraint really matches, next to how many rows of that entity the
+  session can see at all, because zero matched means nothing on an empty table
+  and everything on a full one. The rights are those of whoever is signed in
+  on the app tab, and the answer says so.
 - **Data** — the rows themselves.
 - **Comments** — findings written against this object, see "Sending a review
   out" below.

@@ -313,6 +313,14 @@
   function runObserved(done) {
     armAndPoll({ kind: 'observed' }, done);
   }
+  // The one question MxScout cannot answer from the model: how many rows an
+  // access rule's row-level constraint actually matches. Two counts come
+  // back and nothing else — see the `count` command in
+  // server/routes/session.js for why it is its own kind rather than a
+  // widening of the query that already returns rows.
+  function runConstraintCount(qualifiedName, constraint, done) {
+    armAndPoll({ kind: 'count', qualifiedName: qualifiedName, constraint: constraint }, done);
+  }
   // ---------- the Live app tab ----------
   function renderLivePanel(model, project) {
     var live = state.detail.live;
@@ -1191,6 +1199,8 @@
     renderTransientPane: renderTransientPane,
     renderCreateModal: renderCreateModal,
     forgetDataPane: forgetDataPane,
+    // checking a row-level rule against the running app
+    countConstraint: runConstraintCount,
     // running a flow
     renderAckGate: renderExecAckGate,
     renderConfirmModal: renderExecConfirmModal,

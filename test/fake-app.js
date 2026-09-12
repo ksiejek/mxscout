@@ -22,9 +22,27 @@ const SETTINGS = [
 ];
 
 function matches(xpath) {
-  if (/Admin\.Setting/.test(xpath || '')) return SETTINGS;
-  const m = /contains\(\w+,'([^']*)'\)/.exec(xpath || '');
-  const idm = /id = '(\d+)'/.exec(xpath || '');
+  const x = xpath || '';
+  if (/Admin\.Setting/.test(x)) return SETTINGS;
+  // An entity with no rows at all, for the case where "0 matched" must be
+  // read as "nothing to conclude" rather than as a finding.
+  if (/Sales\.AuditEntry/.test(x)) return [];
+
+  // Row-level access-rule constraints, as the "check this rule against the
+  // app" button sends them. A real runtime resolves [%CurrentUser%] itself;
+  // this stands in for that with something deterministic — the Acme rows are
+  // "ours".
+  //
+  // The role-traversing shape returns nothing here so the "matches none of
+  // them" path can be exercised end to end. That is a choice about THIS fake,
+  // made because the path needs a case: it is not a claim about what a real
+  // Mendix runtime does with such a constraint, which is precisely the thing
+  // MxScout refuses to assert and offers this button to find out.
+  if (/UserRole/.test(x) || /Sales\.Nowhere/.test(x)) return [];
+  if (/System\.owner/.test(x)) return ROWS.filter((r) => /^Acme/.test(r.Customer));
+
+  const m = /contains\(\w+,'([^']*)'\)/.exec(x);
+  const idm = /id = '(\d+)'/.exec(x);
   if (!m && !idm) return ROWS;
   const term = m ? m[1].toLowerCase() : null;
   return ROWS.filter((r) => (term && (r.Number.toLowerCase().includes(term) || r.Customer.toLowerCase().includes(term))) || (idm && r.id === idm[1]));

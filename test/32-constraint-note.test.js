@@ -73,16 +73,22 @@ module.exports = async function (t) {
   t.ok(/Sales\.AuditEntry_Gone/.test(missing.title) && /renamed/.test(missing.title),
     'naming the step and the likeliest reason: ' + (missing && missing.title || '').slice(0, 90));
 
-  // An entity whose rules MxScout can follow end to end says nothing at all —
-  // a marker that appeared everywhere would carry no information.
+  // The sharpest version of the same point: Sales.Order carries the two
+  // shapes side by side, for the SAME role. One is marked and one is not, in
+  // adjacent columns of one table.
   await mx.evaluate(`(function(){ var b = document.querySelector('.modal-backdrop'); if (b) b.click(); return true; })()`);
   await mx.waitFor(`!document.querySelector('.access-matrix')`, 5000, 'popup closed');
   await mx.evaluate(`(function(){
     var n = Array.from(document.querySelectorAll('button,div,li,tr')).filter(function (e) { return e.textContent.trim() === 'Order'; });
     n[n.length - 1].click(); return true; })()`);
-  await mx.waitFor(`!!document.querySelector('.access-matrix')`, 8000, 'order popup');
-  t.ok(await mx.evaluate(`!document.querySelector('.con-unfollowed')`),
-    'a rule MxScout can follow end to end is left alone');
+  await mx.waitFor(`document.querySelectorAll('.access-matrix thead .am-rule-col').length === 2`, 8000, 'order popup');
+  const side = await mx.evaluate(`(function(){
+    return JSON.stringify(Array.from(document.querySelectorAll('.access-matrix thead .am-rule-col')).map(function (th) {
+      var n = th.querySelector('.con-unfollowed');
+      return n ? n.textContent : null;
+    })); })()`);
+  t.ok(side === '[null,"through System"]',
+    'two rules of ONE role, side by side: the ordinary one silent, the one that goes through System marked — ' + side);
 
   await mx.close();
 };
