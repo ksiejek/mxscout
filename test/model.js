@@ -103,6 +103,33 @@ module.exports = {
       xpathConstraint: "[Owner = '[%CurrentUser%]']"
     }]
   }, {
+    // Three row-level rules, one per case the constraint checker has to tell
+    // apart. The FIRST is the important one: [System.owner='[%CurrentUser%]']
+    // is the standard Mendix idiom for "their own rows" and was 28 of the 28
+    // System-touching rules measured across three real projects, so it must
+    // stay silent. The second goes through System and keeps going, which
+    // nothing here can follow. The third names an association that does not
+    // exist in the model at all.
+    qualifiedName: 'Sales.AuditEntry', name: 'AuditEntry', module: 'Sales',
+    attributes: [{ name: 'What', type: 'String', length: 100 }],
+    accessRules: [
+      {
+        moduleRole: 'Sales.Agent', attrAccess: { What: 'r' }, assocAccess: {},
+        allowCreate: false, allowDelete: false,
+        xpathConstraint: "[System.owner='[%CurrentUser%]']"
+      },
+      {
+        moduleRole: 'Sales.Viewer', attrAccess: { What: 'r' }, assocAccess: {},
+        allowCreate: false, allowDelete: false,
+        xpathConstraint: "[System.owner/System.UserRoles/System.UserRole/Name = 'Administrator']"
+      },
+      {
+        moduleRole: 'Sales.Archivist', attrAccess: { What: 'r' }, assocAccess: {},
+        allowCreate: false, allowDelete: false,
+        xpathConstraint: "[Sales.AuditEntry_Gone/Sales.Nowhere/Id = '1']"
+      }
+    ]
+  }, {
     // Non-persistable: the Data tab has to offer lookup-by-id and create,
     // not the xpath-query table Sales.Order gets. One settable attribute of
     // each kind the create form actually supports, plus one it does not

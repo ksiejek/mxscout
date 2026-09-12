@@ -212,7 +212,7 @@ module.exports = async function (t) {
     };
   })()`);
   t.ok(check.isPackage && check.name === 'Packable', 'the file it wrote is a package, and it opens with the code it showed');
-  t.ok(check.entities === 3 && check.findings === 1 && /Anyone can read/.test(check.problem || ''),
+  t.ok(check.entities === 4 && check.findings === 1 && /Anyone can read/.test(check.problem || ''),
     'the model and the comment are inside it');
   t.ok(!check.carriesProjectId, 'the comment travels without the id of the project it came from');
   t.ok(!check.leaksAppUrl, 'the address of the environment the developer connected to does NOT travel');
@@ -289,7 +289,7 @@ module.exports = async function (t) {
       appUrl: p.appUrl || null
     };
   })()`);
-  t.ok(landed.ok && landed.entities === 3, 'the model came through the round trip intact');
+  t.ok(landed.ok && landed.entities === 4, 'the model came through the round trip intact');
   t.ok(landed.findings === 1 && /Anyone can read/.test(landed.problem || ''), 'so did the comment');
   t.ok(landed.rehomed, 'and it was re-homed onto the project that imported it');
   t.ok(!landed.appUrl, 'the sender’s environment address did not arrive with it');

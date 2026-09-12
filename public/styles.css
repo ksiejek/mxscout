@@ -2233,3 +2233,21 @@ button.trig-name { padding: 0; font-size: 12.5px; }
   border-color: color-mix(in srgb, var(--alarm) 55%, var(--border));
   color: color-mix(in srgb, var(--alarm) 70%, var(--muted));
 }
+
+/* A row-level rule MxScout could not follow. Outlined on the alarm hue, the
+   same "high" step of the severity ramp the rest of the tool uses — it is a
+   caveat on a rule somebody is about to trust, not a defect MxScout has
+   proven. The whole explanation is on the title, because this sits in a table
+   header and there is room for two words. */
+.con-unfollowed {
+  display: inline-block;
+  margin-top: 5px;
+  padding: 0 5px;
+  border: 1px dashed color-mix(in srgb, var(--alarm) 60%, var(--border));
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .03em;
+  color: color-mix(in srgb, var(--alarm) 80%, var(--text));
+  cursor: help;
+}

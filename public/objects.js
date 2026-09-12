@@ -60,26 +60,120 @@
     return s.slice(1, -1).trim();
   }
 
-  // Walk one '/'-separated path chain into the entities it visits, starting
-  // from the entity the popup is on. An association step goes to whichever end
-  // isn't the entity we're currently on (so direction is right); an explicit
-  // entity step goes there. Consecutive duplicates collapse. Returns qns.
-  function chainEntities(chain, model, startQn) {
-    var cur = startQn, chips = [];
-    chain.split('/').forEach(function (p) {
-      if (p.indexOf('.') === -1) return; // a trailing attribute, not an entity
+  // Walk one '/'-separated path chain step by step, starting from the entity
+  // the popup is on. An association step goes to whichever end isn't the
+  // entity we're currently on (so direction is right); an explicit entity step
+  // goes there; anything the model does not contain leaves target null.
+  //
+  // Rendering the chain and judging whether MxScout could follow it are the
+  // same walk on purpose — two walks would eventually disagree, and a picture
+  // that disagrees with its own warning is worse than either alone.
+  function walkChain(chain, model, startQn) {
+    var cur = startQn;
+    return chain.split('/').filter(function (p) {
+      return p.indexOf('.') !== -1; // a trailing attribute, not an entity
+    }).map(function (p) {
       var assoc = (model.associations || []).filter(function (a) {
         return a && ((a.module + '.' + a.name) === p || a.qualifiedName === p);
       })[0];
-      var target;
+      var target = null;
       if (assoc) target = (assoc.owner === cur) ? assoc.other : (assoc.other === cur ? assoc.owner : (assoc.other || assoc.owner));
       else if (findEntity(model, p)) target = p;
-      else return;
-      if (!target || target === cur) { cur = target || cur; return; }
-      if (chips[chips.length - 1] !== target) chips.push(target);
-      cur = target;
+      var step = { token: p, module: p.split('.')[0], target: target, from: cur };
+      if (target) cur = target;
+      return step;
+    });
+  }
+
+  // The entities a chain visits, for the chips — consecutive duplicates and
+  // steps that resolve back to where they started collapse away.
+  function chainEntities(chain, model, startQn) {
+    var chips = [];
+    walkChain(chain, model, startQn).forEach(function (step) {
+      if (!step.target || step.target === step.from) return;
+      if (chips[chips.length - 1] !== step.target) chips.push(step.target);
     });
     return chips;
+  }
+
+  // Every dotted path chain inside a constraint. Same shape the renderer's own
+  // tokenizer uses for group 3, kept as one expression so they cannot drift.
+  var CHAIN_RE = /[A-Za-z_]\w*\.[A-Za-z_]\w*(?:\/[A-Za-z_]\w*\.[A-Za-z_]\w*)*/g;
+
+  // ---------- when MxScout cannot follow a row-level rule ----------
+  // A row-level rule is the part of the access matrix somebody trusts most —
+  // it is the sentence that says "and only their own rows". So the one thing
+  // this must never do is show such a rule as if it had been checked when it
+  // has not.
+  //
+  // TWO cases, and the line between them was drawn by measurement rather than
+  // by reasoning. Across three real projects, 135 access rules carry a
+  // constraint and 28 of those go through the System module — and ALL 28 of
+  // them are the same single step, `[System.owner='[%CurrentUser%]']`, which
+  // is the standard Mendix idiom for "their own rows" and works. A check that
+  // flagged "mentions System" would therefore have produced 28 false alarms
+  // and no true ones. So:
+  //
+  //   - a System step that is the END of its path is ordinary and silent;
+  //   - a System step the path CONTINUES PAST is flagged. The System module's
+  //     domain model is not in the project file at all — MxScout knows its
+  //     entities by name and none of their members — so nothing here can
+  //     follow such a path or say what it matches. It is also the shape
+  //     reported elsewhere as a rule that quietly matches no rows at run time.
+  //     MxScout does NOT make that claim: it says it cannot follow the path,
+  //     says why, and says to check it against the running app. Zero of the
+  //     135 rules measured hit this, which is the point — it is for the rare
+  //     one, not for the common case.
+  //
+  //   - a step that is not in the model at all (and not System) is flagged
+  //     separately: renamed, or from a version of the model that is not this
+  //     one. Checked against the RAW model, so a hidden Marketplace module is
+  //     never mistaken for a missing one.
+  function constraintNote(xpath, model, startQn) {
+    if (!xpath) return null;
+    var raw = (state.detail && state.detail.rawModel) || model;
+    var throughSystem = null, missing = null, namesRole = false;
+
+    (String(xpath).match(CHAIN_RE) || []).forEach(function (chain) {
+      var steps = walkChain(chain, model, startQn);
+      steps.forEach(function (step, i) {
+        var isLast = i === steps.length - 1;
+        if (step.module === 'System') {
+          if (!isLast && !throughSystem) throughSystem = chain;
+          if (/UserRole/i.test(step.token)) namesRole = true;
+          return;
+        }
+        if (step.target || missing) return;
+        // Resolvable in the unfiltered model? Then it is only hidden from
+        // this view, which is a setting, not a fault.
+        var inRaw = (raw.associations || []).some(function (a) {
+          return a && ((a.module + '.' + a.name) === step.token || a.qualifiedName === step.token);
+        }) || !!findEntity(raw, step.token);
+        if (!inRaw) missing = step.token;
+      });
+    });
+
+    if (throughSystem) {
+      return {
+        label: 'through System',
+        title: 'MxScout cannot follow this rule.\n\n' +
+          'The path goes through the System module and keeps going (' + throughSystem + '). ' +
+          'System’s domain model is not in the project file at all — it ships with the Mendix Runtime — so MxScout knows its entities by name and none of their members, and nothing here can work out which rows this matches.\n\n' +
+          (namesRole
+            ? 'This one reaches a user ROLE through System, which is the shape most often reported as a rule that matches no rows at run time.\n\n'
+            : 'A path through System is also the shape most often reported as a rule that matches no rows at run time.\n\n') +
+          'MxScout does not claim that is what happens here — it has not checked, and it cannot check from the model. Connect the app and see what this rule actually returns before relying on it.'
+      };
+    }
+    if (missing) {
+      return {
+        label: 'not in this model',
+        title: 'MxScout cannot follow this rule.\n\n"' + missing +
+          '" is not an entity or association in this model — not even with Marketplace modules shown. ' +
+          'Usually that means it was renamed, or this model is not the version the app is running. The rule is shown exactly as written; nothing here can say what it matches.'
+      };
+    }
+    return null;
   }
 
   // Render a row-level constraint as readable tokens: association walks become
@@ -338,11 +432,16 @@
         // Same .con-line as before — same tokens, same raw XPath on the
         // title — just moved to where its column is, which is the only place
         // the reader can tell two rules of one role apart.
+        var note = constraintNote(r.xpathConstraint, model, entity.qualifiedName);
         headCells.push(el('th', { class: 'am-rule-col' }, [
           el('div', { class: 'am-role', text: r.moduleRole }),
           el('div', { class: 'con-line', title: r.xpathConstraint || 'All rows' },
-            constraintNodes(r.xpathConstraint, model, entity.qualifiedName))
-        ]));
+            constraintNodes(r.xpathConstraint, model, entity.qualifiedName)),
+          // Said where the rule is, not in a list somewhere else: the reader
+          // who is about to trust this line is the one who needs to know it
+          // was not checked.
+          note ? el('div', { class: 'con-unfollowed', title: note.title, text: note.label }) : null
+        ].filter(Boolean)));
       });
 
       // One row builder for both kinds of member: they differ only in what the

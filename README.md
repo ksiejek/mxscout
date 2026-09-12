@@ -210,7 +210,11 @@ arrive:
   because "what is this" and "who can see it" are the same question asked from
   opposite ends. An association is a member like an attribute is, and an access
   rule grants read or read+write on it the same way, so it belongs in the same
-  table.
+  table. A rule MxScout could not follow — one whose path goes through the
+  System module and keeps going, or that names something this model does not
+  contain — is marked as exactly that, with the reason. It is not marked as
+  broken: MxScout says what it could not check and points at the running app,
+  which is the only thing that can answer.
 - **Data** — the rows themselves.
 - **Comments** — findings written against this object, see "Sending a review
   out" below.

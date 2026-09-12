@@ -65,6 +65,17 @@ caption is a design-time translation the data layer never carries, so MxScout
 supplies it from the model and keeps the key on the cell, where an XPath
 needs it.
 
+**A row-level rule MxScout could not follow now says so.** A rule whose path
+goes through the System module and keeps going cannot be followed from the
+model at all — the System module is not in the project file, so there are no
+members there to follow it through. The same goes for a rule naming something
+this model does not contain. Those are marked on the entity popup, with the
+reason. They are not marked as broken: MxScout says what it could not check
+and points at the running app. The ordinary case — a rule ending at
+`System.owner`, the standard "their own rows" idiom — is deliberately not
+marked; it was every one of the 28 System-touching rules measured across three
+real projects, and marking it would make the marker mean nothing.
+
 ### Notes
 
 - Passwords are read as facts, never as values. A Mendix project stores the
