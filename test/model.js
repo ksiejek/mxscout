@@ -18,10 +18,17 @@ module.exports = {
     guestAccess: false,
     guestUserRole: null,
     demoUsersEnabled: true,
-    demoUsers: [{ userName: 'demo_agent', userRoles: ['Agent'], passwordSet: true }],
+    // What MxScout concluded about each password, never the password. One
+    // weak and one that passes, so both renderings are exercised.
+    demoUsers: [
+      { userName: 'demo_agent', userRoles: ['Agent'],
+        password: { set: true, length: 5, failsPolicy: ['shorter than the 8 characters this project requires'], common: true, sameAsUserName: false } },
+      { userName: 'demo_strong', userRoles: ['Viewer'],
+        password: { set: true, length: null, failsPolicy: [], common: false, sameAsUserName: false } }
+    ],
     adminUserName: 'MxAdmin',
     adminUserRole: 'Agent',
-    adminPasswordSet: true,
+    adminPassword: { set: true, length: 3, failsPolicy: ['shorter than the 8 characters this project requires', 'no digit, which this project requires'], common: false, sameAsUserName: false },
     passwordPolicy: { minimumLength: 8, requireDigit: true, requireMixedCase: false, requireSymbol: false }
   },
   userRoles: [

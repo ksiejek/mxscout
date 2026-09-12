@@ -321,11 +321,21 @@ const UNITS = [
     EnableDemoUsers: true,
     AdminUserName: 'MxAdmin',
     AdminUserRole: 'User',
-    AdminPassword: 'hunter2',
+    // Passwords in the clear, which is where Mendix really keeps them. Three
+    // of them, one per verdict the reader has to be able to reach: one that
+    // fails the project's OWN policy and is a well-known password, one that
+    // is well-known and also missing a required digit, and one that passes.
+    // None of these strings may appear in the model that comes out.
+    // Deliberately a string that appears nowhere else in this app, so the
+    // test can assert it does not survive into the model. (A real project
+    // measured for this work has literally "1" here.)
+    AdminPassword: 'abc',
     PasswordPolicySettings: { $Type: 'Security$PasswordPolicySettings',
       MinimumLength: 6, RequireDigit: true, RequireMixedCase: false, RequireSymbol: false },
     DemoUsers: marked(2, [
       { $Type: 'Security$DemoUserImpl', UserName: 'demo_user', Password: 'letmein',
+        UserRoles: marked(1, ['User']) },
+      { $Type: 'Security$DemoUserImpl', UserName: 'demo_strong', Password: 'Xk7#pQ2mL9vT',
         UserRoles: marked(1, ['User']) }
     ]),
     UserRoles: marked(2, [

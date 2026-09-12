@@ -167,17 +167,30 @@ module.exports = async function (t) {
   t.ok(sec.adminUserName === 'MxAdmin' && sec.adminUserRole === 'User',
     'the administrator account is named: ' + JSON.stringify([sec.adminUserName, sec.adminUserRole]));
 
-  // Secrets are read as facts, never as values — the fixture's admin password
-  // is "hunter2" and its demo user's is "letmein", and neither string may
-  // appear anywhere in the model that gets stored, packaged and reported on.
-  t.ok(sec.adminPasswordSet === true, 'that the admin password is set in the model IS recorded');
-  t.ok(sec.demoUsersEnabled === true && sec.demoUsers.length === 1 &&
-    sec.demoUsers[0].userName === 'demo_user' && sec.demoUsers[0].passwordSet === true &&
-    JSON.stringify(sec.demoUsers[0].userRoles) === JSON.stringify(['User']),
-    'and so is each demo account, by name and role: ' + JSON.stringify(sec.demoUsers));
+  // ---- secrets are JUDGED, and the judgement is all that survives ----
+  // The fixture's passwords are "abc" (admin), "letmein" and "Xk7#pQ2mL9vT"
+  // (demo users). Each is read in the Worker, measured against this project's
+  // own policy, and dropped — the verdict travels on, the password does not.
+  t.ok(sec.adminPassword && sec.adminPassword.set === true && sec.adminPassword.length === 3,
+    'the admin password is judged, and its LENGTH is kept because the length is the finding: ' + JSON.stringify(sec.adminPassword));
+  t.ok(JSON.stringify(sec.adminPassword.failsPolicy) === JSON.stringify([
+    'shorter than the 6 characters this project requires', 'no digit, which this project requires']),
+    'against the project’s OWN policy, every rule it breaks — an app demanding six characters of its users whose admin account has three is saying something no external standard would catch');
+
+  const weak = sec.demoUsers.filter(function (u) { return u.userName === 'demo_user'; })[0];
+  const strong = sec.demoUsers.filter(function (u) { return u.userName === 'demo_strong'; })[0];
+  t.ok(weak && weak.password.common === true && weak.password.failsPolicy.length === 1,
+    'a password that needs no cracking is marked as that, separately from what the policy says: ' + JSON.stringify(weak && weak.password));
+  t.ok(strong && strong.password.set === true && strong.password.length === null &&
+    !strong.password.failsPolicy.length && !strong.password.common,
+    'and a password that passes leaves nothing behind but "set" — not even its length, which is only kept where it is itself the finding: ' + JSON.stringify(strong && strong.password));
+
   const serialized = JSON.stringify(v1);
-  t.ok(serialized.indexOf('hunter2') === -1 && serialized.indexOf('letmein') === -1,
-    'but NO password value reaches the model — nothing to leak into the browser’s database, a package or a report');
+  t.ok(serialized.indexOf('abc') === -1 && serialized.indexOf('letmein') === -1 &&
+    serialized.indexOf('Xk7#pQ2mL9vT') === -1,
+    'and NO password value reaches the model — nothing to leak into the browser’s database, a package or a report');
+  t.ok(Object.keys(sec.adminPassword).sort().join(',') === 'common,failsPolicy,length,sameAsUserName,set',
+    'the verdict has no field a password could hide in: ' + Object.keys(sec.adminPassword).sort().join(','));
 
   // ---- user roles carry what they can hand out ----
   const owner = v1.userRoles.filter(function (r) { return r.name === 'Owner'; })[0];

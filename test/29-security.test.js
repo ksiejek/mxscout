@@ -40,12 +40,24 @@ module.exports = async function (t) {
   t.ok(/8 characters minimum, a digit/.test(panel),
     'the password policy is spelled out, not just "set": ' + panel.slice(0, 60));
 
-  // Secrets are facts, never values.
-  t.ok(/stored in the project file in plain text/.test(panel),
-    'that the admin password sits in the model in plain text is said out loud');
-  t.ok(/demo_agent/.test(panel), 'and each demo account is listed by name');
-  t.ok(await mx.evaluate(`!/MxScout does not read the value/.test('') && document.querySelector('.sec-panel').textContent.indexOf('hunter') === -1`),
-    'no password value appears anywhere on the page — the reader never put one in the model');
+  // ---- secrets are judged, never carried ----
+  // "Set" is hygiene; "set, and shorter than the 8 characters this project
+  // demands of its own users" is the thing somebody has to act on. The model
+  // carries the verdict and never the password, so the page can say the
+  // second without ever holding a secret.
+  t.ok(/set, in plain text — weak/.test(panel),
+    'a weak password is called weak, not merely "set": ' + (/set, in plain text[^.]*/.exec(panel) || [''])[0]);
+  t.ok(/3 characters, shorter than the 8 characters this project requires/.test(panel),
+    'and says exactly what is wrong with it, measured against the project’s OWN policy');
+  t.ok(/no digit, which this project requires/.test(panel),
+    'listing every rule of that policy it breaks, not just the first');
+  t.ok(/one of the most common passwords there are/.test(panel),
+    'a password that needs no cracking is called out as that, separately from being short');
+  t.ok(/It meets this project’s own password policy/.test(panel),
+    'and a password that passes is told apart from one that does not — otherwise the warning means nothing');
+  t.ok(/demo_agent/.test(panel) && /demo_strong/.test(panel), 'each demo account is listed by name');
+  t.ok(/kept only the answer, never the password/.test(panel),
+    'the page says what it did: read the password to judge it, kept the judgement');
 
   // ---- user roles: what a role unlocks, and what it can hand out ----
   t.ok(/Agent/.test(panel) && /Sales\.Agent/.test(panel),

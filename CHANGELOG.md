@@ -84,12 +84,22 @@ nothing on an empty table and everything on a full one, so both numbers are
 always shown — and so is whose rights they were counted with, since MxScout is
 told the app session's user name and never its role list.
 
+**A password in the model is now judged, not just counted.** A Mendix project
+keeps the administrator's password and every demo user's password in the file
+in plain text. MxScout reads them in the browser only long enough to measure
+them against that project's own password policy and against a short list of
+passwords that need no cracking — then keeps the verdict and drops the value.
+So it can tell you the administrator account of an app that demands twelve
+characters of its users has a one-character password that is one of the most
+common there are, and still never hold the password: not in the model, not in
+this browser's database, not in a package, not in a printed report. A password
+that passes leaves nothing behind but "set" — not even its length, which is
+kept only where the length is itself the finding.
+
 ### Notes
 
-- Passwords are read as facts, never as values. A Mendix project stores the
-  administrator's password and every demo user's password in plain text.
-  MxScout records that one is set and never reads the value, so nothing of the
-  sort reaches this browser's database, a package or a report.
+- No password value ever leaves the Worker. They are read there to be judged
+  and dropped; what travels on is the verdict, never the password.
 - Reading a project still leaves no trace in it. Of the three tables in a .mpr,
   MxScout reads two and has no reason to touch the third — the one Studio Pro
   uses to notice an outside edit.

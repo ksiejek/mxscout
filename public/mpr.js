@@ -231,18 +231,73 @@
     return typeof v === 'string' && v ? v : null;
   }
 
+  // A short list of passwords that need no cracking. Not a dictionary — the
+  // point is not coverage, it is that "the administrator password is one of
+  // these" is a different finding from "the administrator password is short".
+  var COMMON_PASSWORDS = [
+    '1', '12', '123', '1234', '12345', '123456', '1234567', '12345678', '123456789',
+    'password', 'password1', 'passw0rd', 'welcome', 'welcome1', 'admin', 'admin1',
+    'administrator', 'letmein', 'qwerty', 'test', 'test123', 'demo', 'mendix',
+    'changeme', 'secret', 'root', 'abc123', 'iloveyou', 'monkey', 'dragon'
+  ];
+
+  // What MxScout concluded about a password — never the password.
+  //
+  // It is read here, in the Worker, and judged here, and only the judgement
+  // travels on: whether it is set, what it fails, and its LENGTH but only
+  // when something already failed, because at that point the length is the
+  // finding ("one character") rather than a hint about a password worth
+  // keeping quiet. A password that passes leaves nothing behind but "set".
+  //
+  // The policy it is judged against is the project's OWN, off the same
+  // document. That comparison is the useful one: an app that demands twelve
+  // characters of its users and gives its administrator account one is
+  // saying something about itself that no external standard would catch.
+  function judgePassword(value, policy, userName) {
+    if (typeof value !== 'string' || value === '') return null; // not set at all
+    var fails = [];
+    if (policy) {
+      if (typeof policy.minimumLength === 'number' && value.length < policy.minimumLength) {
+        fails.push('shorter than the ' + policy.minimumLength + ' characters this project requires');
+      }
+      if (policy.requireDigit && !/[0-9]/.test(value)) fails.push('no digit, which this project requires');
+      if (policy.requireMixedCase && !(/[a-z]/.test(value) && /[A-Z]/.test(value))) fails.push('not mixed case, which this project requires');
+      if (policy.requireSymbol && !/[^A-Za-z0-9]/.test(value)) fails.push('no symbol, which this project requires');
+    }
+    var common = COMMON_PASSWORDS.indexOf(value.toLowerCase()) !== -1;
+    var sameAsUserName = !!userName && value.toLowerCase() === String(userName).toLowerCase();
+    var anyProblem = fails.length > 0 || common || sameAsUserName;
+    return {
+      set: true,
+      // Only alongside a problem, where the number IS the finding.
+      length: anyProblem ? value.length : null,
+      failsPolicy: fails,
+      common: common,
+      sameAsUserName: sameAsUserName
+    };
+  }
+
   // The rest of the project's Security screen, the part that decides whether
   // everything else MxScout shows about roles is enforced at run time at all.
   //
-  // SECRETS ARE READ AS FACTS, NEVER AS VALUES. The admin password and every
-  // demo user's password sit in this document in plain text — that they are
-  // set is worth knowing and worth saying; the values themselves are not
-  // MxScout's to carry, because carrying them would put somebody else's
-  // passwords into this browser's database and into every .mxscout package
-  // made from it. So: a boolean, and the user names and roles that go with
-  // them. Deliberate, and the About page says it in these terms.
+  // SECRETS ARE JUDGED, NEVER CARRIED. The admin password and every demo
+  // user's password sit in this document in plain text. MxScout reads them
+  // here, in the Worker, long enough to work out whether they are weak — and
+  // then keeps the verdict and drops the value. Nothing downstream ever holds
+  // one: not this browser's database, not a .mxscout package, not a printed
+  // report. What survives is the part worth having, which is that the
+  // administrator account of an app demanding twelve characters has one.
+  // Deliberate, Karol's call, and the About page says it in these terms.
   function readProjectSecurity(doc) {
-    var policy = doc.PasswordPolicySettings;
+    var policyDoc = doc.PasswordPolicySettings;
+    // Read first, so every password below is judged against this project's
+    // own rules rather than against nothing.
+    var policy = policyDoc && typeof policyDoc === 'object' ? {
+      minimumLength: typeof policyDoc.MinimumLength === 'number' ? policyDoc.MinimumLength : null,
+      requireDigit: bool(policyDoc, 'RequireDigit', false),
+      requireMixedCase: bool(policyDoc, 'RequireMixedCase', false),
+      requireSymbol: bool(policyDoc, 'RequireSymbol', false)
+    } : null;
     return {
       // Off / Prototype / Production on the Security screen. Absent means the
       // project did not record one rather than "none" — every real project
@@ -259,18 +314,13 @@
         return {
           userName: String(u.UserName),
           userRoles: payload(u.UserRoles).filter(function (r) { return typeof r === 'string'; }),
-          passwordSet: typeof u.Password === 'string' && u.Password !== ''
+          password: judgePassword(u.Password, policy, u.UserName)
         };
       }),
       adminUserName: str(doc, 'AdminUserName'),
       adminUserRole: str(doc, 'AdminUserRole'),
-      adminPasswordSet: typeof doc.AdminPassword === 'string' && doc.AdminPassword !== '',
-      passwordPolicy: policy && typeof policy === 'object' ? {
-        minimumLength: typeof policy.MinimumLength === 'number' ? policy.MinimumLength : null,
-        requireDigit: bool(policy, 'RequireDigit', false),
-        requireMixedCase: bool(policy, 'RequireMixedCase', false),
-        requireSymbol: bool(policy, 'RequireSymbol', false)
-      } : null
+      adminPassword: judgePassword(doc.AdminPassword, policy, doc.AdminUserName),
+      passwordPolicy: policy
     };
   }
 

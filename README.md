@@ -123,7 +123,12 @@ the stored model (no server, no live app needed):
   which of the three security levels it runs at and what that means for
   everything else on screen, whether it lets anonymous visitors in and as
   which role, the demo accounts, the password policy, every user role and
-  every module role. Plus the two things a role filter cannot answer — what
+  every module role. A Mendix project keeps the administrator password and
+  every demo password in the file in plain text; MxScout reads them in the
+  browser only to judge them against that project’s own policy, then keeps
+  the verdict and drops the value — so it can tell you the administrator
+  password is one character long in an app that demands twelve, without ever
+  holding the password. Plus the two things a role filter cannot answer — what
   the app publishes to the outside (REST, OData, web services, each with its
   own role list and its own authentication) and what runs on a timer with
   nobody signed in.

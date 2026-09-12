@@ -12,13 +12,16 @@
  * real in the model and inert at run time. Saying that out loud, at the top,
  * is the difference between a true picture and a plausible one.
  *
- * SECRETS: this renders that a password is set, never what it is. The model
- * carries the admin password and every demo user's password in plain text;
- * MxScout's reader deliberately drops the values before they reach a model
- * (see readProjectSecurity in mpr.js), so there is nothing here to leak into
- * a .mxscout package, and nothing to print into a report. The fact that a
- * password lives in the model in plain text is itself the finding worth
- * having, and that survives.
+ * SECRETS: this renders what MxScout CONCLUDED about a password, never the
+ * password. The model carries the admin password and every demo user's
+ * password in plain text; the reader opens them in the Worker, judges them
+ * against this project's own password policy and a short list of passwords
+ * that need no cracking, then keeps the verdict and drops the value (see
+ * judgePassword in mpr.js). So there is nothing here to leak into a .mxscout
+ * package and nothing to print into a report — and the finding survives at
+ * full strength, because "set" is hygiene while "set, and shorter than the
+ * twelve characters this app demands of its own users" is the thing somebody
+ * needs to act on.
  *
  * Model shape read here, all of it optional — a model exported from MxSonar,
  * or imported before this existed, simply has none of it and says so rather
@@ -26,7 +29,9 @@
  *   model.security     = { level, checkSecurity, strictMode, strictPageUrlCheck,
  *                          guestAccess, guestUserRole, demoUsersEnabled,
  *                          demoUsers[], adminUserName, adminUserRole,
- *                          adminPasswordSet, passwordPolicy }
+ *                          adminPassword, passwordPolicy }
+ *   a password         = { set, length|null, failsPolicy[], common, sameAsUserName }
+ *                          — what MxScout concluded, never the password
  *   model.userRoles[]  = { name, moduleRoles[], manageAllRoles, manageableRoles[] }
  *   model.moduleRoles[]= { module, name, qualifiedName, description }
  *   model.publishedServices[] = { kind, module, name, qualifiedName, path,
@@ -98,6 +103,32 @@
     ]);
   }
 
+  // ---------- what was concluded about a password ----------
+  // MxScout reads a password once, in the Worker, to judge it, and keeps only
+  // the judgement (see judgePassword in mpr.js). So there is never a value to
+  // show here — and the verdict is the more useful half anyway: "set" is
+  // hygiene, "set, and shorter than the twelve characters this project
+  // demands of its own users" is a finding.
+  //
+  // A model from before this was read carries the old boolean instead, so
+  // that is normalised rather than rendered as "no password".
+  function passwordVerdict(judgement, legacyBoolean) {
+    if (!judgement) {
+      if (legacyBoolean) return { tone: 'sec-off', text: 'set, in plain text', note: null };
+      return { tone: 'muted', text: 'none', note: null };
+    }
+    var reasons = (judgement.failsPolicy || []).slice();
+    if (judgement.common) reasons.unshift('one of the most common passwords there are');
+    if (judgement.sameAsUserName) reasons.unshift('the same as the user name');
+    if (!reasons.length) {
+      return { tone: 'sec-off', text: 'set, in plain text',
+        note: 'It meets this project’s own password policy. MxScout read it to check that and kept only the answer.' };
+    }
+    var length = typeof judgement.length === 'number' ? judgement.length + ' character' + (judgement.length === 1 ? '' : 's') + ', ' : '';
+    return { tone: 'sec-weak', text: 'set, in plain text — weak',
+      note: length + reasons.join('; ') + '. MxScout read it to work that out and kept only the answer, never the password.' };
+  }
+
   function passwordPolicyText(policy) {
     if (!policy) return null;
     var parts = [];
@@ -145,34 +176,45 @@
     var adminBits = [];
     if (s.adminUserName) adminBits.push(s.adminUserName);
     if (s.adminUserRole) adminBits.push('role ' + s.adminUserRole);
+    var adminPassword = passwordVerdict(s.adminPassword, s.adminPasswordSet);
     rows.push(row('Administrator',
       adminBits.length ? el('span', { text: adminBits.join(' · ') }) : el('span', { class: 'muted', text: 'not recorded' }),
-      s.adminPasswordSet ? 'Its password is stored in the project file in plain text. MxScout does not read the value.' : null));
+      adminPassword.note));
+    if (adminPassword.note && s.adminPassword && adminPassword.tone === 'sec-weak') {
+      // A weak administrator password is the strongest single thing this
+      // page can say, so it is said as a verdict of its own rather than as a
+      // note hanging off a row about a user name.
+      rows.push(row('Administrator password',
+        el('span', { class: 'sec-weak', text: adminPassword.text })));
+    }
 
     var demo = s.demoUsers || [];
+    var weakDemo = demo.filter(function (u) { return passwordVerdict(u.password, u.passwordSet).tone === 'sec-weak'; });
     rows.push(row('Demo users',
       onOff(s.demoUsersEnabled, 'On', 'Off'),
       demo.length
-        ? demo.length + ' account' + (demo.length === 1 ? '' : 's') + ' in the model' +
-          (demo.some(function (u) { return u.passwordSet; }) ? ', with passwords in plain text.' : '.')
+        ? demo.length + ' account' + (demo.length === 1 ? '' : 's') + ' in the model, with passwords in plain text' +
+          (weakDemo.length ? ' — ' + weakDemo.length + ' of them weak.' : '.')
         : (s.demoUsersEnabled ? 'Switched on, but no accounts are defined.' : null)));
 
     var kids = [el('div', { class: 'kv' }, rows)];
     if (demo.length) {
       kids.push(el('div', { class: 'sec-sub' }, [
         el('h4', { text: 'Demo accounts' }),
-        el('p', { class: 'hint', text: 'Names and roles as the project records them. MxScout does not carry their passwords — not into this browser, not into a package, not into a report.' }),
+        el('p', { class: 'hint', text: 'Names, roles, and what MxScout concluded about each password. It read them here in the browser to work that out and kept only the conclusion — no password reaches this browser’s database, a package, or a report.' }),
         el('table', { class: 'sec-table' }, [
           el('thead', {}, [el('tr', {}, [
             el('th', { text: 'User name' }), el('th', { text: 'Roles' }), el('th', { text: 'Password' })
           ])]),
           el('tbody', {}, demo.map(function (u) {
+            var verdict = passwordVerdict(u.password, u.passwordSet);
             return el('tr', {}, [
               el('td', { text: u.userName }),
               el('td', { text: (u.userRoles || []).join(', ') || '—' }),
-              el('td', {}, [u.passwordSet
-                ? el('span', { class: 'sec-off', text: 'set, in plain text' })
-                : el('span', { class: 'muted', text: 'none' })])
+              el('td', {}, [
+                el('span', { class: verdict.tone, text: verdict.text }),
+                verdict.note ? el('span', { class: 'muted sec-note', text: verdict.note }) : null
+              ].filter(Boolean))
             ]);
           }))
         ])
