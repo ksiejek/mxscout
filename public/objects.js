@@ -124,6 +124,19 @@
   // because setting it needs a value protocol MxScout does not have yet.
   var SETTABLE_OVERRIDE = { String: 'text', Integer: 'number', Long: 'number', Decimal: 'number', Float: 'number', Boolean: 'boolean' };
 
+  function shortNameOf(qualifiedName) {
+    var idx = String(qualifiedName || '').lastIndexOf('.');
+    return idx === -1 ? String(qualifiedName || '') : String(qualifiedName).slice(idx + 1);
+  }
+  // The values an enumeration can hold, or null when this model does not
+  // carry them — a JSON export, or a project imported before they were read.
+  function enumValuesOf(qualifiedName) {
+    var list = (state.detail.model.enumerations || []).filter(function (e) {
+      return e && e.qualifiedName === qualifiedName;
+    })[0];
+    return list && list.values && list.values.length ? list.values : null;
+  }
+
   // ---------- entity/flow detail popup: the Comments tab ----------
   // Its own tab, not a block sitting above every other tab — adding a
   // comment happens here and only here, same as everything else the popup
@@ -238,11 +251,41 @@
       return '\u2192 ' + (a.other || '?');
     }
 
+    // An enumeration attribute used to say only "Enumeration" \u2014 the name of
+    // the enumeration was in the model and the VALUES, the thing anybody
+    // actually wants when reading a row or writing a constraint, were one
+    // document away and unread. They are read now, so the type cell names the
+    // enumeration and carries its values on hover: short enough for the
+    // column, complete enough to answer the question without leaving.
+    function attrTypeText(a) {
+      if (a.enumerationQualifiedName) {
+        var values = enumValuesOf(a.enumerationQualifiedName);
+        var count = values ? values.length : 0;
+        return shortNameOf(a.enumerationQualifiedName) + (count ? ' (' + count + ')' : '');
+      }
+      return a.type + (a.length ? ' (' + a.length + ')' : '');
+    }
+    function attrTypeTitle(a) {
+      if (!a.enumerationQualifiedName) return null;
+      var values = enumValuesOf(a.enumerationQualifiedName);
+      if (!values || !values.length) {
+        return a.enumerationQualifiedName + ' \u2014 this model does not carry its values.';
+      }
+      return a.enumerationQualifiedName + '\n' + values.map(function (v) {
+        // Both, when they differ: the caption is what a person sees and the
+        // name is what comes back in the data.
+        return v.caption && v.caption !== v.name ? '\u00b7 ' + v.caption + '  (' + v.name + ')' : '\u00b7 ' + v.name;
+      }).join('\n');
+    }
+
     function memberOnly(attrs, assocs) {
       var rows = attrs.map(function (a) {
+        var typeCell = el('span', { class: 'kv-val', text: attrTypeText(a) });
+        var title = attrTypeTitle(a);
+        if (title) typeCell.setAttribute('title', title);
         return el('div', { class: 'kv-row' }, [
           el('span', { class: 'kv-key', text: a.name }),
-          el('span', { class: 'kv-val', text: a.type + (a.length ? ' (' + a.length + ')' : '') })
+          typeCell
         ]);
       }).concat(assocs.map(function (a) {
         return el('div', { class: 'kv-row' }, [
@@ -304,14 +347,14 @@
 
       // One row builder for both kinds of member: they differ only in what the
       // Type column says and which of the rule's two maps holds the level.
-      function memberRow(name, typeText, map) {
+      function memberRow(name, typeText, map, typeTitle) {
         var lvl = bestLevel(name, rules, map);
         var cells = [
           el('td', { class: 'am-attr' }, [
             el('span', { class: 'am-dot am-dot-' + lvl, title: lvl === 'rw' ? 'read + write' : (lvl === 'r' ? 'read' : 'no access') }),
             el('span', { text: name })
           ]),
-          el('td', { class: 'am-type', text: typeText })
+          el('td', { class: 'am-type', text: typeText, title: typeTitle || typeText })
         ];
         rules.forEach(function (r) {
           var v = (r[map] || {})[name];
@@ -323,7 +366,7 @@
       }
 
       var bodyRows = attrs.map(function (a) {
-        return memberRow(a.name, a.type + (a.length ? ' (' + a.length + ')' : ''), 'attrAccess');
+        return memberRow(a.name, attrTypeText(a), 'attrAccess', attrTypeTitle(a));
       });
       if (assocs.length) {
         // A labelled break rather than a second table: the associations are

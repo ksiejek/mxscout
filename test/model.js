@@ -35,6 +35,12 @@ module.exports = {
     { module: 'Sales', name: 'Viewer', qualifiedName: 'Sales.Viewer', description: null },
     { module: 'Sales', name: 'Archivist', qualifiedName: 'Sales.Archivist', description: 'Left over from the old archive screen.' }
   ],
+  // Read from the enumeration document, so an enumeration attribute can show
+  // what it may hold instead of only which enumeration it is.
+  enumerations: [{
+    module: 'Sales', name: 'Priority', qualifiedName: 'Sales.Priority',
+    values: [{ name: 'low', caption: 'Low' }, { name: 'high', caption: 'Rather urgent' }]
+  }],
   entities: [{
     qualifiedName: 'Admin.Setting', name: 'Setting', module: 'Admin',
     attributes: [{ name: 'Key', type: 'String', length: 50 }, { name: 'Value', type: 'String', length: 200 }],

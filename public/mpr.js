@@ -454,6 +454,21 @@
     return out;
   }
 
+  // A Texts$Text is how Mendix stores anything a person reads: a list of
+  // translations, one per language. MxScout shows one string, so it takes the
+  // English one when there is one and the first otherwise — never the
+  // language code, and never an empty string in preference to a real one.
+  function captionOf(text) {
+    var items = text && text.Items ? payload(text.Items) : [];
+    var first = null, english = null;
+    items.forEach(function (item) {
+      if (!item || typeof item.Text !== 'string' || !item.Text) return;
+      if (!first) first = item.Text;
+      if (!english && /^en/i.test(String(item.LanguageCode || ''))) english = item.Text;
+    });
+    return english || first || null;
+  }
+
   // ---------------- what can reach a flow ----------------
   // Nearly half the microflows in a real project have no allowed roles at all
   // (339 of 713 in one measured here). MxScout used to say "no user role can
@@ -579,6 +594,7 @@
     model.nanoflows.sort(function (a, b) { return a.qualifiedName.localeCompare(b.qualifiedName); });
     model.pages.sort(function (a, b) { return a.qualifiedName.localeCompare(b.qualifiedName); });
     model.moduleRoles.sort(function (a, b) { return a.qualifiedName.localeCompare(b.qualifiedName); });
+    model.enumerations.sort(function (a, b) { return a.qualifiedName.localeCompare(b.qualifiedName); });
     return model;
   }
 
@@ -894,6 +910,19 @@
               });
             }
           }
+        } else if (type === 'Enumerations$Enumeration' && ownerModule) {
+          // An entity's enumeration attribute has only ever carried the
+          // enumeration's NAME. What a person needs is the values it can
+          // hold, and those are one document away — captions included, so a
+          // raw key like "wf_in_progress" can be shown as "In progress".
+          result.enumerations.push({
+            module: ownerModule, name: raw.Name, qualifiedName: ownerModule + '.' + raw.Name,
+            values: payload(raw.Values).filter(function (v) {
+              return v && v['$Type'] === 'Enumerations$EnumerationValue' && v.Name;
+            }).map(function (v) {
+              return { name: String(v.Name), caption: captionOf(v.Caption) };
+            })
+          });
         }
       }
       report('Reading microflows, nanoflows and pages', d + 1, documentRows.length);

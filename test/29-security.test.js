@@ -61,6 +61,27 @@ module.exports = async function (t) {
   t.ok(/Left over from the old archive screen/.test(panel),
     'with the one line of description somebody wrote for it');
 
+  // ---- an enumeration attribute says what it may hold ----
+  // The entity popup used to name the enumeration and stop there; the values
+  // are one document away and are what anybody reading a row actually needs.
+  await openSection(mx, 'Entities');
+  await mx.waitFor(`!!document.querySelector('.entity-card, .module-group')`, 8000, 'entities');
+  await mx.evaluate(`(function(){
+    var n = Array.from(document.querySelectorAll('button,div,li,tr')).filter(function (e) { return e.textContent.trim() === 'TempNote'; });
+    n[n.length - 1].click(); return true; })()`);
+  await mx.waitFor(`!!document.querySelector('.access-matrix')`, 8000, 'entity popup');
+  const typeCell = await mx.evaluate(`(function(){
+    var row = Array.from(document.querySelectorAll('.access-matrix tr')).filter(function (r) { return /Priority/.test(r.textContent); })[0];
+    var cell = row && row.querySelector('.am-type');
+    return cell ? JSON.stringify({ text: cell.textContent, title: cell.getAttribute('title') }) : 'null'; })()`);
+  const cell = JSON.parse(typeCell);
+  t.ok(cell.text === 'Priority (2)',
+    'an enumeration attribute names its enumeration and how many values it has: ' + cell.text);
+  t.ok(/Rather urgent/.test(cell.title) && /high/.test(cell.title),
+    'and carries every value on hover — the caption a person sees and the name that comes back in the data: ' + JSON.stringify(cell.title));
+  await mx.evaluate(`(function(){ var b = document.querySelector('.modal-backdrop'); if (b) b.click(); return true; })()`);
+  await mx.waitFor(`!document.querySelector('.access-matrix')`, 5000, 'popup closed');
+
   // ---- no banner when the app does enforce its rules ----
   await openSection(mx, 'Entities');
   await mx.waitFor(`!!document.querySelector('.entity-card, .module-group')`, 8000, 'entities');
