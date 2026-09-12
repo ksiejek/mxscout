@@ -15,6 +15,65 @@ The version in `package.json` is the single source of truth. The About page
 reads it from the running server rather than from a constant, so it cannot
 claim a version it is not.
 
+## Unreleased
+
+### The model says more, because more of it is now read
+
+A Mendix project file holds a great deal MxScout was walking straight past.
+Six of those things are read now, and each of them answers a question somebody
+actually had.
+
+**Which Studio Pro wrote this project** now shows next to the project name. It
+comes from the file's own metadata table, in all three of the shapes that
+table really has.
+
+**A new Security section** shows how the app is secured, as the project records
+it: which of the three security levels it runs at, whether anonymous visitors
+are let in and as which role, the demo accounts, the password policy, and every
+user role and module role — including the roles no access rule happens to
+mention, which are read from the module itself and were invisible before.
+
+**And when the app does not enforce its rules, every view that filters by role
+says so.** A project set to Prototype or Off has an access picture that is real
+in the model and inert at run time; MxScout used to show it without comment.
+
+**What a flow does, before you run it.** Running a microflow is the one thing
+in MxScout that is not read-only, and the panel with the button now says what
+pressing it does: whether it reads, creates, changes, commits or deletes, and
+what; whether it calls a Java action or reaches outside the app; and whether it
+does any of that inside a loop, which is one database round trip per row. The
+browsing card carries the short version — "writes", "deletes", "calls out" —
+and only ever when it is true.
+
+**What reaches a flow no role can trigger.** About half the microflows in a
+real app have no role at all, and "no user role can trigger this directly" was
+never the whole answer: most of them are run by another flow, a page's button,
+a scheduled event, a published REST operation or an entity event. Those are
+named now, and clicking one opens it without losing your place. A flow that
+genuinely nothing reaches is shown as exactly that.
+
+**What the app publishes, and what runs with nobody signed in.** Published
+REST, OData and web services get their own list, with their own role lists and
+their own authentication — none of which goes through the access rules the
+other views show. Scheduled events and queues get theirs: what they run, how
+often, and whether they are switched on.
+
+**An enumeration attribute says what it may hold**, captions included, instead
+of only naming the enumeration.
+
+### Notes
+
+- Passwords are read as facts, never as values. A Mendix project stores the
+  administrator's password and every demo user's password in plain text.
+  MxScout records that one is set and never reads the value, so nothing of the
+  sort reaches this browser's database, a package or a report.
+- Reading a project still leaves no trace in it. Of the three tables in a .mpr,
+  MxScout reads two and has no reason to touch the third — the one Studio Pro
+  uses to notice an outside edit.
+- A project imported before this version has none of the new information and
+  says so rather than guessing. **Replace model** from the project folder fills
+  it in.
+
 ## 1.2.0
 
 ### Record performance from the app, without pasting anything on the admin port

@@ -83,7 +83,44 @@ async function main() {
   console.log('microflows:    ', model.microflows.length);
   console.log('nanoflows:     ', model.nanoflows.length);
   console.log('pages:         ', model.pages.length);
+  console.log('moduleRoles:   ', model.moduleRoles.length);
+  console.log('enumerations:  ', model.enumerations.length);
+  console.log('published:     ', model.publishedServices.length,
+    '(' + model.publishedServices.map((s) => s.kind).join(', ') + ')');
+  console.log('automation:    ', model.automation.length,
+    '(' + model.automation.filter((a) => a.enabled === false).length + ' switched off)');
   console.log('time:          ', ms + 'ms');
+
+  // The project's own Security screen, and the two derived facts that are the
+  // whole reason for reading it.
+  const sec = model.security;
+  console.log('');
+  console.log('security:', sec
+    ? sec.level + (sec.guestAccess ? ', anonymous access as "' + sec.guestUserRole + '"' : ', no anonymous access') +
+      (sec.strictMode === false ? ', strict mode off' : '') +
+      (sec.adminPasswordSet ? ', admin password set in the model' : '') +
+      (sec.demoUsers.length ? ', ' + sec.demoUsers.length + ' demo account(s)' : '')
+    : '(no security document)');
+
+  // What a flow does, and what reaches it — the two walks that are easiest to
+  // get subtly wrong, so this prints numbers a person can sanity-check.
+  const flows = model.microflows.concat(model.nanoflows);
+  const withBody = flows.filter((f) => f.activity);
+  const writes = withBody.filter((f) => f.activity.commitCount || f.activity.creates.length);
+  const deletes = withBody.filter((f) => f.activity.deleteCount);
+  const namedDeletes = deletes.filter((f) => f.activity.deletes.length);
+  const inLoop = withBody.filter((f) => f.activity.inLoop.reads || f.activity.inLoop.commits);
+  console.log('flow bodies read:', withBody.length, 'of', flows.length,
+    '| write:', writes.length, '| delete:', deletes.length,
+    '(entity named for ' + namedDeletes.length + ')',
+    '| retrieve or commit inside a loop:', inLoop.length);
+
+  const all = flows.concat(model.pages);
+  const roleless = all.filter((f) => !(f.allowedModuleRoles || []).length);
+  const reached = roleless.filter((f) => (f.calledBy || []).length);
+  console.log('no role can trigger:', roleless.length,
+    '| something in the model reaches:', reached.length,
+    '| nothing reaches:', (roleless.length - reached.length));
 
   // ---- stricter pass: decode every single Unit row's content, not just the
   // ones buildModel recognizes ----

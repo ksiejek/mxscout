@@ -110,8 +110,8 @@ read and write lives in `public/store.js` and nowhere else.
 
 ## Browsing a project
 
-Open a project and you get four views over its model, all driven entirely by
-the stored JSON (no server, no live app needed):
+Open a project and you get five views over its model, all driven entirely by
+the stored model (no server, no live app needed):
 
 - **Entities** — as a **List** (grouped by module, with per-role access
   badges) or a **Map** (a domain overview: each module's entities plus the
@@ -119,6 +119,29 @@ the stored JSON (no server, no live app needed):
   associations, access rules and relationships.
 - **Microflows**, **Nanoflows**, **Pages** — grouped by module, each showing
   which roles can run/open it and its inputs.
+- **Security** — how the app is secured, as the project itself records it:
+  which of the three security levels it runs at and what that means for
+  everything else on screen, whether it lets anonymous visitors in and as
+  which role, the demo accounts, the password policy, every user role and
+  every module role. Plus the two things a role filter cannot answer — what
+  the app publishes to the outside (REST, OData, web services, each with its
+  own role list and its own authentication) and what runs on a timer with
+  nobody signed in.
+
+Two things MxScout works out for itself from the model, rather than showing
+you a list to work out yourself:
+
+- **What a flow does, before you run it.** Open a microflow and its Run panel
+  says whether it reads, creates, changes, commits or deletes, and what; if it
+  calls a Java action or reaches outside the app; and if it does any of that
+  inside a loop. Running a flow is the one thing in MxScout that is not
+  read-only, so the panel asking you to press the button says what pressing it
+  does.
+- **What reaches a flow no role can trigger.** Roughly half the microflows in
+  a real app have no role at all; most of them are still reached by something
+  — another flow, a page's button, a scheduled event, a published REST
+  operation. That is named, and a flow that genuinely nothing reaches is shown
+  as exactly that.
 
 **View the app as a role.** A dropdown at the top switches between *Everything*
 and each of the project's user roles. Pick a role and every view narrows to
