@@ -83,13 +83,34 @@ module.exports = {
     {
       qualifiedName: 'Sales.CancelOrder', name: 'CancelOrder', module: 'Sales',
       allowedModuleRoles: ['Sales.Agent'],
-      parameters: [{ name: 'Order', type: 'Object', entityQualifiedName: 'Sales.Order' }]
+      parameters: [{ name: 'Order', type: 'Object', entityQualifiedName: 'Sales.Order' }],
+      // What it does, read from its body — the flow the Run tab has to warn
+      // about before the button, since this one deletes and calls out.
+      activity: {
+        count: 6, loops: 1,
+        reads: ['Sales.Order'], creates: [], changes: ['Sales.Order'],
+        deletes: ['Sales.TempNote'], commits: ['Sales.Order'],
+        commitCount: 1, deleteCount: 1, rollbackCount: 0,
+        calls: ['Sales.RecalculateTotals'], javaActions: ['Sales.SendMail'], jsActions: [],
+        restCalls: 1, opensPages: [], messages: 1, validations: 0, logs: 0,
+        inLoop: { reads: 1, creates: 0, changes: 0, deletes: 0, commits: 1 }
+      }
     },
     // No allowedModuleRoles and no parameters: the "called from other logic"
     // case, which the Run tab has to warn about rather than pretend about.
     {
       qualifiedName: 'Sales.RecalculateTotals', name: 'RecalculateTotals', module: 'Sales',
-      allowedModuleRoles: [], parameters: []
+      allowedModuleRoles: [], parameters: [],
+      // A read-only flow: the case that must NOT be marked on the card, so
+      // that a marked card means something.
+      activity: {
+        count: 2, loops: 0,
+        reads: ['Sales.Order'], creates: [], changes: [], deletes: [], commits: [],
+        commitCount: 0, deleteCount: 0, rollbackCount: 0,
+        calls: [], javaActions: [], jsActions: [],
+        restCalls: 0, opensPages: [], messages: 0, validations: 0, logs: 0,
+        inLoop: { reads: 0, creates: 0, changes: 0, deletes: 0, commits: 0 }
+      }
     },
     // A List-typed parameter: the multi-select picker, not the single-pick one.
     {

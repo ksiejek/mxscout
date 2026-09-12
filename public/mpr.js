@@ -267,6 +267,193 @@
     };
   }
 
+  // ---------------- what a flow DOES ----------------
+  // MxScout is the one tool here that actually SETS A FLOW OFF — in the
+  // tester's own session, against a real test environment, with their real
+  // rights. Until this existed the Run tab could say who may trigger a flow
+  // and what it takes, and nothing at all about what happens when you press
+  // the button. "This one deletes objects" belongs in front of somebody
+  // BEFORE they press it, not in the log afterwards.
+  //
+  // Every fact below comes out of the flow document MxScout already decodes,
+  // in one more walk over an object it already holds: Objects[] is the flow's
+  // activities, an ActionActivity wraps one Action, and a LoopedActivity
+  // carries an Objects[] of its own — which is why this recurses, and why it
+  // counts what happens INSIDE a loop separately. A retrieve or a commit in a
+  // loop is one database round trip per row at run time, and that is the
+  // cheapest performance problem in Mendix to spot and the most common.
+  //
+  // References are by NAME: a microflow call names "Module.Flow", a Java
+  // action call names "Module.Action", a page open names "Module.Page". Only
+  // an association-based retrieve uses an id, which is why buildModel passes
+  // in a lookup for those.
+  function emptyActivity() {
+    return {
+      count: 0, loops: 0,
+      reads: [], creates: [], changes: [], deletes: [], commits: [],
+      commitCount: 0, deleteCount: 0, rollbackCount: 0,
+      calls: [], javaActions: [], jsActions: [],
+      restCalls: 0, opensPages: [], messages: 0, validations: 0, logs: 0,
+      inLoop: { reads: 0, creates: 0, changes: 0, deletes: 0, commits: 0 }
+    };
+  }
+
+  function entityOfChangeItems(items) {
+    // A change item names its target as "Module.Entity.Member", which makes
+    // the entity readable straight off the item even though the action itself
+    // only knows the variable it is changing.
+    var found = null;
+    payload(items).forEach(function (item) {
+      if (found || !item) return;
+      var name = typeof item.Attribute === 'string' && item.Attribute ? item.Attribute
+        : (typeof item.Association === 'string' ? item.Association : '');
+      var parts = String(name).split('.');
+      if (parts.length >= 3) found = parts[0] + '.' + parts[1];
+    });
+    return found;
+  }
+
+  function readFlowActivity(raw, ctx) {
+    var out = emptyActivity();
+    var collection = raw && raw.ObjectCollection;
+    if (!collection) return null; // a document with no body to read, not an empty one
+
+    // variable name -> entity qualified name, so a delete or a commit that
+    // only names a variable can still say WHAT it deletes or commits.
+    var varEntity = {};
+    (ctx.parameters || []).forEach(function (p) {
+      if (p && p.name && p.entityQualifiedName) varEntity[p.name] = p.entityQualifiedName;
+    });
+
+    function add(list, value) {
+      if (value && list.indexOf(value) === -1) list.push(value);
+    }
+    function entityOfVar(name) {
+      return (typeof name === 'string' && varEntity[name]) || null;
+    }
+
+    function walk(objects, inLoop) {
+      payload(objects).forEach(function (obj) {
+        if (!obj || typeof obj !== 'object') return;
+
+        if (obj['$Type'] === 'Microflows$LoopedActivity') {
+          out.loops++;
+          if (obj.ObjectCollection) walk(obj.ObjectCollection.Objects, true);
+          return;
+        }
+        var action = obj.Action;
+        if (!action || typeof action !== 'object') return;
+        out.count++;
+        var type = action['$Type'];
+
+        if (type === 'Microflows$RetrieveAction') {
+          var source = action.RetrieveSource || {};
+          var entity = null;
+          if (typeof source.Entity === 'string') {
+            entity = source.Entity;
+          } else if (source.AssociationId) {
+            // An association retrieve names the association by id, not by
+            // name, and which END it lands on depends on where it started —
+            // so it resolves through the association and then picks the end
+            // that is not where it came from, when that is known.
+            var assoc = ctx.associationById.get(idHex(source.AssociationId));
+            if (assoc) {
+              var from = entityOfVar(source.StartVariableName);
+              entity = (from && assoc.owner === from) ? assoc.other
+                : (from && assoc.other === from) ? assoc.owner
+                : assoc.other;
+            }
+          }
+          if (entity) {
+            add(out.reads, entity);
+            if (action.ResultVariableName) varEntity[action.ResultVariableName] = entity;
+          }
+          if (inLoop) out.inLoop.reads++;
+          return;
+        }
+
+        if (type === 'Microflows$CreateChangeAction' || type === 'Microflows$CreateListAction') {
+          var created = typeof action.Entity === 'string' ? action.Entity : null;
+          if (created) {
+            add(out.creates, created);
+            if (action.VariableName) varEntity[action.VariableName] = created;
+          }
+          if (inLoop) out.inLoop.creates++;
+          // "Create object … commit: Yes" is a write to the database in one
+          // activity. Counting only the separate Commit activity would miss
+          // the most common way a Mendix flow writes anything at all.
+          if (action.Commit && action.Commit !== 'No') {
+            out.commitCount++;
+            add(out.commits, created);
+            if (inLoop) out.inLoop.commits++;
+          }
+          return;
+        }
+
+        if (type === 'Microflows$ChangeAction') {
+          var changed = entityOfChangeItems(action.Items) || entityOfVar(action.ChangeVariableName);
+          add(out.changes, changed);
+          if (changed && action.ChangeVariableName) varEntity[action.ChangeVariableName] = changed;
+          if (inLoop) out.inLoop.changes++;
+          // Committing straight from the change action is the same write as a
+          // separate commit activity and has to count as one.
+          if (action.Commit && action.Commit !== 'No') {
+            out.commitCount++;
+            add(out.commits, changed);
+            if (inLoop) out.inLoop.commits++;
+          }
+          return;
+        }
+
+        if (type === 'Microflows$CommitAction') {
+          out.commitCount++;
+          add(out.commits, entityOfVar(action.CommitVariableName));
+          if (inLoop) out.inLoop.commits++;
+          return;
+        }
+        if (type === 'Microflows$DeleteAction') {
+          out.deleteCount++;
+          add(out.deletes, entityOfVar(action.DeleteVariableName));
+          if (inLoop) out.inLoop.deletes++;
+          return;
+        }
+        if (type === 'Microflows$RollbackAction') { out.rollbackCount++; return; }
+
+        if (type === 'Microflows$MicroflowCallAction') {
+          var call = action.MicroflowCall || {};
+          add(out.calls, typeof call.Microflow === 'string' ? call.Microflow : null);
+          return;
+        }
+        if (type === 'Microflows$NanoflowCallAction') {
+          add(out.calls, typeof action.Nanoflow === 'string' ? action.Nanoflow : null);
+          return;
+        }
+        if (type === 'Microflows$JavaActionCallAction') {
+          add(out.javaActions, typeof action.JavaAction === 'string' ? action.JavaAction : null);
+          return;
+        }
+        if (type === 'Microflows$JavaScriptActionCallAction') {
+          add(out.jsActions, typeof action.JavaScriptAction === 'string' ? action.JavaScriptAction : null);
+          return;
+        }
+        if (type === 'Microflows$RestCallAction') { out.restCalls++; return; }
+        if (type === 'Microflows$ShowFormAction') {
+          var settings = action.FormSettings || {};
+          add(out.opensPages, typeof settings.Form === 'string' ? settings.Form : null);
+          return;
+        }
+        if (type === 'Microflows$ShowMessageAction') { out.messages++; return; }
+        if (type === 'Microflows$ValidationFeedbackAction') { out.validations++; return; }
+        if (type === 'Microflows$LogMessageAction') { out.logs++; return; }
+      });
+    }
+
+    walk(collection.Objects, false);
+    [out.reads, out.creates, out.changes, out.deletes, out.commits,
+      out.calls, out.javaActions, out.jsActions, out.opensPages].forEach(function (list) { list.sort(); });
+    return out;
+  }
+
   // The .mpr's own _MetaData table: which Studio Pro wrote this project.
   //
   // Three shapes exist and a reader has to survive all of them — MEASURED,
@@ -393,7 +580,8 @@
     // app name — there is no other place in the file that carries it.
     if (typeof input.appName === 'string' && input.appName) result.meta.appName = input.appName;
 
-    var entityById = new Map(); // hex($ID) -> { qn, entity }
+    var entityById = new Map();      // hex($ID) -> { qn, entity }
+    var associationById = new Map(); // hex($ID) -> the association it names
     var parsedModules = [];
     var moduleUnitIndex = new Map(); // hex(module unit's own UnitID) -> moduleName
 
@@ -506,24 +694,30 @@
         var owner = entityById.get(idHex(a.ParentPointer));
         var other = entityById.get(idHex(a.ChildPointer));
         if (!owner || !other) return;
-        result.associations.push({
+        var assoc = {
           name: a.Name, module: pm.moduleName,
           owner: owner.qn, ownerMultiplicity: null,
           other: other.qn, otherMultiplicity: null,
           type: a.Type || null
-        });
+        };
+        result.associations.push(assoc);
+        // Indexed by its own id because a microflow's association-based
+        // retrieve is the one reference in a flow body that is NOT by name.
+        associationById.set(idHex(a['$ID']), assoc);
       });
 
       payload(pm.doc.CrossAssociations).forEach(function (a) {
         if (!a || a['$Type'] !== 'DomainModels$CrossAssociation') return;
         var owner = entityById.get(idHex(a.ParentPointer));
         if (!owner || !a.Child) return;
-        result.associations.push({
+        var cross = {
           name: a.Name, module: pm.moduleName,
           owner: owner.qn, ownerMultiplicity: null,
           other: a.Child, otherMultiplicity: null,
           type: a.Type || null
-        });
+        };
+        result.associations.push(cross);
+        associationById.set(idHex(a['$ID']), cross);
       });
     });
 
@@ -576,18 +770,32 @@
             var qn = moduleName + '.' + raw.Name;
             var allowedModuleRoles = payload(raw.AllowedModuleRoles).filter(function (r) { return typeof r === 'string'; });
             var parameters = extractParameters(entityById, raw);
-            if (type === 'Microflows$Microflow') {
-              result.microflows.push({
-                module: moduleName, name: raw.Name, qualifiedName: qn,
-                allowedModuleRoles: allowedModuleRoles, applyEntityAccess: !!raw.ApplyEntityAccess,
-                parameters: parameters, calledBy: [], javaActionCalls: [], entityRefs: [], constantRefs: [], enumerationRefs: []
-              });
-            } else if (type === 'Microflows$Nanoflow') {
-              result.nanoflows.push({
+            if (type === 'Microflows$Microflow' || type === 'Microflows$Nanoflow') {
+              // What the flow DOES, read out of the body of the same document
+              // — the one thing a tester about to press Run most needs and
+              // could not see. entityRefs and javaActionCalls have sat empty
+              // on this shape since it was ported from MxSonar; they are what
+              // this walk produces, so they get filled rather than duplicated.
+              var activity = readFlowActivity(raw, { parameters: parameters, associationById: associationById });
+              var entityRefs = activity
+                ? activity.reads.concat(activity.creates, activity.changes, activity.deletes, activity.commits)
+                  .filter(function (v, i, all) { return v && all.indexOf(v) === i; }).sort()
+                : [];
+              var flow = {
                 module: moduleName, name: raw.Name, qualifiedName: qn,
                 allowedModuleRoles: allowedModuleRoles,
-                parameters: parameters, calledBy: [], javaActionCalls: [], entityRefs: [], constantRefs: [], enumerationRefs: []
-              });
+                parameters: parameters, activity: activity,
+                calledBy: [], javaActionCalls: activity ? activity.javaActions : [],
+                entityRefs: entityRefs, constantRefs: [], enumerationRefs: []
+              };
+              if (type === 'Microflows$Microflow') {
+                // Only a microflow has it; a nanoflow runs in the client and
+                // always applies entity access.
+                flow.applyEntityAccess = !!raw.ApplyEntityAccess;
+                result.microflows.push(flow);
+              } else {
+                result.nanoflows.push(flow);
+              }
             } else {
               result.pages.push({
                 module: moduleName, name: raw.Name, qualifiedName: qn,

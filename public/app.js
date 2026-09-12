@@ -1386,6 +1386,34 @@
     return [el('span', { class: 'comment-marker', text: existing.length + ' comment' + (existing.length === 1 ? '' : 's') })];
   }
 
+  // Whether a flow writes, on the card, in the list — the one fact about a
+  // flow you want BEFORE opening it, since opening it is how you get to the
+  // button that runs it. Only ever present when the answer is yes: a card
+  // without this marker is one you can open without thinking about it. The
+  // full breakdown is in the flow's own popup ("What it does").
+  //
+  // Absent on a model that carries no flow bodies (a JSON export, or a
+  // project imported before MxScout read them) — no marker then means "not
+  // known", which is why nothing here ever renders a "reads only" marker
+  // that would be indistinguishable from it.
+  function writeMarker(flow) {
+    var act = flow && flow.activity;
+    if (!act) return [];
+    if (act.deleteCount) {
+      return [el('span', { class: 'flow-writes act-danger', text: 'deletes',
+        title: 'This flow deletes objects' })];
+    }
+    if (act.commitCount || act.creates.length) {
+      return [el('span', { class: 'flow-writes act-danger', text: 'writes',
+        title: 'This flow writes to the database' })];
+    }
+    if (act.restCalls) {
+      return [el('span', { class: 'flow-writes act-warn', text: 'calls out',
+        title: 'This flow makes a REST call out of the app' })];
+    }
+    return [];
+  }
+
   function accessBadges(acc) {
     if (!acc.filtered) return [];
     if (!acc.matched) return [el('span', { class: 'badge badge-none', text: 'No access' })];
@@ -1785,7 +1813,7 @@
             // object's own window, where the thing being commented on is
             // actually in front of you. A write action on a browsing card is
             // a click you make without having looked.
-            el('div', { class: 'flow-card-badges' }, commentMarker(f.qualifiedName))
+            el('div', { class: 'flow-card-badges' }, writeMarker(f).concat(commentMarker(f.qualifiedName)))
           ].filter(Boolean)), f.module);
           card.addEventListener('click', function () { openFlowPopup(flowKind, f.qualifiedName); });
           return card;

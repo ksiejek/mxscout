@@ -475,6 +475,95 @@
       return el('div', { class: 'popup-section' }, kids);
     }
 
+    // ---- What it does, before you set it off ----
+    // MxScout really runs this flow: in the tester's own session, against a
+    // real test environment, with their real rights. Everything else here is
+    // read-only; this one button is not. So the panel that asks you to press
+    // it also says what pressing it does — read out of the flow's own body
+    // (see readFlowActivity in mpr.js), not guessed from its name.
+    //
+    // A model with no activity on it — a JSON export, or a project imported
+    // before this was read — gets nothing rather than an empty summary that
+    // would read as "this flow does nothing".
+    function activityPane() {
+      var act = flow.activity;
+      if (!act) return null;
+
+      // One line first, because that is what a person reads before a table:
+      // strongest true statement about what this does to data.
+      var verdict, tone;
+      if (act.deleteCount) { verdict = 'Deletes data'; tone = 'act-danger'; }
+      else if (act.commitCount || act.creates.length) { verdict = 'Writes data'; tone = 'act-danger'; }
+      else if (act.changes.length) { verdict = 'Changes objects without committing'; tone = 'act-warn'; }
+      else if (act.restCalls) { verdict = 'Calls out of the app'; tone = 'act-warn'; }
+      else if (act.reads.length) { verdict = 'Reads only'; tone = 'act-calm'; }
+      else { verdict = 'Touches no data'; tone = 'act-calm'; }
+
+      var kids = [
+        el('h4', { text: 'What it does' }),
+        el('div', { class: 'act-verdict ' + tone, text: verdict })
+      ];
+
+      var rows = [];
+      function line(label, value, title) {
+        if (!value) return;
+        rows.push(el('div', { class: 'act-row' }, [
+          el('span', { class: 'act-label', text: label }),
+          el('span', { class: 'act-value', text: value, title: title || value })
+        ]));
+      }
+      function names(list, fallback, count) {
+        if (list.length) return list.join(', ');
+        return count ? fallback : null;
+      }
+      line('Reads', names(act.reads, null, 0));
+      line('Creates', names(act.creates, null, 0));
+      line('Changes', names(act.changes, null, 0));
+      // A commit or a delete whose entity the body never names still has to
+      // be reported — "it deletes something" is the part that matters.
+      line('Commits', names(act.commits, act.commitCount + ' object' + (act.commitCount === 1 ? '' : 's'), act.commitCount));
+      line('Deletes', names(act.deletes, act.deleteCount + ' object' + (act.deleteCount === 1 ? '' : 's'), act.deleteCount));
+
+      var callsOut = [];
+      if (act.calls.length) callsOut.push(act.calls.length + ' ' + (act.calls.length === 1 ? 'flow' : 'flows'));
+      if (act.javaActions.length) callsOut.push(act.javaActions.length + ' Java ' + (act.javaActions.length === 1 ? 'action' : 'actions'));
+      if (act.jsActions.length) callsOut.push(act.jsActions.length + ' JavaScript ' + (act.jsActions.length === 1 ? 'action' : 'actions'));
+      line('Calls', callsOut.join(', ') || null,
+        act.calls.concat(act.javaActions, act.jsActions).join('\n') || null);
+      line('Outside the app', act.restCalls ? act.restCalls + ' REST call' + (act.restCalls === 1 ? '' : 's') : null);
+      line('Opens', act.opensPages.join(', ') || null);
+
+      var tells = [];
+      if (act.messages) tells.push(act.messages + ' message' + (act.messages === 1 ? '' : 's'));
+      if (act.validations) tells.push(act.validations + ' validation' + (act.validations === 1 ? '' : 's'));
+      line('Shows', tells.join(', ') || null);
+
+      if (rows.length) kids.push(el('div', { class: 'act-rows' }, rows));
+      else kids.push(el('p', { class: 'muted', text: 'No activity in this ' + noun + ' reads or writes anything.' }));
+
+      // A retrieve or a commit inside a loop is one database round trip per
+      // row at run time. It is the cheapest performance problem in Mendix to
+      // spot from the model and the most common one to find in the log after.
+      var loop = act.inLoop;
+      var inLoop = [];
+      if (loop.reads) inLoop.push(loop.reads === 1 ? 'a retrieve' : loop.reads + ' retrieves');
+      if (loop.commits) inLoop.push(loop.commits === 1 ? 'a commit' : loop.commits + ' commits');
+      if (loop.deletes) inLoop.push(loop.deletes === 1 ? 'a delete' : loop.deletes + ' deletes');
+      if (inLoop.length) {
+        kids.push(el('p', { class: 'act-loop', text: 'Inside a loop: ' + inLoop.join(' and ') +
+          ' — that runs once per item, so it costs one database round trip per row.' }));
+      }
+
+      // Only a microflow has this switch, and it decides whether the access
+      // rules shown two panels up apply to what it just did.
+      if (sel.kind === 'microflow' && flow.applyEntityAccess === false &&
+        (act.reads.length || act.changes.length || act.creates.length || act.deleteCount)) {
+        kids.push(el('p', { class: 'act-loop', text: 'Entity access is not applied: this microflow reads and writes past the access rules, whatever role sets it off.' }));
+      }
+
+      return el('div', { class: 'popup-section' }, kids);
+    }
+
     // ---- Run: the only place in MxScout that can change anything ----
     // One row per parameter, in the flow's own signature order, each saying
     // what it wants and what it currently holds. Objects are chosen in a
@@ -757,13 +846,13 @@
         ? ['info', 'Inputs', function () {
             return el('div', { class: 'flow-cols' }, [
               el('div', { class: 'flow-col-run' }, [pageInfoPane()]),
-              el('div', { class: 'flow-col-side' }, [accessPane()])
+              el('div', { class: 'flow-col-side' }, [accessPane(), activityPane()].filter(Boolean))
             ]);
           }]
         : ['run', 'Run', function () {
             return el('div', { class: 'flow-cols' }, [
               el('div', { class: 'flow-col-run' }, [runPane()]),
-              el('div', { class: 'flow-col-side' }, [accessPane()])
+              el('div', { class: 'flow-col-side' }, [accessPane(), activityPane()].filter(Boolean))
             ]);
           }],
       ['comments', 'Comments', function () { return renderCommentsTab(commentTarget); }]
