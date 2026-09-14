@@ -2348,6 +2348,9 @@
     openProject: openProject, summarize: summarize, safeFileName: safeFileName,
     downloadText: downloadText, withBuiltinSystemModule: withBuiltinSystemModule
   });
+  // Reading a row-level rule is its own topic, and two screens ask about it:
+  // the access matrix and the Security section.
+  window.MxAccessRule.init({ el: el, state: state, findEntity: findEntity });
   window.MxObjects.init({
     el: el, state: state, render: render, setMessage: setMessage,
     withMod: withMod, moduleRoleSetFor: moduleRoleSetFor,
