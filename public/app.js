@@ -1391,33 +1391,12 @@
     return [el('span', { class: 'comment-marker', text: existing.length + ' comment' + (existing.length === 1 ? '' : 's') })];
   }
 
-  // Whether a flow writes, on the card, in the list — the one fact about a
-  // flow you want BEFORE opening it, since opening it is how you get to the
-  // button that runs it. Only ever present when the answer is yes: a card
-  // without this marker is one you can open without thinking about it. The
-  // full breakdown is in the flow's own popup ("What it does").
-  //
-  // Absent on a model that carries no flow bodies (a JSON export, or a
-  // project imported before MxScout read them) — no marker then means "not
-  // known", which is why nothing here ever renders a "reads only" marker
-  // that would be indistinguishable from it.
-  function writeMarker(flow) {
-    var act = flow && flow.activity;
-    if (!act) return [];
-    if (act.deleteCount) {
-      return [el('span', { class: 'flow-writes act-danger', text: 'deletes',
-        title: 'This flow deletes objects' })];
-    }
-    if (act.commitCount || act.creates.length) {
-      return [el('span', { class: 'flow-writes act-danger', text: 'writes',
-        title: 'This flow writes to the database' })];
-    }
-    if (act.restCalls) {
-      return [el('span', { class: 'flow-writes act-warn', text: 'calls out',
-        title: 'This flow makes a REST call out of the app' })];
-    }
-    return [];
-  }
+  // The card used to carry a "deletes" / "writes" / "calls out" marker. It
+  // does not any more: two words could say THAT a flow writes but never WHAT
+  // it writes, so the answer to the only question the marker raised was
+  // always one click away in the flow's own window — where "What it does"
+  // now names every entity in a band across the top. A grid of cards is for
+  // finding a flow; judging one happens where the button that runs it is.
 
   function accessBadges(acc) {
     if (!acc.filtered) return [];
@@ -1825,6 +1804,7 @@
           var f = row.flow;
           var params = (f.parameters || []).map(function (p) { return p.name + (p.type ? ' (' + p.type + ')' : ''); });
           var flowKind = key === 'microflows' ? 'microflow' : key === 'nanoflows' ? 'nanoflow' : 'page';
+          var marks = commentMarker(f.qualifiedName);
           var card = withMod(el('div', { class: 'flow-card' }, [
             el('div', { class: 'flow-card-name', text: f.name }),
             el('div', { class: 'flow-card-meta' }, [
@@ -1835,8 +1815,10 @@
             // Only a marker that comments exist — writing one happens in the
             // object's own window, where the thing being commented on is
             // actually in front of you. A write action on a browsing card is
-            // a click you make without having looked.
-            el('div', { class: 'flow-card-badges' }, writeMarker(f).concat(commentMarker(f.qualifiedName)))
+            // a click you make without having looked. With nothing to mark,
+            // the row is left out rather than reserved: an empty strip at the
+            // bottom of most cards in the grid is a ragged grid.
+            marks.length ? el('div', { class: 'flow-card-badges' }, marks) : null
           ].filter(Boolean)), f.module);
           card.addEventListener('click', function () { openFlowPopup(flowKind, f.qualifiedName); });
           return card;

@@ -2190,36 +2190,64 @@ button.twist:hover { color: var(--text); }
 .sec-panel .module-group:last-child { margin-bottom: 0; }
 
 /* ---------- "What it does": a flow's body, summarised ----------
-   Same severity ramp as everything else that carries a warning — one alarm
-   hue at two intensities plus the words, never a palette. "Deletes data" is
-   the only thing here that gets a filled pill, because it is the only one
-   that cannot be undone by closing the tab. */
-.act-verdict {
-  display: inline-block; border-radius: 6px; padding: 2px 9px;
-  font-size: 12px; font-weight: 600; margin-bottom: 10px;
-}
-.act-verdict.act-danger { background: var(--alarm); color: #180a0a; }
-.act-verdict.act-warn { border: 1px solid var(--alarm); color: var(--alarm); }
-.act-verdict.act-calm { background: color-mix(in srgb, var(--text) 12%, transparent); color: var(--muted); }
+   A band across the top of the window, under the title and above the tabs.
+   Qualified entity names are the widest thing this window has to show, and
+   they used to live in its narrowest column; here they get all of it. Being
+   above the tabs is the other half: what a flow does to data is a fact about
+   the flow, so it does not belong inside one tab.
 
-.act-rows { display: flex; flex-direction: column; gap: 4px; }
-.act-row { display: flex; gap: 10px; align-items: baseline; font-size: 12.5px; }
-.act-label {
-  flex: none; width: 96px; color: var(--muted);
+   THE RAMP, which is the rule the rest of this file's colour discipline would
+   otherwise be broken by: the alarm hue is spent on a DELETE and nothing
+   else. A commit is a write — worth reading first, undone by a rollback or a
+   restore; a delete is the one thing here that closing the tab cannot take
+   back. Separating the two by weight rather than by a second hue keeps
+   severity a single scale instead of turning the band into a palette. */
+.act-band {
+  /* .popup-head already carries the 14px below the title. */
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.act-band-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.act-band-label {
+  color: var(--muted);
   font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase;
 }
-.act-value { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.act-loop { margin: 10px 0 0; font-size: 12px; color: var(--alarm); line-height: 1.45; }
+/* The verdict is a sentence, not a badge: a filled pill here would compete
+   with the one chip that has earned the fill. */
+.act-verdict { font-size: 13px; font-weight: 600; }
+.act-verdict.act-danger { color: var(--alarm); }
+.act-verdict.act-write { color: var(--text); }
+.act-verdict.act-calm { color: var(--muted); }
 
-/* The same fact on the browsing card, where there is room for two words and
-   no more: it only ever appears when the flow writes, so a card without one
-   is a card you can open without thinking about it. */
-.flow-writes {
-  display: inline-block; border-radius: 5px; padding: 1px 6px;
-  font-size: 10.5px; font-weight: 600; letter-spacing: .03em;
+.act-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.act-chip {
+  display: inline-flex; align-items: baseline; gap: 7px;
+  border-radius: 7px; padding: 3px 10px;
+  border: 1px solid transparent; /* kept on every tier so they line up */
+  min-width: 0;
 }
-.flow-writes.act-danger { background: var(--alarm); color: #180a0a; }
-.flow-writes.act-warn { border: 1px solid var(--alarm); color: var(--alarm); padding: 0 5px; }
+.act-chip-label {
+  flex: none;
+  font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+}
+.act-chip-value { font-size: 12.5px; min-width: 0; overflow-wrap: anywhere; }
+
+.act-chip-danger { background: var(--alarm); color: #180a0a; }
+.act-chip-danger .act-chip-label { opacity: .7; }
+.act-chip-danger .act-chip-value { font-weight: 600; }
+
+.act-chip-write { background: color-mix(in srgb, var(--text) 12%, transparent); color: var(--text); }
+.act-chip-write .act-chip-label { color: var(--muted); }
+.act-chip-write .act-chip-value { font-weight: 600; }
+
+.act-chip-read { border-color: var(--border); color: var(--muted); }
+
+/* The one line in the band that is a warning rather than a fact — and it is a
+   sentence, so it stays red text and never becomes a badge. */
+.act-loop { margin: 0; font-size: 12px; color: var(--alarm); line-height: 1.45; }
 
 /* ---------- "Reached from": what runs a flow nothing can trigger ---------- */
 .trig-list { display: flex; flex-direction: column; gap: 5px; }
