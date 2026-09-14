@@ -17,6 +17,50 @@ claim a version it is not.
 
 ## Unreleased
 
+### The Security section says what it found, before you scroll
+
+**It opens on a band, not on a settings table.** One line of verdict — which
+of the three security levels this app runs at and what that means — then what
+was actually found, one line each. Before this, "Page URL check: On" and "the
+administrator password is weak" were the same row in the same table, so
+learning which two lines mattered meant reading all of them.
+
+**Everything the section says is now one of three things, and each has a shape
+of its own.** A *finding* is something MxScout concluded and somebody should
+act on: a weak password, a security level that enforces nothing, a user role
+that unlocks no module at all. *Worth knowing* is true and quite possibly
+deliberate — anonymous access, a role that can hand out every other role, a
+service with nothing in front of it, which in a real project is usually the
+login callback that has to be reachable before anyone is signed in. *Not
+checked* is where MxScout could not follow something and says so instead of
+implying it did. One grey badge used to carry five of these meanings at once,
+which is why none of them read as anything.
+
+There is still **no score**. The band orders what it found; it does not grade
+it. A service with nothing gating it is a defect in one project and the front
+door in the next, and a tool that pretends to know which is which is a tool
+you stop believing.
+
+**The row-level rules MxScout could not follow are now on this page**, listed
+with the entity and the role that owns each one, and clicking one opens it.
+They already existed — but only in the access matrix of one entity, visible
+only if you had also set the role filter to Everything, which means you found
+them by stumbling on them. Clicking one from here drops that role filter on
+the way in, so you land on a popup that actually contains the rule you clicked.
+
+**User roles and module roles became one card.** They were two tables where the
+second was a join of the first: "held by nobody" is a statement about the list
+directly above it, and you were being asked to make that join by eye. A module
+role no user role carries now drops out of its module and into a group of its
+own at the bottom — where it sits is the fact, so the badge is gone.
+
+**The administrator's password is stated once.** It had a note on the
+Administrator row and a row of its own saying the same thing, and the standing
+explanation of how MxScout knows — it read the password to judge it and kept
+only the judgement — is now said once per card instead of once per account. It
+was true every time and told you nothing new after the first.
+
+
 ### "What it does" moved to where it can be read
 
 **The summary of a flow's body is now a band across the top of its window**,

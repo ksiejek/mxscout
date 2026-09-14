@@ -2151,6 +2151,55 @@ button.twist:hover { color: var(--text); }
 .sec-banner.sec-warn { border: 1px solid var(--alarm); color: var(--text); }
 .sec-banner.sec-warn strong { color: var(--alarm); }
 
+/* ---- the band: what this project turned up, before any scrolling ---------
+   The page used to open on a settings table, so the reader had to read all of
+   it to learn which two lines mattered. This is the answer first: one verdict
+   sentence, then the findings one line each, then the rules MxScout could not
+   follow — clickable, because the rule itself can only be read in the entity
+   that holds it.
+
+   It orders what was found. It does NOT grade it: there is no score here, on
+   purpose. Inventing severity is the one thing a security tool cannot do and
+   keep its reader. */
+.sec-band {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--panel);
+}
+.sec-band-bad { border-left-color: var(--alarm); }
+.sec-band-warn { border-left-color: var(--alarm); }
+.sec-band-unchecked { border-left-color: color-mix(in srgb, var(--alarm) 50%, var(--border)); }
+.sec-band-ok { border-left-color: color-mix(in srgb, var(--text) 30%, var(--border)); }
+
+.sec-verdict { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.sec-verdict strong { font-size: 15px; }
+.sec-verdict.sec-bad strong, .sec-verdict.sec-warn strong { color: var(--alarm); }
+.sec-verdict-means { color: var(--muted); font-size: 12.5px; line-height: 1.45; flex: 1; min-width: 20ch; }
+
+.sec-counts {
+  margin-top: 8px;
+  font-size: 11.5px;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sec-found { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.sec-found li { display: flex; align-items: baseline; gap: 8px; font-size: 13px; line-height: 1.45; }
+/* The one-character marks lead every line, so the two kinds of line are told
+   apart at the left edge rather than by reading them. */
+.sec-found .mark { flex: none; min-width: 1.5em; text-align: center; }
+.sec-found .link-btn { font-size: 13px; padding: 0; }
+.sec-nothing { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+
+/* Module roles no user role carries. A group rather than a badge: where they
+   sit IS the fact, which is the whole reason the two role cards became one. */
+.sec-orphans { border-color: color-mix(in srgb, var(--alarm) 30%, var(--border)); }
+.sec-orphans .hint { margin: 6px 0 8px; }
+.sec-sub-h { margin: 18px 0 8px; font-size: 13px; }
+
 .sec-panel { display: flex; flex-direction: column; gap: 14px; }
 .sec-panel .card { margin-top: 0; }
 .sec-panel h3 { margin: 0 0 4px; font-size: 15px; }
@@ -2268,23 +2317,43 @@ button.trig-name { padding: 0; font-size: 12.5px; }
   color: color-mix(in srgb, var(--alarm) 70%, var(--muted));
 }
 
-/* A row-level rule MxScout could not follow. Outlined on the alarm hue, the
-   same "high" step of the severity ramp the rest of the tool uses — it is a
-   caveat on a rule somebody is about to trust, not a defect MxScout has
-   proven. The whole explanation is on the title, because this sits in a table
-   header and there is room for two words. */
-.con-unfollowed {
+/* ---- the three marks ----------------------------------------------------
+   One shape per register, and the same shape wherever the reader meets it —
+   on the Security section and in the access matrix alike. Karol, 2026-09-14:
+   the old page used ONE grey badge for five different meanings, so none of
+   them read as anything.
+
+   .mark-find      a finding. MxScout concluded it and somebody should act:
+                   filled on the alarm hue, the only thing here that is.
+   .mark-note      worth knowing, and quite possibly deliberate. Outlined on
+                   the border colour, no hue of its own — it must not compete
+                   with a finding, because a service with nothing gating it is
+                   a defect in one project and the login flow in the next.
+   .mark-unchecked MxScout could not follow it. Dashed, alarm-tinted: a caveat
+                   on something somebody is about to trust, not a defect
+                   MxScout has proven. */
+.mark {
   display: inline-block;
-  margin-top: 5px;
   padding: 0 5px;
-  border: 1px dashed color-mix(in srgb, var(--alarm) 60%, var(--border));
   border-radius: 5px;
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: .03em;
+  white-space: nowrap;
+}
+.mark-find { background: var(--alarm); color: #180a0a; }
+.mark-note { border: 1px solid var(--border); color: var(--muted); cursor: help; }
+.mark-unchecked {
+  border: 1px dashed color-mix(in srgb, var(--alarm) 60%, var(--border));
   color: color-mix(in srgb, var(--alarm) 80%, var(--text));
   cursor: help;
 }
+.sec-table td .mark, .sec-table th .mark { margin-left: 6px; }
+
+/* A row-level rule MxScout could not follow, in the matrix header. The mark
+   itself is .mark-unchecked above; this is only where it sits — there is room
+   for two words in a table header, so the whole explanation is on the title. */
+.con-unfollowed { margin-top: 5px; }
 
 /* Asking the running app what a row-level rule really matches. Lives under
    the rule it is about, in the matrix header, because the number is only

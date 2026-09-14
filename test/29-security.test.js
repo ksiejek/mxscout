@@ -30,6 +30,59 @@ module.exports = async function (t) {
   t.ok(await mx.waitFor(`!!document.querySelector('.sec-panel')`, 8000, 'security section'),
     'the project has a Security section of its own');
 
+  // ---- the band: what was found, before any scrolling ----
+  // The page used to open on a settings table where "Page URL check: On" and
+  // "the administrator password is weak" had the same geometry, so the reader
+  // had to read all of it to learn which two lines mattered. Karol,
+  // 2026-09-14: "trochę mi się one zlewają". The band is the answer first.
+  const band = await mx.evaluate(`document.querySelector('.sec-band').textContent`);
+  t.ok(/Production/.test(band) && /checks pages, microflows and entity access/.test(band),
+    'the section opens on a verdict, not on a settings table: ' + band.slice(0, 60));
+  t.ok(await mx.evaluate(`!document.querySelector('.sec-panel .sec-banner')`),
+    'and the old banner is gone from THIS page — the verdict says the same thing, and two of them stacked was half the noise');
+
+  const findings = JSON.parse(await mx.evaluate(`JSON.stringify(
+    Array.from(document.querySelectorAll('.sec-found li')).map(function (li) {
+      var m = li.querySelector('.mark');
+      return { mark: m ? m.className : null, text: li.textContent };
+    }))`));
+  const toActOn = findings.filter(function (f) { return /mark-find/.test(f.mark || ''); });
+  t.ok(toActOn.length === 2,
+    'a finding is listed once, in full, with the filled mark: ' + toActOn.map(function (f) { return f.text.slice(0, 40); }).join(' | '));
+  t.ok(toActOn.some(function (f) { return /administrator password/i.test(f.text) && /weak/.test(f.text); }),
+    'a weak administrator password is one of them — the strongest single thing this page can say');
+  t.ok(toActOn.some(function (f) { return /demo_agent/.test(f.text) && /weak/.test(f.text); }),
+    'and so is a weak demo account, named');
+  t.ok(!/(score|rating|out of 10|risk level)/i.test(band),
+    'the band orders what was found and does NOT grade it — inventing severity is the one thing a security tool cannot do and keep its reader');
+
+  // The rules MxScout could not follow. Until this existed they were reachable
+  // only by opening the right entity with the role filter set to Everything —
+  // which is to say, by stumbling on them.
+  const unchecked = findings.filter(function (f) { return /mark-unchecked/.test(f.mark || ''); });
+  t.ok(unchecked.length === 3,
+    'every row-level rule MxScout could not follow is listed here, across all entities and all roles: ' +
+      unchecked.map(function (f) { return f.text; }).join(' | '));
+  t.ok(unchecked.some(function (f) { return /Sales.Order/.test(f.text); }),
+    'including one on an entity whose OTHER rule is perfectly ordinary — the case a reader would never think to open');
+  t.ok(unchecked.every(function (f) { return /through System|not in this model/.test(f.text); }),
+    'each one says which of the two reasons it is, rather than only that something is wrong');
+
+  // Clicking one has to land on a popup that actually CONTAINS the rule. The
+  // matrix shows only the selected role's rules, so the jump drops the role
+  // filter — otherwise the reader lands on an entity with the clicked rule
+  // filtered out, which is the exact trap this list exists to end.
+  await mx.evaluate(`document.querySelectorAll('.sec-found-unchecked .link-btn')[1].click()`);
+  await mx.waitFor(`!!document.querySelector('.access-matrix')`, 8000, 'entity popup from the band');
+  t.ok(await mx.evaluate(`Array.from(document.querySelectorAll('.access-matrix thead .am-rule-col'))
+    .some(function (th) { var r = th.querySelector('.am-role'), m = th.querySelector('.mark-unchecked');
+      return r && m && r.textContent === 'Sales.Viewer'; })`),
+    'the rule the reader clicked is in the popup they landed in, marked — not filtered out by a role selector they never touched');
+  await mx.evaluate(`Array.from(document.querySelectorAll('button')).filter(function (b) { return b.textContent.trim() === 'Close'; })[0].click()`);
+  await mx.waitFor(`!document.querySelector('.access-matrix')`, 8000, 'popup closed');
+  t.ok(await mx.evaluate(`!!document.querySelector('.sec-band')`),
+    'and closing it puts them back on the Security section they were reading, not in the entity list');
+
   const panel = await mx.evaluate(`document.querySelector('.sec-panel').textContent`);
   t.ok(/Security level/.test(panel) && /Production/.test(panel),
     'it names the security level in the Security screen’s own word for it: ' + panel.slice(0, 80));
@@ -56,7 +109,12 @@ module.exports = async function (t) {
   t.ok(/It meets this project’s own password policy/.test(panel),
     'and a password that passes is told apart from one that does not — otherwise the warning means nothing');
   t.ok(/demo_agent/.test(panel) && /demo_strong/.test(panel), 'each demo account is listed by name');
-  t.ok(/kept only the answer, never the password/.test(panel),
+  // Said ONCE, in the card that shows the accounts, rather than hung off every
+  // row. It was true every time and told the reader nothing new after the
+  // first — but it must still be on the page, because a page that judges a
+  // secret and does not say what it did with it is the one thing this must
+  // never be.
+  t.ok(/kept only the conclusion/.test(panel) && /no password reaches this browser’s database, a package, or a report/.test(panel),
     'the page says what it did: read the password to judge it, kept the judgement');
 
   // ---- user roles: what a role unlocks, and what it can hand out ----
@@ -68,8 +126,18 @@ module.exports = async function (t) {
   // ---- module roles: the ones no rule mentions ----
   t.ok(/Archivist/.test(panel),
     'a module role that no access rule, microflow or page mentions is still listed — it is read from the module, not inferred from the rules');
-  t.ok(/held by nobody/.test(panel),
+  // No longer a badge. A module role no user role carries drops out of its
+  // module group into a group of its own, because where it sits is the fact —
+  // the reader was otherwise being asked to join two tables by eye.
+  t.ok(/Carried by no user role/.test(panel),
     'and one that no user role carries is called out: nobody can ever have it');
+  t.ok(await mx.evaluate(`(function(){
+    var g = Array.from(document.querySelectorAll('.sec-orphans'))[0];
+    return !!g && g.textContent.indexOf('Archivist') !== -1 &&
+      Array.from(document.querySelectorAll('.module-group:not(.sec-orphans)'))
+        .every(function (o) { return o.textContent.indexOf('Archivist') === -1; });
+  })()`),
+    'and it is IN that group rather than listed twice — a role nobody holds is not also filed under its module');
   t.ok(/Left over from the old archive screen/.test(panel),
     'with the one line of description somebody wrote for it');
 

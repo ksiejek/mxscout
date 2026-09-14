@@ -2375,7 +2375,10 @@
     finishCreatingProject: finishCreatingProject, finishReplacingProject: finishReplacingProject,
     openProject: openProject, findProject: findProject
   });
-  window.MxSecurity.init({ el: el, state: state, moduleColor: moduleColor, withMod: withMod });
+  window.MxSecurity.init({ el: el, state: state, moduleColor: moduleColor, withMod: withMod,
+    // A rule MxScout could not follow is listed on this page and read in the
+    // entity that holds it — as an aside, so closing it lands back here.
+    peekObject: peekObject });
   window.MxPalette.init({
     el: el, state: state, render: render, sections: PROJECT_SECTIONS,
     findProject: findProject, openProject: openProject, goToSection: goToSection,
