@@ -15,7 +15,7 @@ The version in `package.json` is the single source of truth. The About page
 reads it from the running server rather than from a constant, so it cannot
 claim a version it is not.
 
-## Unreleased
+## 1.3.0
 
 ### The model says more, because more of it is now read
 
