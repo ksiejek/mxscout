@@ -96,6 +96,15 @@ this browser's database, not in a package, not in a printed report. A password
 that passes leaves nothing behind but "set" — not even its length, which is
 kept only where the length is itself the finding.
 
+**A comment keeps the line breaks you typed.** The box to write one in is
+half again as tall, and the blank lines and steps you put in it survive
+everywhere it is shown afterwards: the comments list, the object's own
+Comments tab, the standalone HTML report, and the block pasted into Word.
+Where a comment is shown, the breaks are kept by styling a plain piece of
+text; only the Word clipboard turns them into a tag, and only after the text
+has been escaped — so nothing written in a comment can become markup in
+somebody else's document.
+
 ### Notes
 
 - No password value ever leaves the Worker. They are read there to be judged

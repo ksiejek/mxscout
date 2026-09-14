@@ -226,7 +226,8 @@ arrive:
   and everything on a full one. The rights are those of whoever is signed in
   on the app tab, and the answer says so.
 - **Data** — the rows themselves.
-- **Comments** — findings written against this object, see "Sending a review
+- **Comments** — findings written against this object, kept with the line and
+  paragraph breaks they were written with, see "Sending a review
   out" below.
 
 The Data tab shows **ten rows at a time with a real total**: "1–10 of 253".

@@ -59,7 +59,10 @@ module.exports = async function (t) {
   // ---- adding a comment CLOSES the window ----
   // A new comment is done once it is saved: the drawer closes rather than
   // lingering with a confirmation the writer then has to dismiss.
-  await mx.evaluate(`(function(){ var a = document.querySelector('.editor-area'); a.value = 'Anyone can read this without a role'; a.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  // Written the way somebody actually writes a finding: a line, a blank line,
+  // then the detail. Those breaks are part of what it says, so they have to
+  // come back out of the list looking the way they went in.
+  await mx.evaluate(`(function(){ var a = document.querySelector('.editor-area'); a.value = 'Anyone can read this without a role\\n\\nSeen on the Orders page.'; a.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
   await mx.evaluate(`Array.from(document.querySelectorAll('.editor-foot button')).find(b => /Save comment/.test(b.textContent)).click()`);
   t.ok(await mx.waitFor(`!document.querySelector('.editor-backdrop')`, 5000, 'editor closed after add'),
     'adding a comment closes the editor window');
@@ -70,6 +73,30 @@ module.exports = async function (t) {
   await mx.evaluate(`Array.from(document.querySelectorAll('.popup-tab')).find(t => t.textContent === 'Comments').click()`);
   const row = await mx.waitFor(`(function(){ var r = document.querySelector('.popup-comment-list .comment-row'); return r && r.textContent; })()`, 5000, 'full comment row in popup');
   t.ok(/Anyone can read this without a role/.test(row), 'the object’s Comments tab shows the full comment, not a stripped one-liner: ' + row);
+
+  // The breaks the writer typed are still breaks. They are kept by CSS on a
+  // plain text node, never by building markup out of the comment.
+  const kept = await mx.evaluate(`(function(){
+    var p = document.querySelector('.popup-comment-list .comment-problem');
+    if (!p) return 'no problem paragraph';
+    return JSON.stringify({
+      text: p.textContent,
+      wrap: getComputedStyle(p).whiteSpace,
+      // Height in line-heights. This text is short enough to fit one line if
+      // the breaks were collapsed, so three lines is proof they were not —
+      // and it measures what a reader actually sees, not what the DOM says.
+      lines: Math.round(p.offsetHeight / parseFloat(getComputedStyle(p).lineHeight)),
+      markup: p.children.length
+    }); })()`);
+  const shown = JSON.parse(kept);
+  t.ok(/\n\n/.test(shown.text),
+    'the newlines are still in the text that was stored and read back: ' + JSON.stringify(shown.text));
+  t.ok(shown.wrap === 'pre-wrap',
+    'and the paragraph is set to keep them rather than collapse them: white-space is ' + shown.wrap);
+  t.ok(shown.lines === 3,
+    'so a reader sees three lines — the sentence, the blank line, the detail: ' + shown.lines);
+  t.ok(shown.markup === 0,
+    'and nothing was built out of the comment to do it — the text is one plain text node, no elements');
   t.ok(await mx.evaluate(`!!document.querySelector('.popup-comment-list .comment-row select.comment-status')`),
     'the popup row carries the full controls (status), same as the Comments page');
 

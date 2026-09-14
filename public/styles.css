@@ -1294,8 +1294,13 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 .comment-status { margin-left: auto; padding: 4px 8px; font-size: 12.5px; }
 /* Readable body text — the previous sizes were cramped. Long lines are capped
    so the now-full-width page doesn't stretch a sentence across the screen. */
-.comment-problem { margin: 10px 0 0; font-size: 15px; line-height: 1.5; max-width: 95ch; }
-.comment-change { margin: 6px 0 0; font-size: 14px; line-height: 1.5; max-width: 95ch; color: color-mix(in srgb, var(--text) 78%, var(--muted)); }
+/* A comment is written in a textarea, so the line and paragraph breaks the
+   writer typed are part of what they meant — a paragraph and then the steps
+   under it, not one run-on sentence. pre-wrap keeps them without any markup
+   being built from the text: the value stays a text node and the browser
+   does the rendering. Long lines still wrap, which plain `pre` would not. */
+.comment-problem { margin: 10px 0 0; font-size: 15px; line-height: 1.5; max-width: 95ch; white-space: pre-wrap; overflow-wrap: anywhere; }
+.comment-change { margin: 6px 0 0; font-size: 14px; line-height: 1.5; max-width: 95ch; white-space: pre-wrap; overflow-wrap: anywhere; color: color-mix(in srgb, var(--text) 78%, var(--muted)); }
 .comment-meta { margin-top: 9px; font-size: 12.5px; color: var(--muted); }
 .comment-history { margin-top: 5px; font-size: 12px; color: var(--muted); font-style: italic; }
 
@@ -1411,6 +1416,7 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 .editor-label { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
 .editor-area {
   width: 100%;
+  min-height: 116px;
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: 8px;

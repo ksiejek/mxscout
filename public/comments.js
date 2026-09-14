@@ -194,9 +194,14 @@
       severitySelect.appendChild(o);
     });
 
-    var problem = app.el('textarea', { class: 'editor-area', rows: '4', placeholder: 'What is the problem?' });
+    // Six rows, not four. A finding is usually a paragraph and a list of
+    // steps, and the blank lines between them are part of what the writer
+    // meant — so they survive everywhere a comment is shown (see
+    // .comment-problem in styles.css and toWordHtml in report.js) and the box
+    // is tall enough to hold a few before it starts scrolling.
+    var problem = app.el('textarea', { class: 'editor-area', rows: '6', placeholder: 'What is the problem?' });
     problem.value = finding ? finding.problem : '';
-    var change = app.el('textarea', { class: 'editor-area', rows: '4', placeholder: 'What should change?' });
+    var change = app.el('textarea', { class: 'editor-area', rows: '6', placeholder: 'What should change?' });
     change.value = finding ? finding.change : '';
 
     var attrBlock = target.kind === 'entity'

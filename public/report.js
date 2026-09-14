@@ -59,6 +59,19 @@
       .replace(/"/g, '&quot;');
   }
 
+  // The same, plus the line breaks the writer typed. A comment is written in a
+  // textarea and its paragraph breaks are part of what it says, but HTML
+  // collapses them — so they are turned into the one tag that means "line
+  // break here".
+  //
+  // ORDER MATTERS, and it is the whole safety argument: escapeHtml runs FIRST,
+  // so by the time <br> is inserted there is no '<' left in the string that
+  // did not come from this function. Doing it the other way round would be a
+  // way to smuggle markup out of a comment and into somebody's document.
+  function escapeHtmlWithBreaks(text) {
+    return escapeHtml(text).replace(/\r\n|\r|\n/g, '<br>');
+  }
+
   // Word pastes HTML as real headings and paragraphs, so the markup stays
   // plain: no classes, no stylesheet, inline attributes only. Each finding is
   // a block, not a table row — the shape the reviewer asked for: a heading
@@ -77,8 +90,8 @@
       group.rows.forEach(function (row) {
         out.push('<h3>' + escapeHtml(findingHeading(row)) + '</h3>');
         if (row.attributes) out.push('<p>' + escapeHtml('Attributes: ' + row.attributes) + '</p>');
-        out.push('<p>' + escapeHtml(row.problem) + '</p>');
-        if (row.change) out.push('<p><b>Recommendation:</b> ' + escapeHtml(row.change) + '</p>');
+        out.push('<p>' + escapeHtmlWithBreaks(row.problem) + '</p>');
+        if (row.change) out.push('<p><b>Recommendation:</b> ' + escapeHtmlWithBreaks(row.change) + '</p>');
         out.push('<p><i>' + escapeHtml('Status: ' + row.status) + '</i></p>');
       });
     });
@@ -231,7 +244,11 @@
       '.meta{color:#52525b;font-size:12.5px}',
       '.finding{border:1px solid #e4e4e7;border-left:3px solid #d4d4d8;border-radius:10px;padding:14px 16px;margin:0 0 12px;background:#fff}',
       '.finding h3{margin:0 0 8px;font-size:15px}',
-      '.finding p{margin:6px 0}',
+      // Same reason as .comment-problem in the app's own stylesheet: a
+      // comment's line breaks are part of what it says, and the viewer sets
+      // this text with textContent, so CSS is what renders them. No markup is
+      // ever built from a comment here.
+      '.finding p{margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere}',
       '.finding .attrs{color:#52525b;font-size:13px}',
       '.finding .status{color:#71717a;font-size:12.5px;font-style:italic;margin-top:8px}',
       '@media print{.gate{display:none}body{background:#fff}h2{break-after:avoid}.finding{break-inside:avoid}}'
