@@ -17,6 +17,32 @@ claim a version it is not.
 
 ## Unreleased
 
+### "What it does" moved to where it can be read
+
+**The summary of a flow's body is now a band across the top of its window**,
+under the name and above the tabs, instead of a panel squeezed into the side
+rail. The rail is the narrowest column MxScout has and qualified entity names
+are the widest thing it had to show there, so a flow touching three entities
+used to arrive as a stack of wrapped fragments. Being above the tabs is the
+other half of it: what a flow does to data is a fact about the flow, not about
+the Run tab, and it stays on screen while you read the comments on it.
+
+**Red now means one thing.** A delete is the only thing in that summary that
+closing the tab cannot undo, so it is the only thing that gets the alarm
+colour — one filled marker, at the front. Commits, creates, changes and a call
+that leaves the app are writes worth reading first, and they say so in full
+strength type with no colour of their own; reads, calls and messages stay
+quiet. The verdict line ("Deletes data", "Writes data", "Reads only") is a
+sentence now rather than a pill, so it cannot compete with the one marker that
+earned the fill.
+
+**The browsing grid lost its write marker.** Two words on a card could say
+that a flow writes but never what it writes, so the only question the marker
+raised was answered one click away — where the band now names every entity. A
+grid of cards is for finding a flow; judging one happens in the window that
+holds the button that runs it.
+
+
 ### The Security section says what it found, before you scroll
 
 **It opens on a band, not on a settings table.** One line of verdict — which
@@ -59,32 +85,6 @@ Administrator row and a row of its own saying the same thing, and the standing
 explanation of how MxScout knows — it read the password to judge it and kept
 only the judgement — is now said once per card instead of once per account. It
 was true every time and told you nothing new after the first.
-
-
-### "What it does" moved to where it can be read
-
-**The summary of a flow's body is now a band across the top of its window**,
-under the name and above the tabs, instead of a panel squeezed into the side
-rail. The rail is the narrowest column MxScout has and qualified entity names
-are the widest thing it had to show there, so a flow touching three entities
-used to arrive as a stack of wrapped fragments. Being above the tabs is the
-other half of it: what a flow does to data is a fact about the flow, not about
-the Run tab, and it stays on screen while you read the comments on it.
-
-**Red now means one thing.** A delete is the only thing in that summary that
-closing the tab cannot undo, so it is the only thing that gets the alarm
-colour — one filled marker, at the front. Commits, creates, changes and a call
-that leaves the app are writes worth reading first, and they say so in full
-strength type with no colour of their own; reads, calls and messages stay
-quiet. The verdict line ("Deletes data", "Writes data", "Reads only") is a
-sentence now rather than a pill, so it cannot compete with the one marker that
-earned the fill.
-
-**The browsing grid lost its write marker.** Two words on a card could say
-that a flow writes but never what it writes, so the only question the marker
-raised was answered one click away — where the band now names every entity. A
-grid of cards is for finding a flow; judging one happens in the window that
-holds the button that runs it.
 
 ## 1.3.0
 
