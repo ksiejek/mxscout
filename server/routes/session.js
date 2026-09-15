@@ -615,6 +615,26 @@ function haltSampling() {
   state.requestStopPerfRecording();
 }
 
+// Setup step 1's own question: is an admin port at that address at all? It
+// takes no password, stores nothing, and answers in the same words the connect
+// step would — so a wrong address is read there, instead of after the user has
+// run the PowerShell script and pasted a password. Phase 2 UX audit, finding 1.
+async function handlePerfProbe(req, res) {
+  const body = await readJsonBody(req);
+  const target = parseAdminUrl(body.url);
+  if (!target) {
+    sendJson(res, 400, { error: 'That is not an address MxScout can read. It looks like http://localhost:8090.' });
+    return;
+  }
+  const result = await adminApi.reach(target.host, target.port);
+  if (!result.ok) {
+    const message = CONNECT_MESSAGES[result.reason] || CONNECT_MESSAGES.unreachable;
+    sendJson(res, 502, { error: message(target.origin), reason: result.reason });
+    return;
+  }
+  sendJson(res, 200, { ok: true, origin: target.origin });
+}
+
 // Verifies before it stores: a password that does not work is never kept, so
 // "connected" in the UI means the runtime really answered, not that a form
 // was filled in. This is the only route that ever receives the password, and
@@ -751,7 +771,7 @@ module.exports = {
   handleReportQueryResult, handleGetQueryResult,
   handleSetCommand, handleClearCommand, handleGetCommandStatus,
   handleCommandPoll, handleReportCommandResult,
-  handlePerfConnect, handlePerfDisconnect,
+  handlePerfProbe, handlePerfConnect, handlePerfDisconnect,
   handlePerfStatus, handlePerfStart, handlePerfStop,
   handlePerfPoll, handlePerfRequest
 };

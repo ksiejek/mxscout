@@ -1147,6 +1147,20 @@
   }
 
   // ---------- step 1: where the admin port is ----------
+  // The setup steps each keep one line for "what is happening" and "what went
+  // wrong", because they are the same line to a reader. It carries role=status
+  // so a screen reader is told when it changes, and is-error so a failure does
+  // not read as quietly as a hint — a refusal styled like helper text was the
+  // Phase 2 audit's finding 6, and no live region anywhere was its finding 4.
+  function stepNote() {
+    return el('p', { class: 'muted', role: 'status', 'aria-live': 'polite' });
+  }
+
+  function setNote(node, text, isError) {
+    node.textContent = text;
+    node.classList.toggle('is-error', !!isError);
+  }
+
   function adminAddressBody(project) {
     var p = state.detail.perf;
     var suggestion = suggestedAdminUrl(project);
@@ -1157,26 +1171,43 @@
     if (!p.adminUrl) p.adminUrl = suggestion;
     var input = el('input', { type: 'text', class: 'live-url-input', placeholder: suggestion, value: p.adminUrl });
     input.addEventListener('input', function () { p.adminUrl = input.value; });
-    var problem = el('p', { class: 'muted' });
+    var problem = stepNote();
+    var continueBtn = el('button', { class: 'btn btn-primary', text: 'Continue' });
+    // The guard alone used to be the whole of this step, so its ✓ meant "the
+    // address is allowed", which a reader takes as "the admin port is there".
+    // It was not: a dead address and a live one advanced identically, and the
+    // truth arrived two steps later, after a PowerShell script had been run
+    // for nothing. So the address is asked as well as allowed.
+    // Phase 2 UX audit, finding 1.
     function doCheck() {
       var url = (p.adminUrl || '').trim() || suggestion;
       var res = window.MxLive.classifyAppUrl(url);
       if (res.verdict !== 'allow') {
-        problem.textContent = res.verdict === 'block'
+        setNote(problem, res.verdict === 'block'
           ? 'MxScout connects only to local, test and acceptance environments.'
-          : 'Enter an address like ' + suggestion + '.';
+          : 'Enter an address like ' + suggestion + '.', true);
         return;
       }
-      p.adminUrl = res.origin;
-      p.urlOk = true;
-      render();
+      continueBtn.disabled = true;
+      setNote(problem, 'Checking the admin port…', false);
+      api('/api/session/perf/probe', { method: 'POST', body: JSON.stringify({ url: res.origin }) })
+        .then(function () {
+          p.adminUrl = res.origin;
+          p.urlOk = true;
+          render();
+        })
+        .catch(function (err) {
+          continueBtn.disabled = false;
+          setNote(problem, (err && err.message) || 'Nothing answered at that address.', true);
+        });
     }
+    continueBtn.addEventListener('click', doCheck);
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') doCheck(); });
     return el('div', {}, [
       el('p', { class: 'muted', text: 'MxScout reads nested microflow calls, retrieves and the activity actually running through the Mendix Runtime’s admin port. That is a different address than the app itself — commonly the app’s own port + 10.' }),
       el('label', { class: 'field' }, [
         el('span', { text: 'Admin port address' }),
-        el('div', { class: 'live-url-row' }, [input, el('button', { class: 'btn btn-primary', text: 'Continue', onclick: doCheck })])
+        el('div', { class: 'live-url-row' }, [input, continueBtn])
       ]),
       problem,
       el('p', { class: 'muted', text: 'Filled in from the Mendix convention — the admin API listens on the app’s own port + 10. Nothing can scan for it, so change the port on the end if yours is elsewhere.' })
@@ -1192,8 +1223,8 @@
     var script = buildPasswordScript({ adminPort: portOf(p.adminUrl) });
     var input = el('input', { type: 'password', class: 'live-url-input', placeholder: 'Paste what the script printed', value: p.password || '' });
     input.addEventListener('input', function () { p.password = input.value; });
-    var copyStatus = el('span', { class: 'muted' });
-    var problem = el('p', { class: 'muted' });
+    var copyStatus = el('span', { class: 'muted', role: 'status', 'aria-live': 'polite' });
+    var problem = stepNote();
     var copyBtn = el('button', {
       class: 'btn', text: 'Copy the code',
       onclick: function () {
@@ -1205,9 +1236,9 @@
     });
     var connectBtn = el('button', { class: 'btn btn-primary', text: 'Connect' });
     function doConnect() {
-      if (!input.value) { problem.textContent = 'Paste the password the script printed first.'; return; }
+      if (!input.value) { setNote(problem, 'Paste the password the script printed first.', true); return; }
       connectBtn.disabled = true;
-      problem.textContent = 'Checking the admin port…';
+      setNote(problem, 'Checking the admin port…', false);
       api('/api/session/perf/connect', {
         method: 'POST', body: JSON.stringify({ url: p.adminUrl, password: input.value })
       }).then(function () {
@@ -1218,7 +1249,7 @@
         fetchStatus();
       }).catch(function (err) {
         connectBtn.disabled = false;
-        problem.textContent = (err && err.message) || 'Could not reach the admin port.';
+        setNote(problem, (err && err.message) || 'Could not reach the admin port.', true);
       });
     }
     connectBtn.addEventListener('click', doConnect);
@@ -1268,15 +1299,27 @@
         );
       }
     });
+    // The snippet is over a thousand lines. Shown open, it fills a box seven
+    // lines tall: unreadable, and impossible to ignore. So the copy button
+    // leads, one sentence says what the code may and may not do, and the
+    // source is one click away for anyone who wants to read it — which on a
+    // company machine is a fair thing to want. Phase 2 audit, findings 3 and 5.
+    var lineCount = (script || '').split('\n').length;
     return el('div', {}, [
       el('p', { class: 'muted', text: 'This is the same code the Live app tab uses — one snippet, not a second one. Pasting it also puts a record button on the badge in that tab, so you can start and finish a recording without coming back here.' }),
       el('ol', { class: 'scan-steps' }, [
         el('li', { text: 'Open ' + appUrl + ' in another browser tab, signed in as the user you want to record.' }),
         el('li', { text: 'Press F12 there, and open the Console.' }),
-        el('li', { text: 'Paste the code below and press Enter — a badge appears in that tab’s bottom-right corner, with a ⏺ on it.' })
+        el('li', { text: 'Copy the code below, paste it there and press Enter — a badge appears in that tab’s bottom-right corner, with a ⏺ on it.' })
       ]),
-      el('textarea', { class: 'scan-script', readonly: 'readonly', spellcheck: 'false', text: script || '' }),
       el('div', { class: 'scan-copy-row' }, [copyBtn, copyStatus]),
+      el('p', { class: 'muted', text: 'It reads with the rights of the session you are already signed in as, talks to nothing but MxScout on 127.0.0.1, and refuses to run at all on an address that looks like production. It never sees the admin port or its password.' }),
+      el('details', { class: 'scan-source' }, [
+        // en-US, not the reader's locale: every other word in this UI is
+        // English, so a Polish browser printing "1 105" would be the odd one.
+        el('summary', { text: 'Show the code (' + lineCount.toLocaleString('en-US') + ' lines)' }),
+        el('textarea', { class: 'scan-script', readonly: 'readonly', spellcheck: 'false', text: script || '' })
+      ]),
       el('div', { class: 'scan-waiting' }, [
         el('span', { class: 'spinner' }),
         el('span', { text: 'Waiting for the code to run in that tab…' })

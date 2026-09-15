@@ -15,6 +15,64 @@ The version in `package.json` is the single source of truth. The About page
 reads it from the running server rather than from a constant, so it cannot
 claim a version it is not.
 
+## Unreleased
+
+### The About page said the outbound connection only happens while recording. It does not
+
+**MxScout contacts a Mendix admin port at two moments, not one**, and the About
+& security page named only the second. Checking the admin password when you
+connect a recording reaches that port too — it has to, because that is how a
+wrong password is refused before anything is stored. The page now says so, in
+the three places that had it wrong, and states the bound the code actually
+enforces rather than the one that reads best: **the allowlist, not the clock.**
+Two read-only actions, an address that passed the non-production guard, one
+file able to open a socket — that is what holds, and it held before this
+sentence was corrected. Nothing about what MxScout does changed here; what
+changed is that the page describing it is true. A page like this is worth
+exactly as much as its least accurate sentence.
+
+The new first-step check below has its own entry in the endpoint table, same as
+every other endpoint.
+
+### The admin port address is asked, not just allowed
+
+**Step one of a recording now checks that an admin port is really at that
+address.** Before, its ✓ meant only that the address had passed the
+non-production guard, so a dead address and a live one looked identical — and
+you found out which you had after running the PowerShell script and pasting a
+password for nothing. MxScout now asks the address the same read-only question
+it asks while recording. It needs no password to do it: a real admin port
+refuses an empty one, and that refusal is the answer. Nothing is stored by
+asking, so this cannot stand in for the password check that follows.
+
+### A failure no longer reads as quietly as a hint
+
+**Errors in the recording setup were the same grey as the help text around
+them.** They now get the alarm colour, while the same line still carries
+"Checking the admin port…" in grey while a step is working. The wording is
+unchanged — it already said what happened, why, and what to do next.
+
+That line also announces itself to a screen reader now. It is the first live
+region in MxScout, which means every status change before this one was silent
+to anyone not watching the screen.
+
+### The bridge snippet is one click away instead of filling a peephole
+
+**Step three used to open with a 1,105-line script in a box seven lines
+tall** — too small to read, too big to ignore. "Copy the code" comes first now,
+one sentence says what the code may and may not do, and the source sits behind
+**Show the code (1,105 lines)**, which gives it real room when you open it.
+Reading it before pasting it into your own browser is a reasonable thing to
+want on a company machine, so it is still all there.
+
+### The first screen no longer says you need another tool first
+
+**"A project is a name plus one model JSON exported from MxSonar"** was left
+over from before MxScout could read a `.mpr` file itself — which is the very
+thing the New project dialog now leads with. The empty state says what is
+actually true: a model read straight from a Mendix project folder, or from a
+JSON export.
+
 ## 1.4.0
 
 ### "What it does" moved to where it can be read

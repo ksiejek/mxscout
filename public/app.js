@@ -1097,7 +1097,7 @@
     if (!state.projects.length) {
       children.push(el('div', { class: 'empty' }, [
         el('h2', { text: 'No projects yet' }),
-        el('p', { text: 'A project is a name plus one model JSON exported from MxSonar. Everything stays in this browser.' })
+        el('p', { text: 'A project is a name plus a model — read straight from a Mendix project folder, or from a JSON export. Everything stays in this browser.' })
       ]));
     } else {
       children.push(el('div', { class: 'project-list' }, state.projects.map(renderProjectCard)));

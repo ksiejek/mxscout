@@ -25,10 +25,12 @@
  *     admin API also answers `shutdown` and `set_log_level`. A generic proxy
  *     here would be an SSRF gadget wired straight into the runtime's kill
  *     switch. Two read-only actions is the whole surface.
- *   - Nothing here runs unless a recording is running. startSampling() is
- *     called by the recording's Start and stopSampling() by its Finish; with
- *     no recording in progress this module holds no timer and opens no
- *     socket.
+ *   - Exactly two things here open a socket, and the allowlist above bounds
+ *     both: verify() and reach(), each once while a recording is being
+ *     connected, and the sampling loop. startSampling() is called by the
+ *     recording's Start and stopSampling() by its Finish; with no recording
+ *     in progress and none being connected, this module holds no timer and
+ *     opens no socket.
  *   - The m2ee password lives in server/state.js's module memory for the
  *     length of the session and is used only to build the auth header below.
  *     It is never logged, never written to disk (the server writes nothing to
@@ -150,6 +152,21 @@ async function verify(host, port, password) {
   if (!isAllowedHost(host)) return { ok: false, reason: 'blocked' };
   const probe = await probeOnce(host, port, password);
   if (probe === 'ok') return { ok: true, host, port };
+  return { ok: false, reason: probe };
+}
+
+// Setup step 1 asks a narrower question than verify() does — "is an admin port
+// there at all?" — and that one is answerable without a password: a real admin
+// port refuses an empty one with a 401, and the refusal IS the proof. Same
+// guard, same allowlisted runtime_statistics call, nothing stored; it buys the
+// user the address failure one step earlier instead of after they have run a
+// PowerShell script. Phase 2 UX audit, finding 1.
+async function reach(host, port) {
+  if (!isAllowedHost(host)) return { ok: false, reason: 'blocked' };
+  const probe = await probeOnce(host, port, '');
+  // 'password' means something answered and spoke m2ee well enough to demand
+  // one, which is exactly what step 1 wanted to know.
+  if (probe === 'ok' || probe === 'password') return { ok: true, host, port };
   return { ok: false, reason: probe };
 }
 
@@ -394,6 +411,6 @@ function getTrouble() { return trouble; }
 module.exports = {
   ALLOWED_ACTIONS, isAllowedHost, unwrap,
   MAX_RECORDING_MS, MAX_BUFFER_BYTES,
-  invoke, verify,
+  invoke, verify, reach,
   startSampling, stopSampling, isSampling, getTrouble
 };

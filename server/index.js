@@ -14,10 +14,11 @@ const HOST = '127.0.0.1'; // never bind wider than loopback — same rule as MxS
 const PORT = Number(process.env.MXSCOUT_PORT) || 4288;
 
 // MxScout has no database and no filesystem browsing — the model lives in the
-// browser's own storage. It makes exactly ONE kind of outbound connection,
-// and only while a performance recording is running: to a Mendix Runtime
-// admin port on this same machine, over loopback, asking two read-only
-// actions and nothing else. That is the whole of it, it is enforced in code
+// browser's own storage. It makes exactly ONE kind of outbound connection: to
+// a Mendix Runtime admin port on this same machine, over loopback, asking two
+// read-only actions and nothing else — once when a performance recording is
+// connected, to check its password against that port, and then on a loop
+// while that recording runs. That is the whole of it, it is enforced in code
 // rather than by convention, and server/admin-port.js is the only file that
 // can open a socket — see its header for why it exists and what bounds it.
 //
@@ -130,6 +131,7 @@ const routes = [
   // origin and is token-gated like the rest of that bridge. `connect` is the
   // one route in MxScout that receives a password, and the one that triggers
   // this server's only outbound connection.
+  { method: 'POST', pattern: /^\/api\/session\/perf\/probe$/, handler: sessionRoutes.handlePerfProbe },
   { method: 'POST', pattern: /^\/api\/session\/perf\/connect$/, handler: sessionRoutes.handlePerfConnect },
   { method: 'POST', pattern: /^\/api\/session\/perf\/disconnect$/, handler: sessionRoutes.handlePerfDisconnect },
   { method: 'GET', pattern: /^\/api\/session\/perf\/status$/, handler: sessionRoutes.handlePerfStatus },

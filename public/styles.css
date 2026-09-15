@@ -297,6 +297,9 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
    not read as a green tick, and unlike .ok it does NOT dismiss itself. */
 .msg.warn { background: color-mix(in srgb, var(--accent) 7%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); }
 .muted { color: var(--muted); }
+/* A failure must not read as quietly as a hint: the same line carries status
+ * while a step works and this while it fails. Phase 2 audit, finding 6. */
+.muted.is-error { color: var(--alarm); }
 .hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
 
 /* ---------- modal ---------- */
@@ -847,6 +850,13 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, .25);
 }
 .scan-copy-row { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
+/* The bridge snippet is one click away rather than filling a seven-line
+ * peephole, and when it is opened it gets room to actually be read.
+ * Phase 2 audit, finding 3. */
+.scan-source { margin-top: 10px; }
+.scan-source > summary { cursor: pointer; color: var(--muted); font-size: 13px; padding: 2px 0; }
+.scan-source > summary:hover { color: var(--text); }
+.scan-source[open] .scan-script { height: 360px; margin-top: 8px; }
 
 .scan-results { margin-top: 16px; }
 .scan-waiting { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; padding: 10px 0; }

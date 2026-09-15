@@ -17,8 +17,9 @@ installer, no administrator rights, no background service, nothing written to
 disk, no telemetry, no CDN, and a listener bound to loopback only. The server
 opens exactly one kind of outbound connection — to the admin port of the app
 under test, at an address that passed the same non-production guard as the app
-itself, asking two read-only actions, and only while you are recording
-performance. A feature that cannot be built inside those limits does not get
+itself, asking two read-only actions: once when you connect a performance
+recording, to check its password against that port, and then while that
+recording runs. A feature that cannot be built inside those limits does not get
 built.
 
 **About & security** in the top bar is the page that explains all of it — the

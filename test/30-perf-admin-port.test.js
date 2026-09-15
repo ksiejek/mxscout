@@ -53,6 +53,39 @@ module.exports = async function (t) {
   t.ok(statsAnswer !== null,
     'an allowlisted action against the same port does answer — so the refusal above is the allowlist, not a broken call');
 
+  // ---------- step 1 asks the address, it does not merely allow it ----------
+  // Finding 1 of the Phase 2 UX audit (2026-09-15): the guard's ✓ read as "an
+  // admin port is there" when it only meant "this address is permitted", so a
+  // dead address travelled two more steps — and a PowerShell script was run
+  // for nothing — before the truth arrived. reach() answers the narrower
+  // question without a password, because a real admin port refuses an empty
+  // one with a 401 and that refusal is itself the proof.
+  const deadPort = adminPortNumber + 977;
+  const reachLive = await adminApi.reach('127.0.0.1', adminPortNumber);
+  t.ok(reachLive.ok === true,
+    'reach() confirms a live admin port with no password at all');
+  const reachDead = await adminApi.reach('127.0.0.1', deadPort);
+  t.ok(reachDead.ok === false && reachDead.reason === 'unreachable',
+    'reach() calls nothing-listening unreachable instead of passing it on as fine');
+  const reachBlocked = await adminApi.reach('app.mendixcloud.com', adminPortNumber);
+  t.ok(reachBlocked.ok === false && reachBlocked.reason === 'blocked',
+    'reach() runs the non-production guard too — a production-looking host never gets a socket');
+
+  const probeOk = await json(t.MX + '/api/session/perf/probe', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: t.ADMIN })
+  });
+  t.ok(probeOk.ok === true, 'POST /api/session/perf/probe answers ok for the stand-in admin port');
+  const afterProbe = await json(t.MX + '/api/session/perf/status');
+  t.ok(afterProbe.connected === false,
+    'probing stores nothing — status is still "not connected", so a probe can never stand in for the password check');
+  const probeDead = await json(t.MX + '/api/session/perf/probe', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: 'http://127.0.0.1:' + deadPort })
+  });
+  t.ok(typeof probeDead.error === 'string' && /Nothing answered/.test(probeDead.error),
+    'a dead address is refused at step 1, in words, rather than advancing to the password step');
+
   // ---------- a recording stops ITSELF, and says which limit it hit ----------
   // Ten minutes is Karol's number (2026-09-10) and 64 MB is what actually
   // keeps the machine safe — everything collected has to survive being JSON in
