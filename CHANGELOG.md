@@ -15,7 +15,7 @@ The version in `package.json` is the single source of truth. The About page
 reads it from the running server rather than from a constant, so it cannot
 claim a version it is not.
 
-## Unreleased
+## 1.4.0
 
 ### "What it does" moved to where it can be read
 
