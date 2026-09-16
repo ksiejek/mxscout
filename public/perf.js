@@ -340,17 +340,37 @@
   // (state.js stamps it the moment the recording actually begins), not from a
   // timestamp taken here — the server runs the sampling loop, so its clock is
   // the one that matches the samples.
+  // Pressing either of these used to change nothing at all until the server
+  // answered: no label, no disabled state, nothing. A press that leaves the
+  // button exactly as it was reads as a press that did not register, and the
+  // obvious response to that is to press it again — which for Start meant a
+  // second POST, and a second POST clears the samples the first one began
+  // collecting. `_busy` is what the user sees; `_finishing` stays what it
+  // was, an internal guard against the status poll finishing the same
+  // recording twice. Phase 5 audit, finding 15.
   function startRecordingSession() {
+    var p = state.detail.perf;
+    if (p._busy) return;
+    p._busy = 'Starting…';
+    render();
     api('/api/session/perf/start', { method: 'POST' }).then(function () {
       if (!_statusPoll) startStatusPolling();
+      if (state.detail && state.detail.perf) state.detail.perf._busy = null;
       fetchStatus();
-    }).catch(function (err) { setMessage((err && err.message) || 'Could not start recording.', 'error'); render(); });
+    }).catch(function (err) {
+      if (state.detail && state.detail.perf) state.detail.perf._busy = null;
+      setMessage((err && err.message) || 'Could not start recording.', 'error');
+      render();
+    });
   }
 
   function finishRecordingSession(project) {
     if (!project) return;
     var p = state.detail.perf;
+    if (p._busy) return;
     p._finishing = true;
+    p._busy = 'Finishing…';
+    render();
     api('/api/session/perf/stop', { method: 'POST' }).then(function (resp) {
       // This stop already happened, server-side, by the time this runs — mark
       // it here too, or fetchStatus()'s own trailing call below reads the
@@ -379,6 +399,7 @@
       return saveRecording(recording).then(function () { return loadRecordings(project.id); })
         .then(function (rows) {
           p._finishing = false;
+          p._busy = null;
           if (!state.detail || !state.detail.perf) return;
           state.detail.perf.recordings = rows;
           state.detail.perf.selectedId = recording.id;
@@ -391,6 +412,7 @@
         });
     }).catch(function (err) {
       p._finishing = false;
+      p._busy = null;
       setMessage((err && err.message) || 'Could not stop recording.', 'error');
       render();
     });
@@ -1161,6 +1183,33 @@
     node.classList.toggle('is-error', !!isError);
   }
 
+  // One copy control, used by both steps that offer code. It answers on the
+  // button the user just pressed rather than beside it, and the answer ends:
+  // "Copied." used to be written once into a span with no timer, so it sat
+  // there unchanged for the rest of the session, saying nothing about whether
+  // the last press had worked. A failure is different — it asks the reader to
+  // do something instead, so it stays until the next attempt.
+  // Phase 5 audit, finding 16.
+  function copyRow(script, primary) {
+    var note = el('p', { class: 'muted', role: 'status', 'aria-live': 'polite' });
+    var label = 'Copy the code';
+    var timer = null;
+    var btn = el('button', {
+      class: primary ? 'btn btn-primary' : 'btn', text: label,
+      onclick: function () {
+        navigator.clipboard.writeText(script).then(function () {
+          setNote(note, '', false);
+          btn.textContent = 'Copied.';
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(function () { btn.textContent = label; timer = null; }, 2000);
+        }, function () {
+          setNote(note, 'Could not copy automatically — select the text and copy it.', true);
+        });
+      }
+    });
+    return el('div', {}, [el('div', { class: 'scan-copy-row' }, [btn]), note]);
+  }
+
   function adminAddressBody(project) {
     var p = state.detail.perf;
     var suggestion = suggestedAdminUrl(project);
@@ -1223,17 +1272,7 @@
     var script = buildPasswordScript({ adminPort: portOf(p.adminUrl) });
     var input = el('input', { type: 'password', class: 'live-url-input', placeholder: 'Paste what the script printed', value: p.password || '' });
     input.addEventListener('input', function () { p.password = input.value; });
-    var copyStatus = el('span', { class: 'muted', role: 'status', 'aria-live': 'polite' });
     var problem = stepNote();
-    var copyBtn = el('button', {
-      class: 'btn', text: 'Copy the code',
-      onclick: function () {
-        navigator.clipboard.writeText(script).then(
-          function () { copyStatus.textContent = 'Copied.'; },
-          function () { copyStatus.textContent = 'Could not copy automatically — select the text and copy it.'; }
-        );
-      }
-    });
     var connectBtn = el('button', { class: 'btn btn-primary', text: 'Connect' });
     function doConnect() {
       if (!input.value) { setNote(problem, 'Paste the password the script printed first.', true); return; }
@@ -1261,7 +1300,7 @@
         el('li', { text: 'Paste what it printed below, and press Connect.' })
       ]),
       el('textarea', { class: 'scan-script', readonly: 'readonly', spellcheck: 'false', text: script || '' }),
-      el('div', { class: 'scan-copy-row' }, [copyBtn, copyStatus]),
+      copyRow(script, false),
       el('label', { class: 'field' }, [el('span', { text: 'Admin password' }), input]),
       el('div', { class: 'scan-copy-row' }, [
         connectBtn,
@@ -1289,16 +1328,6 @@
     }
     var script = window.MxLive.appBridgeScript(state.detail.live.token, null);
     var appUrl = (project && project.appUrl) || (state.detail.live && state.detail.live.url) || 'the app';
-    var copyStatus = el('span', { class: 'muted' });
-    var copyBtn = el('button', {
-      class: 'btn btn-primary', text: 'Copy the code',
-      onclick: function () {
-        navigator.clipboard.writeText(script).then(
-          function () { copyStatus.textContent = 'Copied.'; },
-          function () { copyStatus.textContent = 'Could not copy automatically — select the text and copy it.'; }
-        );
-      }
-    });
     // The snippet is over a thousand lines. Shown open, it fills a box seven
     // lines tall: unreadable, and impossible to ignore. So the copy button
     // leads, one sentence says what the code may and may not do, and the
@@ -1312,7 +1341,7 @@
         el('li', { text: 'Press F12 there, and open the Console.' }),
         el('li', { text: 'Copy the code below, paste it there and press Enter — a badge appears in that tab’s bottom-right corner, with a ⏺ on it.' })
       ]),
-      el('div', { class: 'scan-copy-row' }, [copyBtn, copyStatus]),
+      copyRow(script, true),
       el('p', { class: 'muted', text: 'It reads with the rights of the session you are already signed in as, talks to nothing but MxScout on 127.0.0.1, and refuses to run at all on an address that looks like production. It never sees the admin port or its password.' }),
       el('details', { class: 'scan-source' }, [
         // en-US, not the reader's locale: every other word in this UI is
@@ -1368,11 +1397,16 @@
         // has used does — the glyph says "record", the colour says which
         // glyph it is, and neither depends on reading the label.
         active
-          ? el('button', { class: 'btn btn-danger btn-rec', onclick: function () { finishRecordingSession(project); } }, [
-              el('span', { class: 'rec-glyph is-stop' }), el('span', { text: 'Finish recording' })
+          ? el('button', {
+              class: 'btn btn-danger btn-rec', disabled: p._busy ? 'disabled' : null,
+              onclick: function () { finishRecordingSession(project); }
+            }, [
+              el('span', { class: 'rec-glyph is-stop' }), el('span', { text: p._busy || 'Finish recording' })
             ])
-          : el('button', { class: 'btn btn-rec', onclick: startRecordingSession }, [
-              el('span', { class: 'rec-glyph' }), el('span', { text: 'Start recording' })
+          : el('button', {
+              class: 'btn btn-rec', disabled: p._busy ? 'disabled' : null, onclick: startRecordingSession
+            }, [
+              el('span', { class: 'rec-glyph' }), el('span', { text: p._busy || 'Start recording' })
             ])
       ].filter(Boolean)),
       // The recorder's own diagnosis when the port has gone quiet for a run of

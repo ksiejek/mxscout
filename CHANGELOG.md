@@ -137,6 +137,23 @@ that page**, and it had been corrected by hand three times in three days. It is
 counted against the disk by the test suite now, so it cannot quietly drift
 again.
 
+### Starting and finishing a recording now look like they registered
+
+**Pressing Start changed nothing until the server answered.** No label, no
+disabled button, nothing — and a press that leaves a button exactly as it was
+reads as a press that missed, so the natural thing to do is press it again. A
+second Start clears the samples the first one had begun collecting. Both
+controls now say what they are doing and refuse a second press while the first
+is still in flight.
+
+### "Copied." stops lying about when you copied
+
+**It was written once and never cleared**, so it sat beside the button for the
+rest of the session, saying nothing about whether the last press had worked.
+The button answers for itself now and goes back to normal after a couple of
+seconds. A failure still stays put, because that one asks you to do something —
+select the text and copy it by hand.
+
 ## 1.4.0
 
 ### "What it does" moved to where it can be read
