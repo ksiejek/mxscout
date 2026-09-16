@@ -370,21 +370,27 @@ Anything else makes it worthless to the person reading it.
 ## How the source is laid out
 
 No build step, no bundler, no dependencies — what runs is what you read. One
-subject per file, each reached through a single named object, each given what
-it needs through `init()` rather than reaching for it. Nothing here is over
-2,500 lines:
+subject per file. Each of the browser's own modules is reached through a single
+named object and given what it needs through `init()` rather than reaching for
+it; the `.mpr` decoding is the exception, because it runs in a Web Worker and
+so has no object on the page at all. Nothing here is over 2,500 lines:
 
 | file | what it is |
 | --- | --- |
 | `server/` | the whole HTTP server: loopback bind, security headers, the same-origin gate, the routes, static files |
+| `server/admin-port.js` | pulled out of that row because it is the one file here that can open an outbound connection, and the allowlists that bound it are the shortest way to check what this README claims about that |
 | `public/app.js` | the shell: state, projects, the browsing views, and what each other file is given |
 | `public/live.js` | everything about talking to a running application — the guard, the session, reading rows, running a flow |
 | `public/bridge.js` | the snippet pasted into the app tab, written as ordinary code and serialized when generated |
 | `public/objects.js` | the two object popups |
+| `public/security.js` | the Security section: the project's own security settings, the roles, and what the model says about its passwords |
+| `public/accessrule.js` | one row-level access rule — the readable rendering of its XPath, and whether MxScout could follow it at all |
 | `public/comments.js` | comments: writing, filtering, history, and how two copies of one reconcile |
 | `public/report.js` | the encrypted HTML report and the clipboard copy for Word |
 | `public/crypto.js` | the package format and the access code — WebCrypto only |
 | `public/transfer.js` | how a project leaves this browser and how one arrives |
+| `public/mprImport.js` | picking a Mendix project — one folder pick where the browser allows it, the progress dialog, and handing the finished model over |
+| `public/sqlite.js` · `public/bson.js` · `public/mpr.js` · `public/mprWorker.js` | reading the `.mpr` itself, in that order: SQLite pages, then the BSON documents inside them, then the model shape, all of it in a Web Worker off the page's main thread |
 | `public/store.js` | every persistent read and write, and nothing else does storage |
 | `public/perf.js` | performance recordings: the admin port, saving and importing one, and every aggregation over its samples |
 | `public/timeline.js` | the Timeline view: one time axis, the tracks on it, and the panel for whatever is picked |
@@ -392,6 +398,7 @@ it needs through `init()` rather than reaching for it. Nothing here is over
 | `public/about.js` | the About & security page — data, rendered by one function that only sets text |
 | `public/guide.js` | the Getting started walkthrough — same shape as About, but its mockups reuse the real screens' component classes |
 | `public/version.js` | which version is running and what is in it |
+| `public/index.html` · `public/styles.css` | the page every one of those renders into, and the stylesheet they all share |
 
 ## Versions and updates
 
