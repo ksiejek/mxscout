@@ -48,7 +48,12 @@ module.exports = async function (t) {
   const ran = await app.waitFor(`window.__ranFlows.length && JSON.stringify(window.__ranFlows[0])`, 15000, 'ran');
   t.ok(/Sales\.CancelOrder/.test(ran) && /1003/.test(ran),
     'the microflow really ran, with the picked object, MxScout never involved: ' + ran);
-  t.ok(await app.evaluate(`/✓ Done/.test(document.body.textContent)`), 'and the panel reports the result');
+  // The waitFor above waits for the flow to have run IN THE APP; the panel
+  // only says so once the result has travelled back and re-rendered. Reading
+  // it immediately was a race, and it lost about one full-suite run in ten
+  // (caught 2026-09-16). Wait for the thing actually being asserted.
+  t.ok(await app.waitFor(`/✓ Done/.test(document.body.textContent)`, 10000, 'the panel says Done'),
+    'and the panel reports the result');
 
   t.ok(await mx.evaluate(`!!document.querySelector('.scan-script')`),
     'MxScout still shows the connect step throughout — it was never reachable');

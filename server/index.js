@@ -63,8 +63,25 @@ function serveStatic(req, res, pathname) {
 
   fs.readFile(filePath, (err, data) => {
     if (err) {
-      res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('Not found');
+      // This was two words of plain text, which is the one screen somebody
+      // reaches by mistyping an address — in a tool whose whole argument is
+      // "read me". It is held to the same bar as the rest now: MxScout's own
+      // stylesheet, a sentence saying what happened, and the way back.
+      //
+      // It deliberately does NOT echo the path that was asked for. Reflecting
+      // a request back into an error page is how error pages become an XSS,
+      // and a 404 has nothing to gain by repeating what the reader just typed.
+      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end('<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+        '<title>Not found · MxScout</title><link rel="stylesheet" href="/styles.css">' +
+        '<style>body{display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}' +
+        '.nf{max-width:34rem;padding:2rem;text-align:center}.nf h1{margin:0 0 .5rem;font-size:20px}' +
+        '.nf p{margin:0 0 1.5rem}.nf .btn{text-decoration:none}</style></head><body><div class="nf">' +
+        '<h1>There is nothing at that address</h1>' +
+        '<p class="muted">MxScout serves a single page and its own API. A link or a typed address ' +
+        'brought you somewhere it does not have.</p>' +
+        '<a class="btn btn-primary" href="/">Back to MxScout</a>' +
+        '</div></body></html>');
       return;
     }
     const ext = path.extname(filePath).toLowerCase();

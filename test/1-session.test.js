@@ -96,4 +96,17 @@ module.exports = async function (t) {
     'a new session does not inherit the previous bridge as connected');
   t.ok((await fetch(B + '/api/session/exec/poll?wait=1&token=' + s1.token)).status === 403,
     'the superseded token is refused, so the old bridge stops instead of looping');
+
+  // The 404 was two words of plain text until 2026-09-16 — the one screen a
+  // reader reaches by mistyping an address, in a tool that asks to be read.
+  // The second assertion is the one that matters beyond looks: an error page
+  // that repeats the request back is how error pages become an XSS.
+  const missing = await fetch(B + '/nope-<script>alert(1)</script>');
+  const missingBody = await missing.text();
+  t.ok(missing.status === 404 && /text\/html/.test(missing.headers.get('content-type') || ''),
+    'an unknown path answers 404 as a real page, not as plain text');
+  t.ok(/There is nothing at that address/.test(missingBody) && /href="\/"/.test(missingBody),
+    'it says what happened and offers the way back');
+  t.ok(!/nope-/.test(missingBody) && !/alert\(1\)/.test(missingBody),
+    'and it never echoes the path it was asked for, so it cannot reflect anything back');
 };

@@ -172,6 +172,18 @@ same open request accurately. Both errors were in quieter copy beside a status
 panel, which is the useful part: accuracy drifts wherever attention is lowest,
 and a claim is a claim regardless of its font size.
 
+### A wrong address gets a real page
+
+**Typing an address MxScout does not have used to return the words "Not
+found"** as plain text, with none of the product's own look. It is the one
+screen somebody reaches purely by mistake, in a tool whose whole argument is
+that you should read it — so it is held to the same bar as the rest now: a
+sentence saying what happened, and the way back.
+
+It deliberately does not repeat the address you typed. An error page that
+echoes the request back is how error pages turn into a security problem, and a
+404 has nothing to gain by telling you what you just typed.
+
 ## 1.4.0
 
 ### "What it does" moved to where it can be read
