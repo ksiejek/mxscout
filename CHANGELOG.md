@@ -15,7 +15,7 @@ The version in `package.json` is the single source of truth. The About page
 reads it from the running server rather than from a constant, so it cannot
 claim a version it is not.
 
-## Unreleased
+## 1.5.0
 
 ### The About page said the outbound connection only happens while recording. It does not
 
