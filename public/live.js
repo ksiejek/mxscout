@@ -395,7 +395,11 @@
           el('span', { class: 'live-dot' }),
           el('span', { text: 'Connected to your app tab.' })
         ]),
-        el('p', { class: 'muted', text: 'Leave that tab open. Nothing runs there unless you ask for it here.' })
+        // "Nothing runs there" was not true: the snippet holds one open
+        // request to MxScout the whole time, so a keystroke here reaches that
+        // tab at once. What is true is the part that matters — it reads,
+        // writes and runs only when asked. Phase 6 audit, finding 17.
+        el('p', { class: 'muted', text: 'Leave that tab open. The snippet keeps one request open to MxScout so it hears you straight away; nothing is read, written or run there unless you ask for it here.' })
       ]);
     }
 

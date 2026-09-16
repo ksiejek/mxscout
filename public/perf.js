@@ -1342,7 +1342,12 @@
         el('li', { text: 'Copy the code below, paste it there and press Enter — a badge appears in that tab’s bottom-right corner, with a ⏺ on it.' })
       ]),
       copyRow(script, true),
-      el('p', { class: 'muted', text: 'It reads with the rights of the session you are already signed in as, talks to nothing but MxScout on 127.0.0.1, and refuses to run at all on an address that looks like production. It never sees the admin port or its password.' }),
+      // "talks to nothing but MxScout" was wrong, and it was wrong in copy
+      // written to settle someone's nerves — which is the worst place for it.
+      // The snippet also talks to the app it is pasted into, through that
+      // app's own client API; that is its entire job. What it talks to is
+      // those two and no third thing. Phase 6 audit, finding 18.
+      el('p', { class: 'muted', text: 'It reads with the rights of the session you are already signed in as, talks only to MxScout on 127.0.0.1 and to the app it is running in, and refuses to run at all on an address that looks like production. It never sees the admin port or its password.' }),
       el('details', { class: 'scan-source' }, [
         // en-US, not the reader's locale: every other word in this UI is
         // English, so a Polish browser printing "1 105" would be the odd one.

@@ -154,6 +154,24 @@ The button answers for itself now and goes back to normal after a couple of
 seconds. A failure still stays put, because that one asks you to do something —
 select the text and copy it by hand.
 
+### Two sentences in the app said more than the code does
+
+**"Leave that tab open. Nothing runs there unless you ask for it here."** That
+was not true. The snippet keeps one request open to MxScout the whole time it
+is pasted in — which is why a keystroke here reaches that tab at once instead
+of on a timer. What is true, and is what the sentence was reaching for, is that
+nothing is read, written or run there unless you ask. It says that now.
+
+**"Talks to nothing but MxScout on 127.0.0.1."** Also not true, and this one
+was added by the same round of work that is now correcting it. The snippet also
+talks to the app it is pasted into — that is its whole job. It talks to those
+two and to no third thing, which is what it says now.
+
+Neither was on the **About & security** page. That page already described the
+same open request accurately. Both errors were in quieter copy beside a status
+panel, which is the useful part: accuracy drifts wherever attention is lowest,
+and a claim is a claim regardless of its font size.
+
 ## 1.4.0
 
 ### "What it does" moved to where it can be read
