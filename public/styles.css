@@ -20,6 +20,38 @@
   --alarm: #ff6b6b;
   /* Fallback for anything not inside a module-coloured element. */
   --mod: var(--muted);
+
+  /* ---------- the scales ----------
+   * Until 2026-09-16 there were none. A measurement of this file found 571
+   * spacing declarations using 23 different values — 75% of them off any
+   * scale — and 17 font sizes including half-pixels. That, not the palette,
+   * is what "looks amateur" is made of: every value had been chosen once, on
+   * its own, with nothing to be consistent with.
+   *
+   * These are the scales. They are deliberately short, because a scale you
+   * can hold in your head is the only kind that gets followed. Spacing is
+   * Refactoring UI's 4/8/16/24/32/48/64; type is its 12/14/16/18/20/24 with
+   * the sizes this app actually needs.
+   *
+   * Only the performance setup and the recordings list use them so far
+   * (Phase 4 of the UX audit, ROADMAP step 62). The rest of this file is
+   * migrated a surface at a time, each with a finding behind it — a blind
+   * sweep of 571 declarations is exactly the refactor this project has
+   * already been broken by twice. New rules use the tokens from the start. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 32px;
+  --space-6: 48px;
+  --space-7: 64px;
+
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 18px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
 }
 
 * { box-sizing: border-box; }
@@ -2013,20 +2045,23 @@ button.twist:hover { color: var(--text); }
    All three stay on screen the whole time, so the tester can see where they
    are and what is left; only the current one is expanded. A done step keeps
    its number's place but shows a tick and the value it produced. */
-.perf-steps { display: flex; flex-direction: column; gap: 2px; margin-top: 14px; }
-.perf-step { border-top: 1px solid var(--border); padding: 10px 0; }
-.perf-step:first-child { border-top: 0; padding-top: 4px; }
-.perf-step-head { display: flex; align-items: baseline; gap: 11px; }
+/* The gap BETWEEN steps has to beat the space inside one, or three steps read
+   as one block of three rows. It was 2px between and ~12px inside — the rule
+   exactly inverted. Phase 4 audit. */
+.perf-steps { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-3); }
+.perf-step { border-top: 1px solid var(--border); padding: var(--space-2) 0; }
+.perf-step:first-child { border-top: 0; padding-top: var(--space-1); }
+.perf-step-head { display: flex; align-items: baseline; gap: var(--space-2); }
 .perf-step-mark {
   flex: none; width: 20px; height: 20px; border-radius: 50%;
   border: 1px solid var(--border); background: var(--panel-2); color: var(--muted);
   font-size: 11px; font-weight: 600; line-height: 18px; text-align: center;
   align-self: center;
 }
-.perf-step-title { font-size: 13px; color: var(--muted); }
+.perf-step-title { font-size: var(--text-sm); color: var(--muted); }
 .perf-step-value {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11.5px; color: var(--muted);
+  font-size: var(--text-xs); color: var(--muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .perf-step-head .btn { margin-left: auto; }
@@ -2038,48 +2073,51 @@ button.twist:hover { color: var(--text); }
 }
 .perf-step.is-done .perf-step-value { color: var(--text); }
 .perf-step.is-todo { opacity: 0.5; }
-.perf-step-body { padding: 12px 0 2px 31px; }
-.perf-step-body .scan-script { margin-top: 4px; }
+/* Left padding lines the body up under the step's title, past the 20px mark
+   and its gap — a mapping, not a round number, so it stays off the scale on
+   purpose and says so. */
+.perf-step-body { padding: var(--space-2) 0 0 28px; }
+.perf-step-body .scan-script { margin-top: var(--space-1); }
 /* The connect strip above earns the full row's width; these two fields don't
    — an address or a pasted password stretched edge-to-edge just strands the
    Continue/Connect button far to the right of what it acts on. */
 .perf-step-body .live-url-row { max-width: 460px; }
 
-.perf-connect-strip { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-.perf-connect-addr { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
+.perf-connect-strip { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.perf-connect-addr { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--text-xs); }
 .perf-connect-strip .btn { margin-left: auto; }
 /* The recorder's own diagnosis when the admin port stops answering. Alarm
    coloured because an empty recording is otherwise indistinguishable from an
    idle app — that ambiguity was the whole "always 0 samples" bug. */
 .perf-trouble {
   color: var(--alarm);
-  font-size: 12.5px;
-  margin: 10px 0 0;
+  font-size: var(--text-xs);
+  margin: var(--space-2) 0 0;
 }
 
 /* ---------- performance: the recordings dashboard ---------- */
-.rec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-top: 22px; }
+.rec-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-4); }
 .rec-head .live-h { margin: 0; }
-.rec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 14px; }
-.rec-card { display: flex; flex-direction: column; gap: 10px; cursor: pointer; }
+.rec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-3); margin-top: var(--space-3); }
+.rec-card { display: flex; flex-direction: column; gap: var(--space-2); cursor: pointer; }
 .rec-card:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
 .rec-card.is-empty { border-style: dashed; cursor: default; }
-.rec-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-.rec-when { font-size: 14px; font-weight: 600; }
-.rec-figs { display: flex; gap: 16px; font-variant-numeric: tabular-nums; }
-.rec-fig .v { font-size: 17px; font-weight: 600; display: block; line-height: 1.25; }
-.rec-fig .k { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.rec-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+.rec-when { font-size: var(--text-sm); font-weight: 600; }
+.rec-figs { display: flex; gap: var(--space-3); font-variant-numeric: tabular-nums; }
+.rec-fig .v { font-size: var(--text-lg); font-weight: 600; display: block; line-height: 1.25; }
+.rec-fig .k { font-size: var(--text-xs); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .rec-spark { height: 34px; }
 .rec-spark svg { display: block; width: 100%; height: 34px; }
-.rec-top { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 7px; min-height: 18px; margin: 0; }
-.rec-top b { color: var(--text); font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
-.rec-actions { display: flex; gap: 6px; padding-top: 2px; }
+.rec-top { font-size: var(--text-xs); color: var(--muted); display: flex; align-items: center; gap: var(--space-2); min-height: 18px; margin: 0; }
+.rec-top b { color: var(--text); font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--text-xs); }
+.rec-actions { display: flex; gap: var(--space-2); }
 /* Colour says "careful"; distance is what actually makes the slip harder.
  * The irreversible action sat 6 px from Export and 8 px from Package… — the
  * same gap as between two reversible ones — so it is pushed off that row and
  * given a hairline to sit behind. Phase 3 audit, finding 14. */
 .rec-actions .btn-danger-outline,
-.project-actions .btn-danger-outline { margin-left: 18px; position: relative; }
+.project-actions .btn-danger-outline { margin-left: var(--space-3); position: relative; }
 .rec-actions .btn-danger-outline::before,
 .project-actions .btn-danger-outline::before {
   content: ''; position: absolute; left: -10px; top: 15%; bottom: 15%;
@@ -2097,7 +2135,7 @@ button.twist:hover { color: var(--text); }
 .rec-glyph { width: 10px; height: 10px; border-radius: 50%; background: var(--alarm); flex: none; }
 .btn-danger .rec-glyph { background: #2a0808; }
 .rec-glyph.is-stop { border-radius: 2px; }
-.rec-warn { color: var(--alarm); font-size: 12px; margin: 0; }
+.rec-warn { color: var(--alarm); font-size: var(--text-xs); margin: 0; }
 
 /* ---------- performance: the single-recording analyzer ---------- */
 .perf-back-row { margin-bottom: 10px; }

@@ -174,6 +174,21 @@ module.exports = async function (t) {
   t.ok(!(await mx.evaluate(`document.querySelector('.content-wrap').classList.contains('wide')`)),
     'the About page stays at reading width, not stretched full-bleed like the map/flow views');
   t.ok(/\/api\/changelog/.test(about), 'About lists the new endpoint');
+
+  // The About page's "Size" row states how many files the test suite is. It
+  // had drifted to 41 against a real 47 before anyone noticed, and was then
+  // corrected by hand twice more in three days — which is what a number
+  // maintained by memory does. It is a claim like any other on that page, so
+  // it gets checked like one: counted here, in Node, against the disk.
+  const fsMod = require('fs');
+  const pathMod = require('path');
+  const countFiles = (dir) => fsMod.readdirSync(dir, { withFileTypes: true })
+    .reduce((n, e) => n + (e.isDirectory() ? countFiles(pathMod.join(dir, e.name)) : 1), 0);
+  const realFiles = countFiles(pathMod.join(__dirname));
+  const claimed = (fsMod.readFileSync(pathMod.join(__dirname, '..', 'public', 'about.js'), 'utf8')
+    .match(/another ([\d,]+) files/) || [])[1];
+  t.ok(claimed && Number(claimed.replace(/,/g, '')) === realFiles,
+    'the About page\'s count of the test suite matches what is actually in test/: says ' + claimed + ', is ' + realFiles);
   t.ok(/Versions and updates/.test(about), 'About has a section on versions and updates');
   t.ok(/does not check whether a newer version exists/.test(about), 'and states the policy in those words');
   t.ok(/never rewrites its own files|git pull/.test(about), 'and says who performs an update');

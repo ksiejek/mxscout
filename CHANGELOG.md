@@ -105,6 +105,38 @@ that page depends on the number, but it is the row somebody reads to judge
 whether they can audit this tool themselves, and a stale count there costs the
 same as a stale claim anywhere else on it.
 
+### The interface gets a scale
+
+**MxScout had no spacing scale and no type scale.** Measuring the stylesheet
+found 571 spacing declarations using 23 different values — three quarters of
+them on no scale at all, essentially every whole number from 1 to 18 — and 17
+font sizes including half-pixels like 10.5 and 12.5. That, rather than the
+colours, is what made it look homemade: every value had been picked once, on
+its own, with nothing to be consistent with.
+
+There is a scale now — 4, 8, 16, 24, 32, 48, 64 for space and 12, 14, 16, 18,
+20, 24 for type — and the performance setup and recordings list have moved onto
+it. **The visible difference is that three setup steps now read as three
+steps.** The gap between them was two pixels while the padding inside one was
+twelve, so they grouped into a single block of rows; the gap is bigger than the
+padding now, which is the way round it should have been.
+
+**The rest of the stylesheet has not moved, on purpose.** Rewriting 571
+declarations in one go, with a test suite that checks behaviour rather than
+layout, is the kind of change that has put this app on a blank screen before.
+Surfaces move one at a time.
+
+Nothing about the colours changed. They were checked and they hold: the screens
+read with the colour removed entirely, and the lowest contrast anywhere in that
+flow is 6.26:1 against a 4.5:1 requirement.
+
+### The About page's own numbers are now checked by a test
+
+**The count of test files on the About page is a claim like every other one on
+that page**, and it had been corrected by hand three times in three days. It is
+counted against the disk by the test suite now, so it cannot quietly drift
+again.
+
 ## 1.4.0
 
 ### "What it does" moved to where it can be read
