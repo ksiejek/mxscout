@@ -68,7 +68,7 @@
       observedIntervalMs: observedIntervalMs, totalDurationMs: totalDurationMs,
       concurrencySeries: concurrencySeries, poolSeries: poolSeries, gcMarks: gcMarks,
       connectionbusSeries: connectionbusSeries, sparklineSvg: sparklineSvg,
-      formatMs: formatMs, formatBytes: formatBytes, typeClass: typeClass,
+      formatMs: formatMs, formatBytes: formatBytes, typeClass: typeClass, requestLabel: requestLabel,
       moduleOf: moduleOf, xpathEntityQualifiedName: xpathEntityQualifiedName,
       resolveFrame: resolveFrame, findingButton: findingButton, CB_OPS: CB_OPS
     });
@@ -852,6 +852,22 @@
     return order.map(function (id) { return byId[id]; });
   }
 
+  // What a request is called. Its entry point when one was ever seen; when the
+  // runtime put NOTHING on its stack at any look — which is what `lastStack`
+  // still being empty means, since only a non-empty stack is kept — it says
+  // exactly that, instead of the admin port's request id. A real 2026-09-16
+  // recording had five of those, 1–10 ms each, and they were listed as five
+  // bare UUIDs in "Where the time went" that read like five different things
+  // nobody could name. The id itself stays reachable, as a tooltip or beside
+  // the label, because it is still the only handle on a request. A stack
+  // whose frames carried nothing recognisable is a different case, and keeps
+  // its id rather than being called empty.
+  var NO_ACTION_LABEL = 'no action reported';
+  function requestLabel(row) {
+    if (row.entry) return row.entry;
+    return (row.lastStack && row.lastStack.length) ? row.id : NO_ACTION_LABEL;
+  }
+
   function totalDurationMs(recording) {
     var samples = recording.samples || [];
     if (!samples.length) return 0;
@@ -924,7 +940,7 @@
     var order = [];
     var grandTotal = 0;
     rows.forEach(function (row) {
-      var key = row.entry || row.id;
+      var key = requestLabel(row);
       // Time this request was VISIBLE in the recording, not `request_duration`.
       // That field is the runtime's own counter since the request began, and a
       // real 2026-09-09 recording had a CUSTOM request reporting 321 747 ms
@@ -1674,7 +1690,7 @@
           el('div', { class: 'share-track' }, [el('div', { class: 'share-fill', style: 'width:' + item.share + '%' })])
         ]),
         el('span', { class: 'share-val', text: formatMs(item.ms) + ' · ' + item.share + '%' })
-      ]), moduleOf(item.name) || item.name);
+      ]), moduleOf(item.name) || (item.name === NO_ACTION_LABEL ? 'System' : item.name));
     });
 
     return el('div', {}, [
@@ -1721,7 +1737,6 @@
     });
     function sumCalls(list) { return list.reduce(function (n, r) { return n + r.calls; }, 0); }
     return {
-      requests: buildRequestRows(recording).length,
       flowRuns: sumCalls(flows), flowNames: flows.length,
       retrieveRuns: sumCalls(queries), retrieveQueries: queries.length,
       db: db, hasDb: connectionbusSeries(recording).length > 0
@@ -1746,11 +1761,19 @@
       el('p', { class: 'muted', text: 'The numbers to put beside another recording of the same scenario. Record it once, change something, record it again — these are what should move.' })
     ];
 
+    // The database counters belong to the whole Mendix process, and the tile
+    // used to divide them by the requests this recording caught — "37 per
+    // request". On a real 2026-09-16 recording that was 594 selects and 487
+    // transactions over 16 requests in 49 s, most of it an app with a dozen
+    // queues and scheduled events polling in the background: the division
+    // pinned that work on the clicks. The heading says whose numbers these
+    // are now, and the rate is per second, which is only arithmetic.
     if (w.hasDb) {
       var rest = w.db.total - w.db.select;
-      kids.push(el('h4', { class: 'perf-sub-h', text: 'Counted by the runtime' }));
+      var secs = totalDurationMs(recording) / 1000;
+      kids.push(el('h4', { class: 'perf-sub-h', text: 'Counted by the runtime — the whole process, not only these requests' }));
       kids.push(statTiles([
-        { v: String(w.db.select), k: 'selects', n: w.requests ? (Math.round(w.db.select / w.requests) + ' per request') : '' },
+        { v: String(w.db.select), k: 'selects', n: secs >= 1 ? (Math.round(w.db.select / secs) + ' a second') : '' },
         { v: String(w.db.total), k: 'database operations', n: rest + ' of them not selects' },
         { v: String(w.db.insert + w.db.update + w.db.delete), k: 'writes',
           n: w.db.insert + ' insert · ' + w.db.update + ' update · ' + w.db.delete + ' delete' },
@@ -1763,12 +1786,13 @@
       { v: String(w.flowRuns), k: 'microflow runs seen',
         n: w.flowNames + ' different microflow' + (w.flowNames === 1 ? '' : 's') },
       { v: String(w.retrieveRuns), k: 'retrieves seen',
-        n: w.retrieveQueries + ' different quer' + (w.retrieveQueries === 1 ? 'y' : 'ies') },
-      { v: String(w.requests), k: 'requests', n: 'entry points into the runtime' }
+        n: w.retrieveQueries + ' different quer' + (w.retrieveQueries === 1 ? 'y' : 'ies') }
+      // No requests tile here: the first card already has one, with the same
+      // number, and a second copy only made the reader check they matched.
     ]));
 
     kids.push(el('p', { class: 'muted', style: 'margin:14px 0 0;font-size:12px', text:
-      'How many ROWS those retrieves returned is not in this data at all — the admin port reports the query and the range it asked for, never the answer. The count of selects is the closest thing to it, and it is exact. The microflow and retrieve counts are not: a call that started and finished between two looks was never there to be seen, so treat them as a floor that moves the right way, not as a tally.' }));
+      'How many ROWS those retrieves returned is not in this data at all — the admin port reports the query and the range it asked for, never the answer. The count of selects is the closest thing to it, and it is exact — but for everything the runtime did while this ran, scheduled events and queues included, so compare two recordings made on an otherwise quiet app. The microflow and retrieve counts are not exact: a call that started and finished between two looks was never there to be seen, so treat them as a floor that moves the right way, not as a tally.' }));
 
     return el('div', { class: 'card' }, kids);
   }
@@ -2116,7 +2140,7 @@
           ])]),
           el('tbody', {}, rows.map(function (row) {
             return el('tr', {}, [
-              el('td', { class: 'wide', text: row.entry || row.id }),
+              el('td', { class: 'wide' + (row.entry ? '' : ' muted'), text: requestLabel(row), title: 'request ' + row.id }),
               el('td', { text: typeClass(row.type) }),
               el('td', { text: row.user || '' }),
               el('td', { class: 'n', text: '+' + formatMs(row.firstT) }),
@@ -2210,6 +2234,7 @@
     buildPasswordScript: buildPasswordScript,
     resolveFrame: resolveFrame,
     buildRequestRows: buildRequestRows,
+    requestLabel: requestLabel,
     buildSpans: buildSpans,
     buildCallTree: buildCallTree,
     hotFlows: hotFlows,

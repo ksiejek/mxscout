@@ -26,7 +26,7 @@
   var el, withMod, peekObject;
   var buildRequestRows, buildSpans, observedIntervalMs, totalDurationMs,
       concurrencySeries, poolSeries, gcMarks, connectionbusSeries, sparklineSvg,
-      formatMs, formatBytes, typeClass, moduleOf, xpathEntityQualifiedName,
+      formatMs, formatBytes, typeClass, requestLabel, moduleOf, xpathEntityQualifiedName,
       resolveFrame, findingButton, CB_OPS;
 
   function init(deps) {
@@ -45,6 +45,7 @@
     formatMs = deps.formatMs;
     formatBytes = deps.formatBytes;
     typeClass = deps.typeClass;
+    requestLabel = deps.requestLabel;
     moduleOf = deps.moduleOf;
     xpathEntityQualifiedName = deps.xpathEntityQualifiedName;
     resolveFrame = deps.resolveFrame;
@@ -154,12 +155,12 @@
   // as a colour nobody has a legend for.
   function renderBar(row) {
     var g = tlPlace(row.firstT, row.lastT + observedIntervalMs(_tlRecording));
-    var name = row.entry || row.id;
+    var name = requestLabel(row);
     var bar = el('button', {
       class: 'perf-bar' + (selectedRequestId === row.id ? ' is-selected' : ''),
       'data-x0': g.x0.toFixed(1),
       style: 'left:' + g.x0.toFixed(1) + 'px;width:' + g.w.toFixed(1) + 'px',
-      title: name + ' \u2014 ' + formatMs((row.lastT - row.firstT) + observedIntervalMs(_tlRecording)),
+      title: name + (row.entry ? '' : ' (request ' + row.id + ')') + ' \u2014 ' + formatMs((row.lastT - row.firstT) + observedIntervalMs(_tlRecording)),
       onclick: function () { selectedRequestId = row.id; pickedSpanIndex = null; repaintTimeline(); },
       ondblclick: function () { tlZoomTo(row.firstT, row.lastT, true); }
     }, [
@@ -477,7 +478,7 @@
     tracks.push({ name: 'Call stack',
       // The whole entry point, not its last dot-segment: the gutter wraps now,
       // so there is nothing to be gained by hiding which module it came from.
-      read: selectedRow ? (selectedRow.entry || selectedRow.id) : 'pick a request',
+      read: selectedRow ? requestLabel(selectedRow) : 'pick a request',
       h: 0, body: selectedRow ? renderFlame(spans) : el('p', { class: 'muted perf-hint', text: 'Click a request bar above.' }) });
     tracks.forEach(function (tr) {
       gutter.appendChild(el('div', { class: 'tl-name' + (tr.h ? '' : ' is-auto'), style: tr.h ? 'height:' + tr.h + 'px' : null }, [
@@ -495,8 +496,8 @@
 
     if (selectedRow) {
       host.appendChild(el('div', { class: 'perf-detail-head' }, [
-        el('span', { class: 'perf-detail-title', text: selectedRow.entry || selectedRow.id }),
-        el('span', { class: 'muted', text: [selectedRow.type, selectedRow.user, formatMs((selectedRow.lastT - selectedRow.firstT) + interval)].filter(Boolean).join(' \u00b7 ') })
+        el('span', { class: 'perf-detail-title', text: requestLabel(selectedRow) }),
+        el('span', { class: 'muted', text: [selectedRow.type, selectedRow.user, selectedRow.entry ? null : 'request ' + selectedRow.id, formatMs((selectedRow.lastT - selectedRow.firstT) + interval)].filter(Boolean).join(' \u00b7 ') })
       ]));
       host.appendChild(renderSpanDetail(model, spans));
     }

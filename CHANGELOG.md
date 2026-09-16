@@ -50,6 +50,25 @@ whose roles carry no description says so once, in its heading, rather than
 "no description" on every row; roles that no user role carries are shown with
 their module in front, since "Administrator" alone names nothing.
 
+### The Overview stops blaming the runtime's background work on your clicks
+
+**"Selects — 37 per request" is gone.** The database counters belong to the
+whole Mendix process, and dividing them by the requests a recording caught
+charged every scheduled event and queue poll to the scenario being recorded —
+594 selects over 16 requests, on an app with a dozen queues. The heading now
+says the counters are the whole process's, the tile gives a rate per second,
+and the note under the card says to compare two recordings made on an otherwise
+quiet app.
+
+**A request the runtime put nothing on the stack for is called "no action
+reported"**, and such requests are grouped as one row in "Where the time went",
+instead of appearing as bare request ids that read like different things. The
+id is still there — beside the name on the Timeline, and as a tooltip in
+Slowest requests.
+
+**The request count appears once.** "How much work this took" repeated the tile
+from the card above it.
+
 ## 1.5.0
 
 ### The About page said the outbound connection only happens while recording. It does not

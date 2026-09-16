@@ -470,6 +470,23 @@ module.exports = async function (t) {
   t.ok(totals.list[0].share === 67,
     'so a job that started long before Start is a share of THIS recording, not of its own lifetime: ' + totals.list[0].share + '%');
 
+  // A request the runtime put nothing on the stack for, at any look, is said
+  // to be exactly that — once, grouped — rather than listed as bare request
+  // ids that read like different things (five UUIDs on a real recording).
+  const emptyStacks = {
+    intervalMs: 10,
+    samples: [
+      { t: 0, requests: { 'aa-1': { action_stack: [] }, 'bb-2': { action_stack: [] } } },
+      { t: 10, requests: { 'aa-1': { action_stack: [] } } },
+      { t: 20, requests: { 'cc-3': { action_stack: [{ name: 'Sales.Quick', type: 'Microflow' }] } } }
+    ]
+  };
+  const emptyTotals = await mx.evaluate(`window.MxPerf.entryTotals(${JSON.stringify(emptyStacks)})`);
+  const emptyLabels = await mx.evaluate(`window.MxPerf.buildRequestRows(${JSON.stringify(emptyStacks)}).map(window.MxPerf.requestLabel)`);
+  t.ok(emptyLabels.join(',') === 'no action reported,no action reported,Sales.Quick' &&
+       emptyTotals.list.length === 2 && emptyTotals.list.some(function (i) { return i.name === 'no action reported'; }),
+    'requests with nothing ever on their stack are named as such and grouped, not listed by id: ' + JSON.stringify({ emptyLabels, list: emptyTotals.list }));
+
   await mx.evaluate(`(async () => {
     await MxStore.saveProjectWithModel(
       { id: 'p1', name: 'Demo', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
@@ -679,6 +696,14 @@ module.exports = async function (t) {
     'and it carries what two recordings are compared on: ' + JSON.stringify(workCard && workCard.tiles));
   t.ok(workCard && /How many ROWS those retrieves returned is not in this data/.test(workCard.text),
     'the number the admin port does NOT report is named, rather than approximated by something else');
+  // The database counters are the whole process's. Divided by the requests a
+  // recording caught, they pinned an app's background queues on the clicks —
+  // "37 per request" on a real 2026-09-16 recording of 16 requests.
+  t.ok(workCard && /whole process, not only these requests/.test(workCard.heads[0]) && !/per request/.test(workCard.text) &&
+       /queues included/.test(workCard.text),
+    'the runtime\'s counters say whose they are, and are never divided by the requests: ' + JSON.stringify(workCard && workCard.heads));
+  t.ok(workCard && workCard.tiles.indexOf('requests') === -1,
+    'and the request count is not repeated here — the first card already carries it: ' + JSON.stringify(workCard && workCard.tiles));
 
   await app.close();
 
