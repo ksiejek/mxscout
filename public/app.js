@@ -71,19 +71,25 @@
   };
 
   var _messageTimer = null;
-  function setMessage(text, kind) {
+  // `action` is optional: { label, onclick }. It is how a destructive action
+  // offers to be taken back — a confirmation asks before the fact and gets
+  // dismissed by habit, an undo catches the slip after it. Phase 3 audit.
+  function setMessage(text, kind, action) {
     if (_messageTimer) { clearTimeout(_messageTimer); _messageTimer = null; }
-    state.message = text ? { text: text, kind: kind || 'error' } : null;
+    state.message = text ? { text: text, kind: kind || 'error', action: action || null } : null;
     // A success toast is about what just happened, not a standing fact about
     // the screen — unlike an error, which stays until the thing it complains
     // about is fixed, it should get out of the way on its own instead of
     // following the user to every page they visit next.
     if (state.message && state.message.kind === 'ok') {
       var mine = state.message;
+      // A message carrying an undo has to be read, decided on and clicked, so
+      // it gets longer than one that only reports. Still short enough that it
+      // does not follow the user to the next screen.
       _messageTimer = setTimeout(function () {
         _messageTimer = null;
         if (state.message === mine) { state.message = null; render(); }
-      }, 4000);
+      }, action ? 9000 : 4000);
     }
   }
 
@@ -2102,7 +2108,14 @@
     );
     var wrap = el('div', { class: 'content-wrap' + (fullBleed ? ' wide' : '') }, [body]);
     if (state.message) {
-      wrap.appendChild(el('div', { class: 'msg ' + state.message.kind, text: state.message.text }));
+      var msgNode = el('div', { class: 'msg ' + state.message.kind, text: state.message.text });
+      if (state.message.action) {
+        msgNode.appendChild(el('button', {
+          class: 'msg-action', text: state.message.action.label,
+          onclick: state.message.action.onclick
+        }));
+      }
+      wrap.appendChild(msgNode);
     }
 
     app.appendChild(el('div', { class: 'shell' }, [

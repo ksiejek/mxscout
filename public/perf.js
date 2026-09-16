@@ -1477,16 +1477,43 @@
     });
   }
 
+  // Deleting a recording used to ask first, through the browser's own
+  // confirm() — the one dialog people are best trained to dismiss unread, and
+  // a second answer to a question public/app.js already answers its own way
+  // for projects. It deletes and offers to take it back instead: a
+  // confirmation asks before the slip, an undo catches it after.
+  //
+  // Nothing is held back from the database to make this work. The row really
+  // is deleted; `copy` is the object this card was already rendering from, in
+  // this page's memory, and undo writes it again. So every promise about
+  // deleting — on the About page, in the README — stays exactly as true as it
+  // was. Phase 3 audit, findings 11, 12 and 13.
   function renderDeleteButton(r) {
     return el('button', {
       class: 'btn btn-sm btn-danger-outline', text: 'Delete',
       onclick: function (e) {
         if (e) e.stopPropagation();
-        if (!confirm('Delete this recording? This cannot be undone.')) return;
+        var copy = r;
         deleteRecording(r.id).then(function () {
           if (!state.detail || !state.detail.perf) return;
           state.detail.perf.recordings = (state.detail.perf.recordings || []).filter(function (x) { return x.id !== r.id; });
           if (state.detail.perf.selectedId === r.id) state.detail.perf.selectedId = null;
+          setMessage('Recording deleted.', 'ok', {
+            label: 'Undo',
+            onclick: function () {
+              saveRecording(copy).then(function () {
+                if (!state.detail || !state.detail.perf) return;
+                var list = (state.detail.perf.recordings || []).concat([copy]);
+                list.sort(function (a, b) { return String(b.started).localeCompare(String(a.started)); });
+                state.detail.perf.recordings = list;
+                setMessage('Recording restored.', 'ok');
+                render();
+              }, function (err) {
+                setMessage((err && err.message) || 'Could not restore that recording.', 'error');
+                render();
+              });
+            }
+          });
           render();
         }, function (err) { setMessage((err && err.message) || 'Could not delete that recording.', 'error'); render(); });
       }

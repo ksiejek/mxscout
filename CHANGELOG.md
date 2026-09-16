@@ -73,6 +73,38 @@ thing the New project dialog now leads with. The empty state says what is
 actually true: a model read straight from a Mendix project folder, or from a
 JSON export.
 
+### Deleting a recording can be taken back
+
+**A recording now deletes and offers to undo it**, instead of asking first
+through the browser's own confirm box. A confirmation arrives before the
+mistake and gets dismissed out of habit; an undo catches the mistake after it
+happens, which is the one that works. The offer stands for nine seconds in the
+message bar.
+
+**Nothing is held back from the database to make that possible.** The row
+really is deleted the moment you press Delete. Undo writes back the copy the
+card on screen was already drawn from, which lives in this page's memory — so
+every sentence in MxScout about deleting is exactly as true as it was before.
+The test for this reads the browser's database directly at each step rather
+than trusting the list, so it stays that way.
+
+**Deleting also says it happened.** It used to succeed in silence — the card
+vanished and nothing else changed — while a *failure* got a message. That was
+the wrong way round.
+
+**Delete now sits further away from what it sits next to.** On a recording it
+was six pixels from Export, exactly as far as Export is from Open; in the
+project header it was eight from Package…, exactly as far as Package… is from
+Replace model…. The colour said "careful" while the geometry said "just
+another button". There is distance and a hairline between them now.
+
+### A count on the About page that had drifted
+
+**The About page said the test suite is 41 files.** It is 48. Nothing else on
+that page depends on the number, but it is the row somebody reads to judge
+whether they can audit this tool themselves, and a stale count there costs the
+same as a stale claim anywhere else on it.
+
 ## 1.4.0
 
 ### "What it does" moved to where it can be read
