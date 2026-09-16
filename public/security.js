@@ -488,42 +488,48 @@
       var carried = [], orphans = [];
       moduleRoles.forEach(function (r) { (held[r.qualifiedName] ? carried : orphans).push(r); });
 
-      function roleTable(list) {
-        return el('table', { class: 'sec-table' }, [
-          el('thead', {}, [el('tr', {}, [el('th', { text: 'Module role' }), el('th', { text: 'What it is for' })])]),
-          el('tbody', {}, list.map(function (r) {
-            return el('tr', {}, [
-              el('td', {}, [el('strong', { text: r.name })].concat(
-                granted[r.qualifiedName] ? [] : [markNote('grants nothing', 'No access rule, microflow or page names this role')])),
-              el('td', {}, [r.description
-                ? el('span', { text: r.description })
-                : el('span', { class: 'muted', text: 'no description' })])
-            ]);
-          }))
-        ]);
+      // A list, not a two-column table. Every module got its own table, each
+      // sized to its own content, so the second column started somewhere
+      // different in every group — and in a real project nearly every row of
+      // that column said "no description". The name leads, a description sits
+      // under it when there is one, and a module with none says so once, in
+      // its heading, instead of once per role (Karol, 2026-09-16).
+      function roleList(list, qualified) {
+        return el('ul', { class: 'sec-roles' }, list.map(function (r) {
+          return el('li', {}, [
+            el('div', {}, [el('strong', { text: qualified ? (r.qualifiedName || r.name) : r.name })].concat(
+              granted[r.qualifiedName] ? [] : [markNote('grants nothing', 'No access rule, microflow or page names this role')])),
+            r.description ? el('div', { class: 'muted sec-note', text: r.description }) : null
+          ].filter(Boolean));
+        }));
+      }
+      function countLabel(list) {
+        var described = list.filter(function (r) { return !!r.description; }).length;
+        return list.length + ' role' + (list.length === 1 ? '' : 's') +
+          (described ? '' : (list.length === 1 ? ' · no description' : ' · none described'));
       }
 
       kids.push(el('h4', { class: 'sec-sub-h', text: 'What those module roles are' }));
       var byModule = {};
       carried.forEach(function (r) { (byModule[r.module] = byModule[r.module] || []).push(r); });
-      Object.keys(byModule).sort().forEach(function (mod) {
-        kids.push(withMod(el('div', { class: 'module-group' }, [
+      kids.push(el('div', { class: 'sec-mod-grid' }, Object.keys(byModule).sort().map(function (mod) {
+        return withMod(el('div', { class: 'module-group' }, [
           el('div', { class: 'module-group-head' }, [
             el('span', { class: 'module-group-name', text: mod }),
-            el('span', { class: 'module-group-count', text: byModule[mod].length + ' role' + (byModule[mod].length === 1 ? '' : 's') })
+            el('span', { class: 'module-group-count', text: countLabel(byModule[mod]) })
           ]),
-          roleTable(byModule[mod])
-        ]), mod));
-      });
+          roleList(byModule[mod])
+        ]), mod);
+      })));
 
       if (orphans.length) {
         kids.push(el('div', { class: 'module-group sec-orphans' }, [
           el('div', { class: 'module-group-head' }, [
             el('span', { class: 'module-group-name', text: 'Carried by no user role' }),
-            el('span', { class: 'module-group-count', text: orphans.length + ' role' + (orphans.length === 1 ? '' : 's') })
+            el('span', { class: 'module-group-count', text: countLabel(orphans) })
           ]),
           el('p', { class: 'hint', text: 'These are declared by their module, but no user role carries them — so nobody in this app can ever hold one. Shown as a group rather than as a badge, because where they sit is the fact.' }),
-          roleTable(orphans)
+          roleList(orphans, true)
         ]));
       }
     }

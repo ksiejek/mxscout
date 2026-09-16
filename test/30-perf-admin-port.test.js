@@ -321,6 +321,20 @@ module.exports = async function (t) {
   t.ok(byDepth[2] && byDepth[2].kind === 'activity' && byDepth[2].t0 === 0 && byDepth[2].t1 === 100,
     'depth 2, the leaf, is the FIRST array entry, spanning both samples plus one interval: ' + JSON.stringify(byDepth[2]));
 
+  // Self can never be more than total. It was, on a real 2026-09-16
+  // recording — self 18.3 s, total 18.0 s — because self was samples × the
+  // MEDIAN gap while total came off the real timestamps, and real gaps are
+  // uneven. Here the median is 20 ms but most of the recording ran 10 ms
+  // apart: the old sum made the leaf's self 5 × 20 = 100 ms of a 60 ms call.
+  const uneven = await mx.evaluate(`(function(){
+    var stack = [{ xpath: '//Sales.Order' }];
+    var ts = [0, 10, 20, 30, 40, 60, 80, 100, 120, 140];
+    var samples = ts.map(function (t, i) { return { t: t, requests: i < 5 ? { r1: { action_stack: stack } } : {} }; });
+    return window.MxPerf.buildSpans({ intervalMs: 10, samples: samples }, 'r1');
+  })()`);
+  t.ok(uneven.length === 1 && uneven[0].self <= (uneven[0].t1 - uneven[0].t0) && uneven[0].self === 60,
+    'self is measured on the same clock as total, so it never exceeds it: ' + JSON.stringify(uneven.map(function (s) { return { t0: s.t0, t1: s.t1, self: s.self }; })));
+
   // ---------- Phase 2c: buildCallTree / hotFlows / hotXpaths / slowestRequests
   // Two requests call the same root microflow (should merge into one call-tree
   // row with calls:2); within the first, the same retrieve appears, drops out
@@ -843,6 +857,78 @@ module.exports = async function (t) {
   })()`);
   t.ok(Math.abs((miniDrag.after - miniDrag.before) - miniDrag.expected) < 12,
     'the overview window follows the drag by the same distance, instead of jumping to centre on the pointer: ' + JSON.stringify(miniDrag));
+
+  // The same complaint, second round (Karol, 2026-09-16: "ucieka na początek
+  // … jest długi, nagle się robi krótki"). A repaint used to size the window
+  // off a 700 px stand-in, because the scroller it measures had just been
+  // removed; it came right only on the next scroll event. Read straight after
+  // a repaint, with no frame in between, the window must already be the
+  // share of the recording the tracks below really show.
+  const afterRepaint = await mx.evaluate(`(function(){
+    Array.from(document.querySelectorAll('.tl-zoom-btn')).filter(function (b) { return b.textContent === '+'; })[0].click();
+    var mini = document.querySelector('.tl-mini');
+    var win = mini.querySelector('.tl-mini-win').getBoundingClientRect();
+    var sc = document.querySelector('.tl-scroll');
+    return {
+      shown: win.width / mini.getBoundingClientRect().width,
+      expected: sc.clientWidth / document.querySelector('.tl-canvas').offsetWidth
+    };
+  })()`);
+  t.ok(Math.abs(afterRepaint.shown - afterRepaint.expected) < 0.02,
+    'right after a repaint the overview window is already as wide as what the tracks show: ' + JSON.stringify(afterRepaint));
+
+  // Pressing the strip beside the window — which is where a slightly missed
+  // edge grip lands — used to zoom to 20 ms around the pointer before it had
+  // moved at all. A click now moves the window there and leaves the zoom be.
+  const clickPan = await mx.evaluate(`(function(){
+    var mini = document.querySelector('.tl-mini');
+    var mb = mini.getBoundingClientRect();
+    var wb = mini.querySelector('.tl-mini-win').getBoundingClientRect();
+    var leftRoom = wb.left - mb.left, rightRoom = mb.right - wb.right;
+    var shade = mini.querySelector(leftRoom > rightRoom ? '.tl-mini-shade.is-left' : '.tl-mini-shade.is-right');
+    var x = leftRoom > rightRoom ? mb.left + leftRoom / 2 : wb.right + rightRoom / 2;
+    var y = mb.top + 10;
+    var scale = document.querySelector('.tl-scale').textContent;
+    shade.dispatchEvent(new MouseEvent('mousedown', { clientX: x, clientY: y, bubbles: true }));
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: x, clientY: y, bubbles: true }));
+    return new Promise(function (resolve) {
+      requestAnimationFrame(function () { requestAnimationFrame(function () {
+        var w = document.querySelector('.tl-mini-win').getBoundingClientRect();
+        resolve({ x: x, left: w.left, right: w.right, before: scale, after: document.querySelector('.tl-scale').textContent });
+      }); });
+    });
+  })()`);
+  t.ok(clickPan.before === clickPan.after && clickPan.left - 2 <= clickPan.x && clickPan.x <= clickPan.right + 2,
+    'a click on the strip moves the window to it at the same zoom, instead of collapsing the view: ' + JSON.stringify(clickPan));
+
+  // Dragging an edge puts that edge under the pointer, not a sample's padding
+  // and eight pixels beside it.
+  const edgeDrag = await mx.evaluate(`(function(){
+    var mini = document.querySelector('.tl-mini');
+    var grip = mini.querySelector('.tl-mini-grip.is-r');
+    var gb = grip.getBoundingClientRect();
+    var y = gb.top + 5, startX = (gb.left + gb.right) / 2, toX = startX - 30;
+    grip.dispatchEvent(new MouseEvent('mousedown', { clientX: startX, clientY: y, bubbles: true }));
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: toX, clientY: y, bubbles: true }));
+    return new Promise(function (resolve) {
+      requestAnimationFrame(function () { requestAnimationFrame(function () {
+        var w = document.querySelector('.tl-mini-win').getBoundingClientRect();
+        window.dispatchEvent(new MouseEvent('mouseup', { clientX: toX, clientY: y, bubbles: true }));
+        resolve({ toX: toX, right: w.right });
+      }); });
+    });
+  })()`);
+  t.ok(Math.abs(edgeDrag.right - edgeDrag.toX) < 4,
+    'the dragged edge of the window lands under the pointer: ' + JSON.stringify(edgeDrag));
+
+  // Stretched all the way, neighbouring ticks used to read the same — every
+  // one across the panel said "+9.3 s" on a real recording.
+  for (let i = 0; i < 16; i++) {
+    await mx.evaluate(`Array.from(document.querySelectorAll('.tl-zoom-btn')).filter(function (b) { return b.textContent === '+'; })[0].click()`);
+  }
+  const ticks = await mx.evaluate(`Array.from(document.querySelectorAll('.tl-tick span')).map(function (s) { return s.textContent; })`);
+  t.ok(ticks.length > 2 && ticks.every(function (x, i) { return i === 0 || x !== ticks[i - 1]; }),
+    'at the deepest zoom no two neighbouring ticks read the same: ' + JSON.stringify(ticks.slice(95, 105)));
 
   // A repeated sub-microflow (the fixture's loop) collapses into one block
   // carrying a count, rather than a row of slivers too narrow to name — and

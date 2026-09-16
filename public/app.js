@@ -2099,12 +2099,14 @@
 
     // The entities map and the flow views can get wide; let them use the full
     // width of the main column instead of the reading-width it otherwise wants.
+    // Security too: it is tables of chips and a grid of modules, and at
+    // reading width a real project's role table wrapped chips mid-name.
     // About stays at reading width — its tables and paragraphs both read
     // better narrow than stretched across a wide screen.
     var d = (state.about || state.guide || state.newProject.open) ? null : state.detail;
     var fullBleed = d && (
       d.view === 'microflows' || d.view === 'nanoflows' || d.view === 'pages' || d.view === 'entities' ||
-      d.view === 'comments' || d.view === 'performance'
+      d.view === 'comments' || d.view === 'performance' || d.view === 'security'
     );
     var wrap = el('div', { class: 'content-wrap' + (fullBleed ? ' wide' : '') }, [body]);
     if (state.message) {

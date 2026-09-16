@@ -141,6 +141,25 @@ module.exports = async function (t) {
   t.ok(/Left over from the old archive screen/.test(panel),
     'with the one line of description somebody wrote for it');
 
+  // Karol, 2026-09-16, on a real project: the whole section sat in a narrow
+  // reading column, chips wrapped mid-name, and every module's own table put
+  // its second column somewhere else — a column that said "no description" on
+  // nearly every row. It uses the full width now, modules are framed boxes in
+  // a grid, and a module with no descriptions says so once, in its heading.
+  const layout = await mx.evaluate(`(function(){
+    var grid = document.querySelector('.sec-mod-grid');
+    return {
+      wide: !!document.querySelector('.content-wrap.wide .sec-panel'),
+      gridded: !!grid && getComputedStyle(grid).display === 'grid' && grid.querySelectorAll('.module-group').length > 0,
+      perRow: /no description/.test(Array.from(document.querySelectorAll('.sec-roles li')).map(function (l) { return l.textContent; }).join(' ')),
+      heads: Array.from(document.querySelectorAll('.sec-mod-grid .module-group-count')).map(function (h) { return h.textContent; })
+    };
+  })()`);
+  t.ok(layout.wide && layout.gridded,
+    'the section uses the full width, with module roles as a grid of framed modules: ' + JSON.stringify(layout));
+  t.ok(!layout.perRow && layout.heads.every(function (h) { return /^\d+ roles?( · (none described|no description))?$/.test(h); }),
+    'and "no description" is said once per module, not once per role: ' + JSON.stringify(layout.heads));
+
   // ---- what the app publishes, which no role filter can answer ----
   t.ok(/Open to the outside/.test(panel) && /orders/.test(panel),
     'the services the app publishes get their own block — none of them go through the access rules the other views show');

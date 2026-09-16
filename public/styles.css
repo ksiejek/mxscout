@@ -1823,9 +1823,9 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
   border-left: 1px solid var(--accent); border-right: 1px solid var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
-.tl-mini-grip { position: absolute; top: 0; bottom: 0; width: 9px; cursor: ew-resize; }
-.tl-mini-grip.is-l { left: -5px; }
-.tl-mini-grip.is-r { right: -5px; }
+.tl-mini-grip { position: absolute; top: 0; bottom: 0; width: 14px; cursor: ew-resize; }
+.tl-mini-grip.is-l { left: -7px; }
+.tl-mini-grip.is-r { right: -7px; }
 .tl-mini-grip::after {
   content: ""; position: absolute; top: 50%; left: 50%; translate: -50% -50%;
   width: 3px; height: 16px; border-radius: 2px; background: var(--accent);
@@ -2304,6 +2304,21 @@ button.twist:hover { color: var(--text); }
 .sec-table td .badge, .sec-table td .chip { margin-left: 6px; }
 .sec-table td .chip { margin: 2px 0 2px 6px; cursor: default; }
 .sec-panel .module-group:last-child { margin-bottom: 0; }
+/* A chip wraps as a whole or not at all — split across a line, its dot stayed
+   on one line and its name went to the next. */
+.sec-table td .chip { display: inline-block; white-space: nowrap; }
+/* Module roles: one small framed box per module, as many across as fit. A
+   module carries one to seven roles, so a full-width row each was mostly air. */
+.sec-mod-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.sec-mod-grid .module-group, .sec-panel .sec-orphans {
+  margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2);
+}
+.sec-panel .sec-orphans { border-color: color-mix(in srgb, var(--alarm) 30%, var(--border)); }
+.sec-mod-grid .module-group { border-top: 2px solid color-mix(in srgb, var(--mod) 60%, var(--border)); }
+.sec-mod-grid .module-group-head { margin-bottom: 6px; }
+.sec-roles { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.sec-roles .mark { margin-left: 6px; }
+.sec-panel .hint, .sec-panel .sec-note { max-width: 110ch; }
 
 /* ---------- "What it does": a flow's body, summarised ----------
    A band across the top of the window, under the title and above the tabs.

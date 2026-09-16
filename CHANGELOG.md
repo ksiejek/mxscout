@@ -15,6 +15,41 @@ The version in `package.json` is the single source of truth. The About page
 reads it from the running server rather than from a constant, so it cannot
 claim a version it is not.
 
+## Unreleased
+
+### The Timeline's overview strip stops jumping
+
+**Dragging the edges of the window on the overview strip now does what the
+pointer does.** It used to redraw the window at the wrong width on every frame
+of a drag — long, then short, then long — because each repaint sized it off a
+700-pixel stand-in rather than the panel actually on screen; for a frame the
+view also sat at the very start of the recording. Pressing the strip just
+beside an edge grip zoomed straight into 20 ms around the pointer, before the
+pointer had moved. Now an edge lands under the pointer, a click on the strip
+moves the window there without changing the zoom, and a new range is picked
+only by dragging one. The edge grips are wider, too.
+
+**The ruler says where you are at every zoom.** Stretched all the way in, every
+tick across the panel read "+9.3 s"; ticks now carry as many decimals as the
+step between them needs.
+
+### Self time can no longer exceed total
+
+**The Call tree could show a call spending more time in itself than it ran
+for** — self 18.3 s, total 18.0 s on a real recording. Self was counted as
+samples × the typical gap between samples, while total came off the real
+timestamps, and real gaps are uneven. Both are measured on the same clock now.
+
+### The Security section uses the width it has
+
+**Security is no longer squeezed into a reading column.** On a real project the
+user-role table wrapped module chips in half, dot on one line and name on the
+next. The section now uses the full width, and module roles are laid out as a
+grid of small framed modules instead of one full-width table each. A module
+whose roles carry no description says so once, in its heading, rather than
+"no description" on every row; roles that no user role carries are shown with
+their module in front, since "Administrator" alone names nothing.
+
 ## 1.5.0
 
 ### The About page said the outbound connection only happens while recording. It does not

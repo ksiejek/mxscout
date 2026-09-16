@@ -112,6 +112,21 @@
   var MIN_PPS = 1, MAX_PPS = 8000;
   var _tlModel = null, _tlRecording = null;
 
+  // How wide the visible part of the tracks is. Measured off the live scroller
+  // whenever there is one, and REMEMBERED for when there is not — which is
+  // every moment of a repaint, because repaintTimeline() empties the panel
+  // before painting it again. Everything used to fall back to a flat 700 px
+  // then, so on a wide screen the overview window was drawn at less than half
+  // its real width on every repaint and snapped back on the next scroll event:
+  // dragging an edge redrew it long, short, long, once per frame (Karol,
+  // 2026-09-16: "jest długi, nagle się robi krótki").
+  var _tlViewW = 700;
+  function tlViewWidth() {
+    var sc = document.querySelector('#perf-timeline-area .tl-scroll');
+    if (sc && sc.clientWidth) _tlViewW = sc.clientWidth;
+    return _tlViewW;
+  }
+
   function tlX(t) { return (t / 1000) * tlPps; }
   function tlT(x) { return (x / tlPps) * 1000; }
   function tlLength(recording) { return Math.max(1, totalDurationMs(recording) + observedIntervalMs(recording)); }
@@ -372,13 +387,13 @@
   function repaintTimeline() {
     var host = document.getElementById('perf-timeline-area');
     if (!host || !_tlRecording) return;
+    tlViewWidth(); // while the scroller still exists to be measured
     while (host.firstChild) host.removeChild(host.firstChild);
     paintTimeline(host, _tlModel, _tlRecording);
   }
 
   function tlSetPps(next, anchorMs) {
-    var scroller = document.querySelector('#perf-timeline-area .tl-scroll');
-    var width = scroller ? scroller.clientWidth : 700;
+    var width = tlViewWidth();
     if (anchorMs == null) anchorMs = tlT(tlScrollLeft + width / 2);
     var offset = tlX(anchorMs) - tlScrollLeft;
     tlPps = Math.max(MIN_PPS, Math.min(MAX_PPS, next));
@@ -387,15 +402,20 @@
     repaintTimeline();
   }
 
-  function tlZoomTo(a, b, push) {
-    var scroller = document.querySelector('#perf-timeline-area .tl-scroll');
-    var width = scroller ? scroller.clientWidth : 700;
-    var pad = observedIntervalMs(_tlRecording);
+  // `exact` is for dragging an edge of the overview window, where the edge has
+  // to land under the pointer. The padding a call gets when you stretch to it
+  // (a sample either side, 8 px of margin) is right for a call and wrong for
+  // an edge: it put the window a little outside the pointer on every frame of
+  // the drag, and the next frame measured from there.
+  function tlZoomTo(a, b, push, exact) {
+    var width = tlViewWidth();
+    var pad = exact ? 0 : observedIntervalMs(_tlRecording);
+    var margin = exact ? 0 : 8;
     a = Math.max(0, a - pad); b = b + pad;
-    if (b - a < 20) { var c = (a + b) / 2; a = c - 10; b = c + 10; }
+    if (b - a < 20) { var c = (a + b) / 2; a = Math.max(0, c - 10); b = a + 20; }
     if (push) tlCrumbs.push({ pps: tlPps, left: tlScrollLeft });
-    tlPps = Math.max(MIN_PPS, Math.min(MAX_PPS, (width - 16) / ((b - a) / 1000)));
-    tlScrollLeft = Math.max(0, tlX(a) - 8);
+    tlPps = Math.max(MIN_PPS, Math.min(MAX_PPS, (width - 2 * margin) / ((b - a) / 1000)));
+    tlScrollLeft = Math.max(0, tlX(a) - margin);
     tlSel = null;
     repaintTimeline();
   }
@@ -483,11 +503,18 @@
 
     wireTimeline(scroller, canvas, lenMs);
 
+    // A repaint happens inside a panel already on the page, so the new
+    // scroller can be put where the old one was right now rather than a frame
+    // later. Left to the frame, it spent that frame at scrollLeft 0 — the
+    // start of the recording.
+    if (host.isConnected && !needsFit) scroller.scrollLeft = tlScrollLeft;
+
     // Heights are only known once this is in the document, so the gutter's
     // auto-height row (the flame, which grows with call depth) is matched here
     // rather than guessed above.
     requestAnimationFrame(function () {
       if (!scroller.isConnected) return;
+      tlViewWidth();
       // The fit pass: the provisional zoom above was a guess made before the
       // scroller existed, so now that it can be measured, set the real one and
       // paint once more. tlPps is a number by then, so this cannot recur.
@@ -497,7 +524,13 @@
         repaintTimeline();
         return;
       }
-      scroller.scrollLeft = tlScrollLeft;
+      if (scroller.scrollLeft !== tlScrollLeft) scroller.scrollLeft = tlScrollLeft;
+      // Not left to the scroll event: setting scrollLeft to the value it
+      // already has fires none, and then nothing corrected the window.
+      var mini = host.querySelector('.tl-mini');
+      if (mini) positionMiniWindow(mini, lenMs);
+      var crumb = host.querySelector('.tl-crumb');
+      if (crumb) crumb.textContent = tlWindowLabel(lenMs);
       syncGutterHeights(gutter, canvas);
       stickLabels(scroller, canvas);
     });
@@ -544,10 +577,9 @@
   }
 
   function tlWindowLabel(lenMs) {
-    var scroller = document.querySelector('#perf-timeline-area .tl-scroll');
-    var width = scroller ? scroller.clientWidth : 700;
-    var a = tlT(tlScrollLeft), b = Math.min(lenMs, tlT(tlScrollLeft + width));
-    return '+' + formatMs(a) + ' \u2013 +' + formatMs(b);
+    var a = tlT(tlScrollLeft), b = Math.min(lenMs, tlT(tlScrollLeft + tlViewWidth()));
+    var span = b - a;
+    return '+' + formatAt(a, span >= 1000 ? 100 : 10) + ' \u2013 +' + formatAt(b, span >= 1000 ? 100 : 10);
   }
 
   // Always the whole recording, however far the tracks below are stretched \u2014
@@ -569,8 +601,7 @@
   }
 
   function positionMiniWindow(wrap, lenMs) {
-    var scroller = document.querySelector('#perf-timeline-area .tl-scroll');
-    var width = scroller ? scroller.clientWidth : 700;
+    var width = tlViewWidth();
     var l = Math.max(0, Math.min(100, (tlT(tlScrollLeft) / lenMs) * 100));
     var w = Math.max(1, Math.min(100 - l, (tlT(width) / lenMs) * 100));
     wrap.querySelector('.tl-mini-win').setAttribute('style', 'left:' + l + '%;width:' + w + '%');
@@ -599,37 +630,63 @@
   function liveScroller() { return document.querySelector('#perf-timeline-area .tl-scroll'); }
   function liveMini() { return document.querySelector('#perf-timeline-area .tl-mini'); }
 
+  // A second round of the same complaint (Karol, 2026-09-16: "ucieka na
+  // początek … jest długi, nagle się robi krótki"), and three more causes:
+  //
+  //   4. Pressing on the strip outside the window zoomed at once, to 20 ms
+  //      around the pointer — before the pointer had moved at all. The edge
+  //      grips are a few pixels wide, so reaching for one and landing beside
+  //      it collapsed the view to a sliver. A range is picked only once the
+  //      pointer has really moved now; a plain click moves the window there.
+  //   5. Edges were dragged through the same padded zoom as "stretch to this
+  //      call", so an edge never landed quite under the pointer. They are
+  //      exact now (see tlZoomTo).
+  //   6. The window's width came from a 700 px stand-in whenever a repaint
+  //      had just removed the scroller (see tlViewWidth).
+  //
+  // The crumb is pushed on the first real move, not on the press, so a click
+  // that changed nothing leaves nothing for "← back" to undo.
+  var MINI_DRAG_PX = 4;
+
   function onMiniDown(e, wrap, lenMs) {
     var box = wrap.getBoundingClientRect();
     var grip = e.target.getAttribute && e.target.getAttribute('data-grip');
     var atT = function (clientX) { return Math.max(0, Math.min(lenMs, ((clientX - box.left) / box.width) * lenMs)); };
-    var startT = atT(e.clientX);
-    var scroller = liveScroller();
-    var shownMs = tlT(scroller ? scroller.clientWidth : 700);
+    var startX = e.clientX;
+    var startT = atT(startX);
+    var shownMs = tlT(tlViewWidth());
     var a0 = tlT(tlScrollLeft), b0 = a0 + shownMs;
     var onWindow = e.target.classList && (e.target.classList.contains('tl-mini-win') || e.target.classList.contains('tl-mini-grip'));
     var mode = grip ? 'grip-' + grip : (onWindow ? 'move' : 'new');
     // How far into the window the grab landed, so the window keeps its
     // position under the pointer instead of jumping to be centred on it.
     var grabOffset = Math.max(0, Math.min(shownMs, startT - a0));
-    if (mode !== 'move') tlCrumbs.push({ pps: tlPps, left: tlScrollLeft });
+    var dragging = false;
+
+    function panTo(leftMs) {
+      var sc = liveScroller();
+      var maxLeft = Math.max(0, tlX(lenMs) - tlViewWidth());
+      tlScrollLeft = Math.max(0, Math.min(maxLeft, tlX(leftMs)));
+      if (sc) sc.scrollLeft = tlScrollLeft; // the scroll handler moves the window
+      else { var m = liveMini(); if (m) positionMiniWindow(m, lenMs); }
+    }
 
     var pending = null, frame = null;
     function apply() {
       frame = null;
       var t = pending;
       if (t == null) return;
-      if (mode === 'move') {
-        var sc = liveScroller();
-        var maxLeft = Math.max(0, tlX(lenMs) - (sc ? sc.clientWidth : 700));
-        tlScrollLeft = Math.max(0, Math.min(maxLeft, tlX(t - grabOffset)));
-        if (sc) sc.scrollLeft = tlScrollLeft; // the scroll handler moves the window
-        else { var m = liveMini(); if (m) positionMiniWindow(m, lenMs); }
-      } else if (mode === 'new') tlZoomTo(Math.min(startT, t), Math.max(startT, t), false);
-      else if (mode === 'grip-l') tlZoomTo(Math.min(t, b0 - 20), b0, false);
-      else tlZoomTo(a0, Math.max(t, a0 + 20), false);
+      if (mode === 'move') panTo(t - grabOffset);
+      else if (mode === 'new') tlZoomTo(Math.min(startT, t), Math.max(startT, t), false, true);
+      else if (mode === 'grip-l') tlZoomTo(Math.min(t, b0 - 20), b0, false, true);
+      else tlZoomTo(a0, Math.max(t, a0 + 20), false, true);
     }
     function move(ev) {
+      if (!dragging) {
+        if (Math.abs(ev.clientX - startX) < MINI_DRAG_PX) return;
+        dragging = true;
+        if (mode !== 'move') tlCrumbs.push({ pps: tlPps, left: tlScrollLeft });
+      }
       pending = atT(ev.clientX);
       if (!frame) frame = requestAnimationFrame(apply);
     }
@@ -637,10 +694,11 @@
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
       if (frame) { cancelAnimationFrame(frame); apply(); }
+      // A click on the strip, away from the window: go there, same zoom.
+      if (!dragging && mode === 'new') panTo(startT - shownMs / 2);
     }
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
-    if (mode !== 'move') { pending = startT; apply(); }
     e.preventDefault();
   }
 
@@ -756,11 +814,20 @@
       // wider than the recording, which puts a scrollbar under a timeline
       // that is supposed to be showing everything.
       host.appendChild(el('div', { class: 'tl-tick', style: 'left:' + x.toFixed(1) + 'px' },
-        x + TICK_LABEL_PX <= end ? [el('span', { text: '+' + formatMs(t) })] : []));
+        x + TICK_LABEL_PX <= end ? [el('span', { text: '+' + formatAt(t, step) })] : []));
     }
     return host;
   }
   var TICK_LABEL_PX = 52;
+
+  // A moment on the axis, to as many decimals as the step between ticks can
+  // tell apart. formatMs() rounds seconds to one decimal, which is right for a
+  // duration and wrong for a ruler: stretched to 8 px/ms, every tick across
+  // the panel read "+9.3 s" and said nothing about where anything was.
+  function formatAt(t, stepMs) {
+    if (t < 1000) return formatMs(t);
+    return (t / 1000).toFixed(stepMs % 100 === 0 ? 1 : 2) + ' s';
+  }
 
   // Crosshair and drag-selection, inside the canvas so they share its
   // coordinate space and need no correction when it is scrolled.
@@ -790,6 +857,10 @@
     var mini = scroller.parentNode.parentNode.querySelector('.tl-mini');
     var ticking = false;
     scroller.addEventListener('scroll', function () {
+      // A scroller a repaint has already replaced can still be handed its
+      // last scroll event, and off the page its scrollLeft reads 0 — which
+      // sent the whole view back to the start of the recording.
+      if (!scroller.isConnected) return;
       tlScrollLeft = scroller.scrollLeft;
       if (ticking) return;
       ticking = true;
@@ -815,6 +886,14 @@
       if (e.target.closest('.tl-selbtn')) return;
       canvas.focus();
       drag = { t0: tlT(e.clientX - canvas.getBoundingClientRect().left), x: e.clientX, moved: false };
+      // Added per press and removed on release. It used to be added once per
+      // paint and never removed, and a drag on the overview strip paints once
+      // a frame — so every drag left a few hundred listeners on the window.
+      window.addEventListener('mouseup', function up() {
+        window.removeEventListener('mouseup', up);
+        if (drag && !drag.moved) { tlSel = null; }
+        drag = null;
+      });
     });
     canvas.addEventListener('mousemove', function (e) {
       var t = tlT(e.clientX - canvas.getBoundingClientRect().left);
@@ -830,11 +909,6 @@
       var ov = canvas.querySelector('.tl-ov');
       if (ov) canvas.replaceChild(renderTlOverlay(lenMs), ov);
     });
-    window.addEventListener('mouseup', function () {
-      if (drag && !drag.moved) { tlSel = null; }
-      drag = null;
-    });
-
     canvas.addEventListener('keydown', function (e) {
       var k = (e.key || '').toLowerCase();
       var anchor = tlHover != null ? tlHover : null;

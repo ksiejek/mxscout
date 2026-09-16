@@ -506,6 +506,13 @@
   // time counts the samples where a span was the DEEPEST frame present —
   // exactly what a sampling profiler can honestly claim, no different a
   // definition than any other one.
+  //
+  // Each of those samples is worth the time until the NEXT sample, not the
+  // median gap, and the last one the median — the same clock `t1` is built
+  // on. Self used to be samples × median while total was measured off the
+  // real timestamps, and on a real 2026-09-16 recording the gaps averaged
+  // 15.7 ms against a 16 ms median: a 9 s retrieve read self 18.3 s, total
+  // 18.0 s, which no call can be.
   // How far apart the samples ACTUALLY landed, as the median gap between
   // adjacent ones — not the interval the recorder asked for.
   //
@@ -559,7 +566,7 @@
         frame: frame,
         t0: o.t0,
         t1: o.tLast + interval,
-        self: o.selfSamples * interval,
+        self: o.selfMs + (o.selfFrom != null ? interval : 0),
         // The chain of identities from the root down to this span, and that
         // joined into one string — buildCallTree()'s merge key, and how a
         // span finds its parent row there. Not used by the flame chart.
@@ -592,12 +599,13 @@
           // gap), so open[depth - 1] is guaranteed to exist whenever depth >
           // 0 — the parent is always already open before a child can be.
           var parentPath = depth > 0 ? open[depth - 1].path : [];
-          o = open[depth] = { identity: id, frame: frame, depth: depth, t0: t, tLast: t, selfSamples: 0, path: parentPath.concat(id) };
+          o = open[depth] = { identity: id, frame: frame, depth: depth, t0: t, tLast: t, selfMs: 0, selfFrom: null, path: parentPath.concat(id) };
         } else {
           o.tLast = t;
           o.frame = frame; // the freshest copy — a flow's current_activity may have moved on
+          if (o.selfFrom != null) { o.selfMs += t - o.selfFrom; o.selfFrom = null; }
         }
-        if (depth === maxDepth) o.selfSamples++;
+        if (depth === maxDepth) o.selfFrom = t;
       }
     });
     open.forEach(function (o) { if (o) finishSpan(o); });
