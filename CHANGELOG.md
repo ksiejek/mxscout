@@ -98,12 +98,16 @@ project header it was eight from Package…, exactly as far as Package… is fro
 Replace model…. The colour said "careful" while the geometry said "just
 another button". There is distance and a hairline between them now.
 
-### A count on the About page that had drifted
+### The About page's own numbers are checked by a test now
 
-**The About page said the test suite is 41 files.** It is 48. Nothing else on
-that page depends on the number, but it is the row somebody reads to judge
-whether they can audit this tool themselves, and a stale count there costs the
-same as a stale claim anywhere else on it.
+**The About page states how many files the test suite is, and it had drifted.**
+It said 41 against a real 47, and then wanted correcting by hand three times in
+three days as the suite grew. Nothing else on that page depends on the number,
+but it is the row somebody reads to judge whether they can audit this tool
+themselves, and a stale count there costs the same as a stale claim anywhere
+else on it.
+
+The suite counts it against the disk now, so it cannot quietly drift again.
 
 ### The interface gets a scale
 
@@ -117,9 +121,9 @@ its own, with nothing to be consistent with.
 There is a scale now — 4, 8, 16, 24, 32, 48, 64 for space and 12, 14, 16, 18,
 20, 24 for type — and the performance setup and recordings list have moved onto
 it. **The visible difference is that three setup steps now read as three
-steps.** The gap between them was two pixels while the padding inside one was
-twelve, so they grouped into a single block of rows; the gap is bigger than the
-padding now, which is the way round it should have been.
+steps.** The gap between them was two pixels — smaller than the padding inside
+a single step — so they grouped into one block of rows. The gap is the larger
+of the two now, which is the way round it should always have been.
 
 **The rest of the stylesheet has not moved, on purpose.** Rewriting 571
 declarations in one go, with a test suite that checks behaviour rather than
@@ -129,13 +133,6 @@ Surfaces move one at a time.
 Nothing about the colours changed. They were checked and they hold: the screens
 read with the colour removed entirely, and the lowest contrast anywhere in that
 flow is 6.26:1 against a 4.5:1 requirement.
-
-### The About page's own numbers are now checked by a test
-
-**The count of test files on the About page is a claim like every other one on
-that page**, and it had been corrected by hand three times in three days. It is
-counted against the disk by the test suite now, so it cannot quietly drift
-again.
 
 ### Starting and finishing a recording now look like they registered
 
