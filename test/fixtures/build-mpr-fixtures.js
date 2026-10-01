@@ -144,7 +144,8 @@ const N = {
   swStart: id(0xd0), swRetrieve: id(0xd1), swSplit: id(0xd2), swLoop: id(0xd3),
   swChange: id(0xd4), swCommit: id(0xd5), swMerge: id(0xd6), swDelete: id(0xd7),
   swRest: id(0xd8), swAggregate: id(0xd9), swListOp: id(0xda), swWebService: id(0xdb),
-  swEnd: id(0xdc), swError: id(0xdd), swNote: id(0xde), swInherit: id(0xdf)
+  swEnd: id(0xdc), swError: id(0xdd), swNote: id(0xde), swInherit: id(0xdf),
+  swMessage: id(0xe0), swImport: id(0xe1), swExport: id(0xe2)
 };
 
 // A flow's geometry, in the two string shapes Mendix stores it in: the MIDDLE
@@ -300,6 +301,7 @@ const UNITS = [
         Documentation: 'Numbered X until the real number is known.',
         Action: {
           $Type: 'Microflows$CreateChangeAction', Entity: 'Sales.Order', Commit: 'Yes',
+          VariableName: 'Order',
           Items: marked(2, [
             { $Type: 'Microflows$ChangeActionItem', Attribute: 'Sales.Order.Number', Type: 'Set', Value: "'X'" }
           ]) } },
@@ -387,23 +389,66 @@ const UNITS = [
       { $Type: 'Microflows$ActionActivity', $ID: bin(N.swRest),
         RelativeMiddlePoint: at(1160, 100), Size: size(120, 60), Action: {
           $Type: 'Microflows$RestCallAction',
-          HttpConfiguration: { $Type: 'Microflows$HttpConfiguration', CustomLocation: 'https://example.test/hook' } } },
+          // As a real one is shaped: CustomLocation empty (all 44 measured
+          // were), the address in a template whose {1} slots are filled from
+          // its own parameter expressions.
+          HttpConfiguration: { $Type: 'Microflows$HttpConfiguration', CustomLocation: '',
+            HttpMethod: 'Post',
+            CustomLocationTemplate: { $Type: 'Microflows$StringTemplate', Text: '{1}/orders',
+              Parameters: marked(2, [
+                { $Type: 'Microflows$TemplateParameter', Expression: '@Sales.ApiUrl' }
+              ]) } } } },
       // Three activities the "what it does" summary has never recognised and
       // still does not: here they are only drawn, by the action they carry.
+      // Field names here are the ones a real .mpr uses, not plausible
+      // inventions: the input list is AggregateVariableName and the output is
+      // VariableName (checked against 156 of these in a real project), and a
+      // list operation keeps WHICH operation in NewOperation's own $Type.
       { $Type: 'Microflows$ActionActivity', $ID: bin(N.swAggregate),
         RelativeMiddlePoint: at(1320, 100), Size: size(120, 60), Action: {
           $Type: 'Microflows$AggregateAction', AggregateFunction: 'Count',
-          InputListVariableName: 'OrderList', OutputVariableName: 'OrderCount' } },
+          AggregateVariableName: 'OrderList', VariableName: 'OrderCount',
+          Attribute: '', Expression: '', UseExpression: false } },
       { $Type: 'Microflows$ActionActivity', $ID: bin(N.swListOp),
         RelativeMiddlePoint: at(1480, 100), Size: size(120, 60), Action: {
-          $Type: 'Microflows$ListOperationsAction', OutputVariableName: 'Head' } },
+          $Type: 'Microflows$ListOperationsAction', ResultVariableName: 'FirstOrder',
+          NewOperation: { $Type: 'Microflows$Head', ListName: 'OrderList' } } },
       { $Type: 'Microflows$ActionActivity', $ID: bin(N.swWebService),
         RelativeMiddlePoint: at(1640, 100), Size: size(120, 60), Action: {
-          $Type: 'Microflows$CallWebServiceAction' } },
+          $Type: 'Microflows$CallWebServiceAction', ServiceName: 'CustomerService',
+          OperationName: 'getCustomer', ImportedService: 'Sales.CustomerService' } },
+      // A message whose text is a TextTemplate: the words live in a
+      // Texts$Text one level further down, per language.
+      { $Type: 'Microflows$ActionActivity', $ID: bin(N.swMessage),
+        RelativeMiddlePoint: at(1480, 260), Size: size(120, 60), Action: {
+          $Type: 'Microflows$ShowMessageAction', Type: 'Warning', Blocking: true,
+          Template: { $Type: 'Microflows$TextTemplate',
+            Parameters: marked(2, [
+              { $Type: 'Microflows$TemplateParameter', Expression: '$OrderCount' }
+            ]),
+            Text: text('Nothing was swept: {1}.') } } },
       { $Type: 'Microflows$EndEvent', $ID: bin(N.swEnd),
         RelativeMiddlePoint: at(1800, 100), Size: size(20, 20), ReturnValue: '' },
       // An error outlet, the note beside the decision, and a split on the
       // specialization of a variable — three shapes with no Action at all.
+      // An import names its MAPPING, which is what identifies it; the
+      // document variable is a detail.
+      { $Type: 'Microflows$ActionActivity', $ID: bin(N.swImport),
+        RelativeMiddlePoint: at(1320, 260), Size: size(120, 60), Action: {
+          $Type: 'Microflows$ImportXmlAction', XmlDocumentVariableName: 'OrderXml',
+          // An import keeps its mapping TWO levels down, under
+          // ImportMappingCall.ReturnValueMapping; an export keeps it as
+          // MappingId one level down. Both shapes are real and they differ.
+          ResultHandling: { $Type: 'Microflows$ResultHandling', Bind: true,
+            ImportMappingCall: { $Type: 'Microflows$ImportMappingCall', ContentType: 'Xml',
+              Commit: 'YesWithoutEvents', ReturnValueMapping: 'Sales.ImportOrders' } } } },
+      { $Type: 'Microflows$ActionActivity', $ID: bin(N.swExport),
+        RelativeMiddlePoint: at(1160, 400), Size: size(120, 60), Action: {
+          $Type: 'Microflows$ExportXmlAction',
+          ResultHandling: { $Type: 'Microflows$MappingRequestHandling', ContentType: 'Xml',
+            MappingId: 'Sales.ExportOrders', MappingVariableName: 'OrderList' },
+          OutputMethod: { $Type: 'ExportXmlAction$FileDocumentExport',
+            TargetDocumentVariableName: 'OrderFile' } } },
       { $Type: 'Microflows$ErrorEvent', $ID: bin(N.swError),
         RelativeMiddlePoint: at(1160, 260), Size: size(20, 20) },
       { $Type: 'Microflows$Annotation', $ID: bin(N.swNote),
@@ -430,6 +475,9 @@ const UNITS = [
       edge(N.swAggregate, N.swListOp),
       edge(N.swListOp, N.swWebService),
       edge(N.swWebService, N.swEnd),
+      edge(N.swListOp, N.swMessage, { fromSide: 2, toSide: 0 }),
+      edge(N.swAggregate, N.swImport, { fromSide: 2, toSide: 0 }),
+      edge(N.swImport, N.swExport, { fromSide: 2, toSide: 0 }),
       edge(N.swInherit, N.swEnd, { inherit: 'Sales.Order' }),
       annotationEdge(N.swNote, N.swSplit)
     ])

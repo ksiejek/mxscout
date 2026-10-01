@@ -659,6 +659,374 @@
     };
   }
 
+  // ---------------- the readable label on a node ----------------
+  // The .mpr does NOT store the text a drawing needs. 9988 of 10 332
+  // activities in a real project leave AutoGenerateCaption at true, and the
+  // Caption beside it is a dead placeholder — the word "Activity" 9895 times.
+  // So the words have to be built out of the action's own fields.
+  //
+  // This is MxScout's rendering of an activity, in the VOCABULARY of Studio
+  // Pro's toolbox. It is NOT a byte-for-byte copy of what Studio Pro draws:
+  // that generator is not published and there is no Studio Pro here to check
+  // against, so claiming to reproduce it would be a claim nothing backs.
+  //
+  // Three slots, the shape a card has room for:
+  //   kicker — what kind of activity this is ("Retrieve from database")
+  //   title  — WHAT it acts on or points at (an entity, a variable, a called
+  //            document), or the caption a person typed, which always wins
+  //   meta   — HOW: the XPath, the expression, the value, where the answer goes
+  // plus `ref`, the one qualified name the activity names, so a drawing can
+  // link through to it instead of re-parsing the title.
+  //
+  // The table below is per action type and therefore IS an allowlist — the
+  // only one in the graph reader, and unavoidable: a label needs to know what
+  // the fields mean. The fallback keeps 70a's property anyway: an action type
+  // with no entry is split into words from its own name, so a Mendix release
+  // that adds one is drawn with readable text rather than blank.
+  var ACTIVITY_KICKERS = {
+    CreateChangeAction: 'Create object',
+    CreateListAction: 'Create list',
+    ChangeAction: 'Change object',
+    ChangeListAction: 'Change list',
+    ChangeVariableAction: 'Change variable',
+    CreateVariableAction: 'Create variable',
+    CommitAction: 'Commit object(s)',
+    DeleteAction: 'Delete object(s)',
+    RollbackAction: 'Rollback object',
+    CastAction: 'Cast object',
+    AggregateAction: 'Aggregate list',
+    ListOperationsAction: 'List operation',
+    MicroflowCallAction: 'Call microflow',
+    NanoflowCallAction: 'Call nanoflow',
+    JavaActionCallAction: 'Call Java action',
+    JavaScriptActionCallAction: 'Call JavaScript action',
+    ShowFormAction: 'Show page',
+    CloseFormAction: 'Close page',
+    ShowHomePageAction: 'Show home page',
+    ShowMessageAction: 'Show message',
+    ValidationFeedbackAction: 'Validation feedback',
+    LogMessageAction: 'Log message',
+    RestCallAction: 'Call REST service',
+    CallWebServiceAction: 'Call web service',
+    CallExternalAction: 'Call external action',
+    DownloadFileAction: 'Download file',
+    ImportXmlAction: 'Import with mapping',
+    ExportXmlAction: 'Export with mapping',
+    IncrementCounterMeterAction: 'Increment counter',
+    SynchronizeAction: 'Synchronize',
+    SendEmailAction: 'Send email'
+  };
+
+  // "CallMlModelAction" -> "Call ml model". Not clever about acronyms on
+  // purpose: a wrong expansion reads worse than a plain one.
+  function activityKicker(actionType) {
+    var name = String(actionType || '').replace(/^.*\$/, '').replace(/Action$/, '');
+    if (!name) return null;
+    if (ACTIVITY_KICKERS[name + 'Action']) return ACTIVITY_KICKERS[name + 'Action'];
+    var words = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+    return words.charAt(0).toUpperCase() + words.slice(1).toLowerCase();
+  }
+
+  // A variable as Mendix writes it everywhere a person reads it.
+  function varRef(name) {
+    return typeof name === 'string' && name ? '$' + name : null;
+  }
+  // Anything long enough to hold a newline goes in a slot one line high, so
+  // runs of whitespace collapse. The text is never cut: what it says is the
+  // author's, how wide it is belongs to whoever draws it.
+  function oneLine(value) {
+    if (typeof value !== 'string' || !value) return null;
+    var flat = value.replace(/\s+/g, ' ').trim();
+    return flat || null;
+  }
+  function joinMeta(parts) {
+    var kept = parts.filter(function (p) { return typeof p === 'string' && p; });
+    return kept.length ? kept.join(', ') : null;
+  }
+
+  // The words in a Template / MessageTemplate / FeedbackTemplate. Two shapes:
+  // a TextTemplate keeps a Texts$Text (one string per language, so captionOf
+  // picks one), a StringTemplate keeps a plain string with {1}-style slots.
+  // The slots are filled from the template's OWN parameter expressions: a
+  // card reading "{1}" or "{1}\n{2}" says nothing, and the expression that
+  // goes there is one field away. Measured shapes: a log message really is
+  // stored as "{1}\n{2}", and a REST address as "{1}/rest/getshipment/{2}".
+  function templateText(template) {
+    if (!template || typeof template !== 'object') return null;
+    var text = template.Text;
+    var flat = typeof text === 'string' ? oneLine(text)
+      : (text && typeof text === 'object' ? oneLine(captionOf(text)) : null);
+    if (!flat) return null;
+    var params = payload(template.Parameters);
+    if (!params.length) return flat;
+    return flat.replace(/\{(\d+)\}/g, function (whole, digits) {
+      var param = params[Number(digits) - 1];
+      var expression = param && typeof param.Expression === 'string' ? oneLine(param.Expression) : null;
+      return expression || whole;
+    });
+  }
+
+  // A mapping-based activity is identified by its MAPPING — the document
+  // variable it reads or writes is a detail beside it.
+  // Two real shapes, one per direction: an export keeps MappingId one level
+  // down, an import keeps ReturnValueMapping two levels down inside
+  // ImportMappingCall. Both measured; neither can stand in for the other.
+  function mappingOf(handling) {
+    if (!handling || typeof handling !== 'object') return null;
+    var direct = str(handling, 'MappingId');
+    if (direct) return direct;
+    var call = handling.ImportMappingCall;
+    return call && typeof call === 'object' ? str(call, 'ReturnValueMapping') : null;
+  }
+
+  // What a Change activity touches, by member name: "Number" rather than
+  // "Sales.Order.Number", because the entity is already the title's business.
+  function changedMembers(items) {
+    var names = [];
+    payload(items).forEach(function (item) {
+      if (!item) return;
+      var ref = typeof item.Attribute === 'string' && item.Attribute ? item.Attribute
+        : (typeof item.Association === 'string' ? item.Association : '');
+      var name = shortName(String(ref));
+      if (name && names.indexOf(name) === -1) names.push(name);
+    });
+    return names.length ? names.join(', ') : null;
+  }
+
+  // Everything an activity's three slots need, per action type. Returns
+  // { title, meta, ref }; the kicker is activityKicker's job.
+  function activityLabel(action) {
+    var type = String(action['$Type'] || '').replace(/^.*\$/, '');
+    var commit = action.Commit && action.Commit !== 'No' ? 'commit' : null;
+
+    if (type === 'RetrieveAction') {
+      var source = action.RetrieveSource || {};
+      // The kicker depends on WHERE it retrieves from, which is the single
+      // most useful thing to know about a retrieve: one goes to the database,
+      // the other walks an association on an object already in memory.
+      if (typeof source.Entity === 'string' && source.Entity) {
+        return { kicker: 'Retrieve from database', title: shortName(source.Entity),
+          meta: oneLine(source.XpathConstraint), ref: source.Entity };
+      }
+      if (typeof source.AssociationId === 'string' && source.AssociationId) {
+        var from = varRef(source.StartVariableName);
+        return {
+          kicker: 'Retrieve by association',
+          title: shortName(source.AssociationId),
+          meta: from ? 'from ' + from : null,
+          ref: source.AssociationId
+        };
+      }
+      return { title: null, meta: null, ref: null };
+    }
+    if (type === 'CreateChangeAction' || type === 'CreateListAction') {
+      return {
+        title: typeof action.Entity === 'string' ? shortName(action.Entity) : null,
+        meta: joinMeta([varRef(action.VariableName), commit]),
+        ref: typeof action.Entity === 'string' ? action.Entity : null
+      };
+    }
+    if (type === 'ChangeAction') {
+      return {
+        title: varRef(action.ChangeVariableName),
+        meta: joinMeta([changedMembers(action.Items), commit]),
+        ref: null
+      };
+    }
+    if (type === 'ChangeListAction') {
+      return {
+        title: varRef(action.ChangeVariableName),
+        meta: joinMeta([str(action, 'Type'), oneLine(action.Value)]),
+        ref: null
+      };
+    }
+    if (type === 'ChangeVariableAction') {
+      return { title: varRef(action.ChangeVariableName), meta: oneLine(action.Value), ref: null };
+    }
+    if (type === 'CreateVariableAction') {
+      return { title: varRef(action.VariableName), meta: oneLine(action.InitialValue), ref: null };
+    }
+    if (type === 'CommitAction') {
+      return {
+        title: varRef(action.CommitVariableName),
+        // Studio Pro's own wording, and the difference that bites: committing
+        // with events runs before/after-commit microflows, without does not.
+        meta: action.WithEvents === false ? 'without events' : 'with events',
+        ref: null
+      };
+    }
+    if (type === 'DeleteAction') return { title: varRef(action.DeleteVariableName), meta: null, ref: null };
+    if (type === 'RollbackAction') return { title: varRef(action.RollbackVariableName), meta: null, ref: null };
+    if (type === 'CastAction') return { title: varRef(action.VariableName), meta: null, ref: null };
+    if (type === 'DownloadFileAction') {
+      return { title: varRef(action.FileDocumentVariableName), meta: null, ref: null };
+    }
+    if (type === 'ImportXmlAction' || type === 'ExportXmlAction') {
+      var mapping = mappingOf(action.ResultHandling);
+      var document = type === 'ImportXmlAction'
+        ? varRef(action.XmlDocumentVariableName)
+        : varRef(action.OutputMethod && action.OutputMethod.TargetDocumentVariableName);
+      return {
+        title: mapping ? shortName(mapping) : document,
+        meta: mapping ? document : null,
+        ref: mapping
+      };
+    }
+    if (type === 'AggregateAction') {
+      // Count over a list needs no attribute; Sum/Average/Min/Max name one,
+      // or an expression when UseExpression is on.
+      var over = action.UseExpression ? oneLine(action.Expression) : shortName(str(action, 'Attribute') || '');
+      return {
+        title: varRef(action.AggregateVariableName),
+        meta: (str(action, 'AggregateFunction') || 'Aggregate') +
+          (over ? ' of ' + over : '') +
+          (action.VariableName ? ' → ' + varRef(action.VariableName) : ''),
+        ref: null
+      };
+    }
+    if (type === 'ListOperationsAction') {
+      var op = action.NewOperation && typeof action.NewOperation === 'object' ? action.NewOperation : {};
+      // WHICH operation is the operation object's own type, not a field on the
+      // action — "List operation" on its own says nothing. Measured: eleven
+      // different ones in a real project (Head, Sort, Filter, Union, …).
+      var opName = activityKicker(op['$Type']) || 'Operation';
+      var detail = oneLine(op.Expression) || shortName(str(op, 'Attribute') || '') ||
+        varRef(op.SecondListOrObjectName);
+      return {
+        title: varRef(op.ListName),
+        meta: opName + (detail ? ' ' + detail : '') +
+          (action.ResultVariableName ? ' → ' + varRef(action.ResultVariableName) : ''),
+        ref: null
+      };
+    }
+    if (type === 'MicroflowCallAction') {
+      var call = action.MicroflowCall || {};
+      return {
+        title: typeof call.Microflow === 'string' ? shortName(call.Microflow) : null,
+        meta: action.UseReturnVariable && action.ResultVariableName ? '→ ' + varRef(action.ResultVariableName) : null,
+        ref: typeof call.Microflow === 'string' ? call.Microflow : null
+      };
+    }
+    if (type === 'NanoflowCallAction') {
+      var nano = action.NanoflowCall || {};
+      return {
+        title: typeof nano.Nanoflow === 'string' ? shortName(nano.Nanoflow) : null,
+        meta: action.UseReturnVariable && action.OutputVariableName ? '→ ' + varRef(action.OutputVariableName) : null,
+        ref: typeof nano.Nanoflow === 'string' ? nano.Nanoflow : null
+      };
+    }
+    if (type === 'JavaActionCallAction' || type === 'JavaScriptActionCallAction') {
+      var named = str(action, 'JavaAction') || str(action, 'JavaScriptAction');
+      var out = action.ResultVariableName || action.OutputVariableName;
+      return {
+        title: named ? shortName(named) : null,
+        meta: action.UseReturnVariable && out ? '→ ' + varRef(out) : null,
+        ref: named
+      };
+    }
+    if (type === 'ShowFormAction') {
+      var settings = action.FormSettings || {};
+      return {
+        title: typeof settings.Form === 'string' ? shortName(settings.Form) : null,
+        meta: null,
+        ref: typeof settings.Form === 'string' ? settings.Form : null
+      };
+    }
+    if (type === 'CloseFormAction') return { title: null, meta: null, ref: null };
+    if (type === 'ShowMessageAction') {
+      return {
+        title: templateText(action.Template),
+        meta: joinMeta([str(action, 'Type'), action.Blocking === true ? 'blocking' : null]),
+        ref: null
+      };
+    }
+    if (type === 'ValidationFeedbackAction') {
+      var member = shortName(str(action, 'Attribute') || str(action, 'Association') || '');
+      return {
+        title: varRef(action.ValidationVariableName),
+        meta: joinMeta([member || null, templateText(action.FeedbackTemplate)]),
+        ref: null
+      };
+    }
+    if (type === 'LogMessageAction') {
+      return {
+        title: templateText(action.MessageTemplate),
+        meta: joinMeta([str(action, 'Level'), oneLine(action.Node)]),
+        ref: null
+      };
+    }
+    if (type === 'RestCallAction') {
+      // The address is in CustomLocationTemplate, not in CustomLocation:
+      // measured on 44 real REST calls, CustomLocation was empty on every
+      // one and the URL was a template of a constant plus expressions.
+      var http = action.HttpConfiguration || {};
+      var where = oneLine(http.CustomLocation) || templateText(http.CustomLocationTemplate);
+      var method = str(http, 'HttpMethod');
+      return {
+        title: where ? (method ? method + ' ' + where : where) : method,
+        meta: null, ref: null
+      };
+    }
+    if (type === 'CallWebServiceAction') {
+      var service = str(action, 'ServiceName');
+      var operation = str(action, 'OperationName');
+      return {
+        title: service && operation ? service + '.' + operation : (service || operation),
+        meta: null,
+        ref: str(action, 'ImportedService')
+      };
+    }
+    if (type === 'IncrementCounterMeterAction') {
+      return { title: oneLine(action.Name), meta: null, ref: null };
+    }
+    if (type === 'SynchronizeAction') {
+      return { title: str(action, 'Type'), meta: null, ref: null };
+    }
+    return { title: null, meta: null, ref: null };
+  }
+
+  // The same three slots for the shapes that are not activities. Events —
+  // start, end, merge, break, continue, error — get nothing: Studio Pro draws
+  // no text on them, and inventing some would be text the file does not have.
+  function nodeLabel(obj, kind, caption, loop) {
+    if (kind === 'activity') {
+      var action = obj.Action;
+      var built = activityLabel(action);
+      return {
+        // An action may name its own kicker when the table cannot: a retrieve
+        // reads differently depending on its source.
+        kicker: built.kicker || activityKicker(action['$Type']),
+        // An authored caption always wins: it is what a person chose to call
+        // this step, and Studio Pro shows it instead of a generated one.
+        title: caption || built.title,
+        meta: built.meta,
+        ref: built.ref
+      };
+    }
+    if (kind === 'decision' || kind === 'objectTypeDecision') {
+      var condition = obj.SplitCondition && typeof obj.SplitCondition === 'object' ? obj.SplitCondition : null;
+      var ruleCall = condition && condition.RuleCall && typeof condition.RuleCall === 'object' ? condition.RuleCall : null;
+      var rule = ruleCall ? str(ruleCall, 'Microflow') : null;
+      return {
+        kicker: kind === 'decision' ? 'Decision' : 'Object type decision',
+        title: caption || varRef(obj.SplitVariableName),
+        meta: condition ? (oneLine(condition.Expression) || (rule ? shortName(rule) : null)) : null,
+        ref: rule
+      };
+    }
+    if (kind === 'loop') {
+      return {
+        kicker: 'Loop',
+        title: caption || (loop ? (varRef(loop.iteratorVariable) || oneLine(loop.condition)) : null),
+        meta: loop ? varRef(loop.listVariable) : null,
+        ref: null
+      };
+    }
+    if (kind === 'parameter') return { kicker: 'Parameter', title: caption, meta: null, ref: null };
+    if (kind === 'annotation') return { kicker: null, title: caption, meta: null, ref: null };
+    return { kicker: null, title: null, meta: null, ref: null };
+  }
+
   function readFlowGraph(raw) {
     var collection = raw && raw.ObjectCollection;
     if (!collection) return null; // no body to read, which is not an empty one
@@ -671,6 +1039,9 @@
         var action = obj.Action && typeof obj.Action === 'object' ? obj.Action : null;
         var condition = obj.SplitCondition && typeof obj.SplitCondition === 'object' ? obj.SplitCondition : null;
         var ruleCall = condition && condition.RuleCall && typeof condition.RuleCall === 'object' ? condition.RuleCall : null;
+        var caption = nodeCaptionOf(obj, kind);
+        var loop = kind === 'loop' ? loopSourceOf(obj) : null;
+        var label = nodeLabel(obj, action ? kind : (kind === 'activity' ? 'other' : kind), caption, loop);
         nodes.push({
           id: idHex(obj['$ID']),
           kind: kind,
@@ -678,7 +1049,12 @@
           // prefix. Translating it into somebody else's vocabulary is the
           // exporter's job, not the reader's.
           action: action ? String(action['$Type'] || '').replace(/^.*\$/, '') || null : null,
-          caption: nodeCaptionOf(obj, kind),
+          caption: caption,
+          // The readable text, built because the file does not carry it.
+          kicker: label.kicker,
+          title: label.title,
+          meta: label.meta,
+          ref: label.ref,
           documentation: str(obj, 'Documentation'),
           at: point(obj.RelativeMiddlePoint),
           size: sizeFrom(obj.Size),
@@ -690,7 +1066,7 @@
           rule: ruleCall ? str(ruleCall, 'Microflow') : null,
           variable: str(obj, 'SplitVariableName'),
           returnValue: str(obj, 'ReturnValue'),
-          loop: kind === 'loop' ? loopSourceOf(obj) : null,
+          loop: loop,
           disabled: obj.Disabled === true
         });
         if (obj.ObjectCollection) walk(obj.ObjectCollection.Objects, idHex(obj['$ID']));
@@ -1419,5 +1795,5 @@
   }
 
   root.MxMpr = { blobToGuid: blobToGuid, payload: payload, idHex: idHex, buildModel: buildModel,
-    applyAssociationDefaults: applyAssociationDefaults };
+    applyAssociationDefaults: applyAssociationDefaults, activityKicker: activityKicker };
 })(typeof self !== 'undefined' ? self : this);

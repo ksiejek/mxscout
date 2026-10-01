@@ -186,6 +186,84 @@ module.exports = async function (t) {
     return drawn.indexOf(a) !== -1;
   }), 'actions the "what it does" summary has no case for are still drawn, by name: ' + JSON.stringify(drawn));
 
+  // ---- the label: three slots, built from the action's own fields ----
+  // Nine thousand eight hundred and ninety-five cards in a real project store
+  // the word "Activity" and nothing else, so the readable text has to be
+  // built. kicker says what kind of activity it is in Studio Pro's
+  // vocabulary, title what it acts on, meta how. `ref` is the one qualified
+  // name the activity points at, so a drawing can link through to it.
+  function labelOf(flow, firstByte) {
+    const n = nodeById(flow, firstByte);
+    return [n.kicker, n.title, n.meta, n.ref]
+      .map(function (v) { return v === null ? 'null' : v; }).join(' | ');
+  }
+
+  t.ok(labelOf(sweep, 0xd1) === 'Retrieve from database | Order | ' +
+    '[Sales.Order_Customer/Sales.Customer/Age > 18] | Sales.Order',
+    'a database retrieve names the entity and carries its XPath: ' + labelOf(sweep, 0xd1));
+  t.ok(labelOf(create, 0xc7) === 'Retrieve by association | Order_Customer | from $Customer | Sales.Order_Customer',
+    'an association retrieve says which association, and where it starts: ' + labelOf(create, 0xc7));
+  t.ok(labelOf(create, 0xc2) === 'Create object | Open a fresh order | $Order, commit | Sales.Order',
+    'an authored caption wins the title slot, and the kicker still says what the activity IS: ' +
+    labelOf(create, 0xc2));
+  t.ok(labelOf(sweep, 0xd4) === 'Change object | $IteratorOrder | Number | null',
+    'a change says which variable and which members: ' + labelOf(sweep, 0xd4));
+  t.ok(labelOf(sweep, 0xd5) === 'Commit object(s) | $IteratorOrder | with events | null',
+    'a commit says whether events run — that is the difference that bites: ' + labelOf(sweep, 0xd5));
+  t.ok(labelOf(sweep, 0xd7) === 'Delete object(s) | $OrderList | null | null',
+    'a delete names what it deletes: ' + labelOf(sweep, 0xd7));
+  t.ok(labelOf(create, 0xc3) === 'Call microflow | SweepOrders | null | Sales.SweepOrders',
+    'a call is titled by the short name and refs the qualified one: ' + labelOf(create, 0xc3));
+  t.ok(labelOf(create, 0xc8) === 'Call nanoflow | RefreshOrders | null | Sales.RefreshOrders',
+    'and so is a nanoflow call: ' + labelOf(create, 0xc8));
+  t.ok(labelOf(create, 0xc4) === 'Call Java action | SendMail | null | Sales.SendMail',
+    'a Java action call too: ' + labelOf(create, 0xc4));
+  t.ok(labelOf(create, 0xc5) === 'Show page | Order_Overview | null | Sales.Order_Overview',
+    'a page open names the page: ' + labelOf(create, 0xc5));
+  t.ok(labelOf(sweep, 0xd9) === 'Aggregate list | $OrderList | Count → $OrderCount | null',
+    'an aggregate says the function and where the answer goes: ' + labelOf(sweep, 0xd9));
+  t.ok(labelOf(sweep, 0xda) === 'List operation | $OrderList | Head → $FirstOrder | null',
+    'a list operation says WHICH operation — it is in the operation object, not the action: ' +
+    labelOf(sweep, 0xda));
+  t.ok(labelOf(sweep, 0xdb) === 'Call web service | CustomerService.getCustomer | null | Sales.CustomerService',
+    'a web service call names service and operation: ' + labelOf(sweep, 0xdb));
+  // A template's {1} slots are filled from its own parameter expressions:
+  // "{1}" on a card says nothing, and the expression is right beside it.
+  t.ok(labelOf(sweep, 0xe0) === 'Show message | Nothing was swept: $OrderCount. | Warning, blocking | null',
+    'a message is titled by its text, translations read and placeholders filled: ' + labelOf(sweep, 0xe0));
+  t.ok(labelOf(sweep, 0xd8) === 'Call REST service | Post @Sales.ApiUrl/orders | null | null',
+    'a REST call says method and address — which lives in a template, not in CustomLocation: ' +
+    labelOf(sweep, 0xd8));
+  t.ok(labelOf(sweep, 0xe1) === 'Import with mapping | ImportOrders | $OrderXml | Sales.ImportOrders',
+    'an import is titled by the mapping that identifies it, not by the document variable: ' +
+    labelOf(sweep, 0xe1));
+  t.ok(labelOf(sweep, 0xe2) === 'Export with mapping | ExportOrders | $OrderFile | Sales.ExportOrders',
+    'an export reaches its mapping through a different field than an import does: ' +
+    labelOf(sweep, 0xe2));
+
+  // Shapes that are not activities, and the ones that carry no text at all.
+  t.ok(labelOf(sweep, 0xd2) === 'Decision | Any orders? | $OrderList != empty | null',
+    'a decision fills the same three slots: ' + labelOf(sweep, 0xd2));
+  t.ok(labelOf(sweep, 0xd3) === 'Loop | $IteratorOrder | $OrderList | null',
+    'a loop says what it iterates and over what: ' + labelOf(sweep, 0xd3));
+  t.ok(labelOf(sweep, 0xdf) === 'Object type decision | $IteratorOrder | null | null',
+    'an object type decision is titled by the variable it splits: ' + labelOf(sweep, 0xdf));
+  t.ok(labelOf(create, 0xc0) === 'Parameter | Customer | null | null',
+    'a parameter chip is labelled too: ' + labelOf(create, 0xc0));
+  t.ok(labelOf(sweep, 0xde) === 'null | Nothing to sweep is not an error. | null | null',
+    'an annotation is all text and no kind: ' + labelOf(sweep, 0xde));
+  t.ok(labelOf(sweep, 0xd0) === 'null | null | null | null' &&
+    labelOf(sweep, 0xd6) === 'null | null | null | null',
+    'a start event and a merge get no label — Studio Pro draws no text on them, ' +
+    'and inventing some would be text the file does not have');
+
+  // An action type with no entry in the table still reads as words, so a
+  // Mendix release that adds one is drawn rather than left blank.
+  t.ok(await mx.evaluate(`(function () {
+    return window.MxMpr.activityKicker('Microflows$CallMlModelAction');
+  })()`) === 'Call ml model',
+    'an unknown action type falls back to its own name split into words');
+
   // ---- and the summary is untouched by all of this ----
   t.ok(sweep.activity && sweep.activity.restCalls === 1 && sweep.activity.loops === 1 &&
     JSON.stringify(sweep.activity.commits) === JSON.stringify(['Sales.Order']),
