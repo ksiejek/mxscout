@@ -117,7 +117,10 @@ the stored model (no server, no live app needed):
 - **Entities** — as a **List** (grouped by module, with per-role access
   badges) or a **Map** (a domain overview: each module's entities plus the
   relationships between them). Click any entity for its attributes and
-  associations, access rules and relationships.
+  associations, access rules and relationships. A view entity — one whose
+  rows are an OQL query's result rather than a table of its own — is marked
+  as one, its popup shows that query, and its Data tab says the rows are
+  served read-only.
 - **Microflows**, **Nanoflows**, **Pages** — grouped by module, each showing
   which roles can run/open it and its inputs.
 - **Security** — how the app is secured, as the project itself records it:

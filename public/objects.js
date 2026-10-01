@@ -86,6 +86,17 @@
     // to ask, same as the original short-circuited `blocker(...) || pane()`.
     var blocked = window.MxLive.blocker(window.MxLive.targetForEntity(model, entity));
     if (blocked) return blocked;
+    // A view entity is browsed exactly like a stored one — an XPath retrieve
+    // is how Mendix's own data grids read one (per its docs; not yet seen
+    // against a real runtime that has one) — so it takes the ordinary pane, checked first so that whatever its
+    // Persistable flag says can never send it to the lookup-by-id pane. What
+    // differs is said above the rows: nothing in them can be written.
+    if (entity.viewEntity) {
+      return el('div', {}, [
+        el('p', { class: 'hint view-entity-note', text: 'View entity: these rows are what its OQL query returns, worked out when asked for, not rows stored for ' + entity.name + ' itself. The app serves them read-only.' }),
+        window.MxLive.renderDataPane(model, entity, null)
+      ]);
+    }
     return entity.persistable === false
       ? window.MxLive.renderTransientPane(model, entity, null)
       : window.MxLive.renderDataPane(model, entity, null);
@@ -423,7 +434,21 @@
         kids.push(constraintCaption());
         kids.push(accessMatrix(attrs, assocs, rules));
       }
-      return el('div', { class: 'popup-section' }, kids.concat(relationshipsBlock()));
+      return el('div', { class: 'popup-section' }, kids.concat(relationshipsBlock(), viewSourceBlock()));
+    }
+
+    // What a view entity IS: its query. The attributes above are that query's
+    // columns, so the query is the one place to learn where a value comes
+    // from. Shown as written in the model, as text — never run, never parsed.
+    function viewSourceBlock() {
+      var view = entity.viewEntity;
+      if (!view) return [];
+      return [
+        el('h4', { class: 'popup-h-second', text: 'Defined by this OQL query' }),
+        view.oql
+          ? el('pre', { class: 'oql-source', text: view.oql })
+          : el('p', { class: 'muted', text: 'Its query is in ' + (view.sourceDocument || 'a source document') + ', which this model does not carry.' })
+      ];
     }
 
     var commentTarget = { kind: 'entity', qualifiedName: entity.qualifiedName, module: entity.module, name: entity.name, attributes: entity.attributes || [] };
@@ -454,6 +479,7 @@
           el('div', {}, [
             el('div', { class: 'popup-title-row' }, [
               el('h3', { text: entity.name }),
+              entity.viewEntity ? el('span', { class: 'badge badge-read', text: 'View entity' }) : null,
               canCreate ? el('span', { class: 'badge badge-cd', text: 'Create' }) : null,
               canDelete ? el('span', { class: 'badge badge-cd', text: 'Delete' }) : null
             ].filter(Boolean)),

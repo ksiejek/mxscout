@@ -19,7 +19,8 @@
  * the reader's tolerance for both is exercised rather than assumed.
  *
  * The app is small but deliberately covers every shape the reader knows:
- * a module with two entities and an association, an access rule with member
+ * a module with two entities and an association, a view entity with its
+ * OQL source document, an access rule with member
  * accesses and an XPath constraint, a microflow nested two levels under a
  * folder (the walk-up to its owning module), a microflow with a body (loop,
  * retrieve, change, commit, delete, call, Java call, page open), an
@@ -116,9 +117,10 @@ const U = {
   sweepOrders:   id(0xaa),
   restService:   id(0xab),
   page:          id(0xac),
-  navigation:    id(0xad)
+  navigation:    id(0xad),
+  openOrdersSrc: id(0xae)
 };
-const E = { customer: id(0xb1), order: id(0xb2) };
+const E = { customer: id(0xb1), order: id(0xb2), openOrders: id(0xb3) };
 
 // ---------------- the fake app --------------------------------------------
 function text(str) {
@@ -168,6 +170,20 @@ const UNITS = [
             NewType: { $Type: 'DomainModels$StringAttributeType', Length: 50 } }
         ]),
         MaybeGeneralization: { $Type: 'DomainModels$NoGeneralization', Persistable: true },
+        AccessRules: marked(3, [])
+      },
+      // A view entity: rows are an OQL query's result, not a table. The
+      // shape is the Mendix metamodel's own names, not read off a real
+      // project — none on the machine this was written on has one. The query
+      // itself lives in a separate source document (below), as in Mendix 11.
+      {
+        $Type: 'DomainModels$EntityImpl', Name: 'OpenOrders', $ID: bin(E.openOrders),
+        Attributes: marked(3, [
+          { $Type: 'DomainModels$Attribute', Name: 'Number',
+            NewType: { $Type: 'DomainModels$StringAttributeType', Length: 50 } }
+        ]),
+        MaybeGeneralization: { $Type: 'DomainModels$NoGeneralization', Persistable: true },
+        Source: { $Type: 'DomainModels$OqlViewEntitySource', SourceDocument: 'Sales.OpenOrders' },
         AccessRules: marked(3, [])
       }
     ]),
@@ -259,6 +275,11 @@ const UNITS = [
   { unit: U.page, container: U.module, containment: 'Documents', doc: {
     $Type: 'Forms$Page', Name: 'Order_Overview',
     AllowedModuleRoles: marked(1, ['Sales.User'])
+  } },
+
+  { unit: U.openOrdersSrc, container: U.module, containment: 'Documents', doc: {
+    $Type: 'DomainModels$ViewEntitySourceDocument', Name: 'OpenOrders',
+    Oql: 'SELECT o.Number AS Number FROM Sales.Order AS o'
   } },
 
   { unit: U.statusEnum, container: U.module, containment: 'Documents', doc: {

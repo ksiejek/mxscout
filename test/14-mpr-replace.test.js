@@ -96,7 +96,7 @@ module.exports = async function (t) {
   await mx.evaluate(`Array.from(document.querySelectorAll('.modal button')).find(b => b.textContent === 'Compare').click()`);
   const diffText = await mx.waitFor(`(function(){ var m = document.querySelector('.modal'); return m && document.querySelector('.modal .popup-section') && m.textContent; })()`, 15000, 'diff step');
 
-  t.ok(/entities/.test(diffText) && /\+1 \/ −1/.test(diffText), 'entities shows one added and one removed: ' + diffText);
+  t.ok(/entities/.test(diffText) && /\+2 \/ −1/.test(diffText), 'entities shows two added (Order, and the OpenOrders view entity) and one removed: ' + diffText);
   t.ok(/Sales\.Order/.test(diffText) && /Sales\.Legacy/.test(diffText), 'names the specific entity added (Order) and removed (Legacy): ' + diffText);
   t.ok(/associations/.test(diffText) && /Sales\.Order_Customer/.test(diffText), 'the new association shows as added: ' + diffText);
   t.ok(/microflows/.test(diffText) && /Sales\.CreateOrder/.test(diffText) && /Sales\.OldFlow/.test(diffText),
@@ -134,7 +134,7 @@ module.exports = async function (t) {
     'a plain success message says the model was replaced, and from which file');
 
   const newModel = await mx.evaluate(`MxStore.getModel('replace-target').then(m => m.entities.map(e => e.qualifiedName).sort())`);
-  t.ok(JSON.stringify(newModel) === JSON.stringify(['Sales.Customer', 'Sales.Order']),
+  t.ok(JSON.stringify(newModel) === JSON.stringify(['Sales.Customer', 'Sales.OpenOrders', 'Sales.Order']),
     'the stored model is now the new one: ' + JSON.stringify(newModel));
 
   await mx.close();

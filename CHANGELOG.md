@@ -69,6 +69,25 @@ Slowest requests.
 **The request count appears once.** "How much work this took" repeated the tile
 from the card above it.
 
+### View entities are marked as what they are
+
+**A view entity — whose rows are what an OQL query returns, not rows stored
+for it — used to look exactly like any other entity.** It is now marked "view
+entity" in the entity list and "view" on the map, its window carries a View
+entity badge and the OQL query that defines it, and its Data tab says the rows
+are that query's result, served read-only by the app. They are browsed with the
+same XPath retrieve a stored entity is, which is how Mendix's own data grids
+read a view entity — though that has not yet been tried against a running app
+that has one.
+
+Read from a project folder, the query comes from the view entity's own source
+document, where Mendix 11 keeps it; a copy Mendix 10 also kept on the entity is
+used only when that document is missing. If neither is in the model, the window
+names the document the query lives in rather than showing an empty box. No
+project MxScout has been tried on so far had a view entity in it, so this was
+built from the Mendix metamodel's own names — a project that has one will say
+whether the reading is right.
+
 ## 1.5.0
 
 ### The About page said the outbound connection only happens while recording. It does not

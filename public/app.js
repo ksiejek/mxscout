@@ -183,6 +183,11 @@
     { name: 'Image', description: 'A stored image; extends FileDocument.' },
     { name: 'Owned', description: 'Generalization mixin that adds an Owner (a User) to whatever extends it.' }
   ];
+  // A view entity's rows are what its OQL query returns, never stored rows, so
+  // the running app serves it read-only. Said on hover wherever the entity is
+  // only marked; the popup says it in full (objects.js).
+  var VIEW_ENTITY_TITLE = 'View entity — its rows come from an OQL query rather than a table of its own, and the app serves them read-only';
+
   function withBuiltinSystemModule(model) {
     var entities = model.entities.concat(BUILTIN_SYSTEM_ENTITIES.map(function (e) {
       return {
@@ -1437,7 +1442,7 @@
             onclick: function () { state.detail.selectedEntity = e.qualifiedName; render(); }
           }, [
             el('div', { class: 'entity-card-name', text: e.name }),
-            el('div', { class: 'entity-card-sub', text: (e.attributes || []).length + ' attribute' + ((e.attributes || []).length === 1 ? '' : 's') + (e.persistable === false ? ' · non-persistable' : '') }),
+            el('div', { class: 'entity-card-sub', text: (e.attributes || []).length + ' attribute' + ((e.attributes || []).length === 1 ? '' : 's') + (e.viewEntity ? ' · view entity' : e.persistable === false ? ' · non-persistable' : ''), title: e.viewEntity ? VIEW_ENTITY_TITLE : null }),
             el('div', { class: 'entity-card-badges' }, accessBadges(row.acc).concat(
               commentMarker(e.qualifiedName)
             ))
@@ -1513,8 +1518,9 @@
         var e = row.entity;
         var card = el('button', { class: 'map-entity', onclick: function () { state.detail.selectedEntity = e.qualifiedName; render(); } }, [
           el('div', { class: 'map-entity-top' }, [
-            el('span', { class: 'map-entity-name', text: e.name })
-          ]),
+            el('span', { class: 'map-entity-name', text: e.name }),
+            e.viewEntity ? el('span', { class: 'map-entity-tag', text: 'view', title: VIEW_ENTITY_TITLE }) : null
+          ].filter(Boolean)),
           renderAttrStrip(e, attrLevelsFor(e, set))
         ]);
         card.style.setProperty('--mod', moduleColor(mod));

@@ -62,7 +62,7 @@ module.exports = async function (t) {
       w.postMessage({ mprBuffer: bytes, contentsFiles: files });
     });
   })()`);
-  t.ok(v2.entities.length === 2 && v2.userRoles.length === 3,
+  t.ok(v2.entities.length === 3 && v2.userRoles.length === 3,
     'a real File-backed Map survives the postMessage structured clone into the worker: ' + JSON.stringify({ entities: v2.entities.length, userRoles: v2.userRoles.length }));
 
   // ---- errors come back as a message, not as a thrown/unhandled worker error ----

@@ -116,7 +116,7 @@ module.exports = async function (t) {
     window.MxMprImport.handleDirectoryHandle(handle);
     return true; })()`);
   const readyV2 = await mx.waitFor(`(function(){ var m = document.querySelector('.modal'); return m && /Found App\\.mpr/.test(m.textContent) && m.textContent; })()`, 8000, 'v2 ready via directory handle');
-  t.ok(/4 content files \(v2 project format\)/.test(readyV2), 'a v2-format project finds its mprcontents/ automatically, in one pick: ' + readyV2);
+  t.ok(/15 content files \(v2 project format\)/.test(readyV2), 'a v2-format project finds its mprcontents/ automatically, in one pick: ' + readyV2);
 
   await mx.evaluate(`Array.from(document.querySelectorAll('.modal button')).find(b => b.textContent === 'Import').click()`);
   await mx.waitFor(`!document.querySelector('.modal')`, 15000, 'modal closed after import');

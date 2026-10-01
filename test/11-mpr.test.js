@@ -2,7 +2,8 @@
  * canonical model shape. Exercised against two small, committed synthetic
  * fixtures (see test/fixtures/README.md and the generator next to them)
  * encoding the SAME tiny fake app — one module ("Sales"), two entities
- * ("Customer"/"Order") linked by an association, an access rule (including
+ * ("Customer"/"Order") linked by an association, a view entity ("OpenOrders")
+ * whose OQL lives in its own source document, an access rule (including
  * the marker-prefixed array shape that once silently emptied a one-role
  * AllowedModuleRoles list), a microflow nested two levels deep under a
  * Folder (exercising resolveOwningModule's walk-up) — once in v1 shape
@@ -72,9 +73,9 @@ module.exports = async function (t) {
     return { model: model, filesRead: seen.length };
   })()`);
 
-  // Thirteen of the fourteen units: the Folder is never opened, because
+  // Fourteen of the fifteen units: the Folder is never opened, because
   // nothing the walk needs is inside one.
-  t.ok(v2.filesRead === 13, 'v2 opens only the units the walk actually needs: ' + v2.filesRead);
+  t.ok(v2.filesRead === 14, 'v2 opens only the units the walk actually needs: ' + v2.filesRead);
 
   // ---- the two formats are the same app, and say so in the same words ----
   // Everything except meta must come out byte-identical from both shapes.
@@ -119,6 +120,15 @@ module.exports = async function (t) {
             xpathConstraint: '[Age > 0]', xpathReferencedEntities: [], allowCreate: true, allowDelete: false
           }
         ]
+      },
+      // A view entity says so, and carries its query — read from its own
+      // source document, not from the entity (Mendix 11 keeps it only there).
+      {
+        module: 'Sales', name: 'OpenOrders', qualifiedName: 'Sales.OpenOrders',
+        tableName: null, generalization: null, persistable: true,
+        attributes: [{ name: 'Number', type: 'String', length: 50, defaultValue: null, enumerationQualifiedName: null }],
+        accessRules: [],
+        viewEntity: { sourceDocument: 'Sales.OpenOrders', oql: 'SELECT o.Number AS Number FROM Sales.Order AS o' }
       },
       {
         module: 'Sales', name: 'Order', qualifiedName: 'Sales.Order',

@@ -60,7 +60,9 @@ con.close()
 For `test/11-mpr.test.js` (and read by `12-mpr-worker`, `13-mpr-import-ui`,
 `14-mpr-replace` and `16-mpr-directory-pick`). Both encode the SAME tiny fake
 Mendix app — one module ("Sales"), two entities ("Customer"/"Order") linked by
-an association, an access rule (including a marker-prefixed single-item
+an association, a view entity ("OpenOrders") with its OQL in a separate
+`DomainModels$ViewEntitySourceDocument` unit — shaped from the Mendix
+metamodel's names, not copied from a real project — an access rule (including a marker-prefixed single-item
 `AllowedModuleRoles` array), a microflow nested two levels deep under a Folder
 unit (exercises `resolveOwningModule`'s walk-up), a microflow with a body, a
 page, an enumeration, a constant, a Java action, a published REST service, a

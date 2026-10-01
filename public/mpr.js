@@ -231,6 +231,33 @@
     return typeof v === 'string' && v ? v : null;
   }
 
+  // A view entity is an entity whose rows are whatever an OQL query returns,
+  // computed when they are asked for and never stored — so the runtime serves
+  // it read-only. Karol asked 2026-09-18 whether MxScout tells one apart; it
+  // did not, and read it as an ordinary entity with a table behind it.
+  //
+  // The shape is from the Mendix metamodel's own names, NOT from a real
+  // project: none of the five on this machine has a view entity (checked).
+  // The entity carries `Source: { $Type: 'DomainModels$OqlViewEntitySource',
+  // SourceDocument: '<Module.Name>' }`, and the query lives in that separate
+  // document, a DomainModels$ViewEntitySourceDocument. Mendix 10 also kept a
+  // copy inline on the source as `Oql`; Mendix 11 dropped it. Both are read,
+  // and the match is on "ViewEntitySource" in the type rather than on the
+  // whole name, so a renamed variant is still recognised as a view rather
+  // than silently read as a table. Anything this cannot find stays null and
+  // the UI says so instead of guessing.
+  function viewEntitySourceOf(raw) {
+    var src = raw && raw.Source;
+    if (!src || typeof src !== 'object' || !/ViewEntitySource/.test(String(src['$Type'] || ''))) return null;
+    return { sourceDocument: str(src, 'SourceDocument'), oql: oqlOf(src) };
+  }
+  function oqlOf(doc) {
+    var direct = str(doc, 'Oql');
+    if (direct) return direct;
+    var key = Object.keys(doc || {}).filter(function (k) { return /^oql$/i.test(k) && typeof doc[k] === 'string' && doc[k]; })[0];
+    return key ? doc[key] : null;
+  }
+
   // A short list of passwords that need no cracking. Not a dictionary — the
   // point is not coverage, it is that "the administrator password is one of
   // these" is a different finding from "the administrator password is short".
@@ -848,6 +875,8 @@
               tableName: null, generalization: null, persistable: true,
               attributes: [], accessRules: []
             };
+            var view = viewEntitySourceOf(raw);
+            if (view) entity.viewEntity = view;
             result.entities.push(entity);
             entityById.set(idHex(raw['$ID']), { qn: qn, entity: entity });
           });
@@ -998,6 +1027,7 @@
       return null;
     }
 
+    var viewSources = {}; // "Module.Doc" -> the OQL of a view entity's source document
     var documentRows = byContainment.get('Documents') || [];
     report('Reading microflows, nanoflows and pages', 0, documentRows.length);
     for (var d = 0; d < documentRows.length; d++) {
@@ -1075,6 +1105,8 @@
             // arrive with the newline somebody typed after it.
             parallelism: config && str(config, 'ParallelismExpression') ? String(config.ParallelismExpression).trim() : null
           });
+        } else if (ownerModule && /ViewEntitySourceDocument/.test(type)) {
+          viewSources[ownerModule + '.' + raw.Name] = oqlOf(raw);
         } else if (type === 'Enumerations$Enumeration' && ownerModule) {
           // An entity's enumeration attribute has only ever carried the
           // enumeration's NAME. What a person needs is the values it can
@@ -1092,6 +1124,16 @@
       }
       report('Reading microflows, nanoflows and pages', d + 1, documentRows.length);
     }
+
+    // A view entity's query is in its source document (Mendix 11), which is
+    // read above; a Mendix 10 copy already found on the entity is kept only
+    // when there is no document to read, since the document is the one Studio
+    // Pro edits.
+    result.entities.forEach(function (entity) {
+      var view = entity.viewEntity;
+      if (!view || !view.sourceDocument) return;
+      if (viewSources[view.sourceDocument]) view.oql = viewSources[view.sourceDocument];
+    });
 
     // Pass 3: the project's Security screen. Two things live here.
     //

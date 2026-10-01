@@ -3,7 +3,9 @@
 'use strict';
 const MODEL = require('./model');
 
-async function openSeededProject(t, appUrl) {
+// `model` defaults to the shared one; a test that needs a shape every other
+// test must not see (and whose counts it would shift) passes its own.
+async function openSeededProject(t, appUrl, model) {
   const mx = await t.tab(t.MX);
   await mx.waitFor('!!window.MxStore', 15000, 'MxScout loaded');
 
@@ -14,7 +16,7 @@ async function openSeededProject(t, appUrl) {
     await MxStore.saveProjectWithModel(
       { id: 'p1', name: 'Demo', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
         source: { kind: 'test' }, bytes: 100, summary: null, appUrl: null },
-      ${JSON.stringify(MODEL)});
+      ${JSON.stringify(model || MODEL)});
     return true;
   })()`);
   await mx.navigate(t.MX);

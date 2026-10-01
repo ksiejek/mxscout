@@ -600,6 +600,7 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 .map-entity:hover { border-color: var(--accent); }
 .map-entity-top { display: flex; align-items: baseline; gap: 7px; }
 .map-entity-name { font-size: 12.5px; font-weight: 600; color: var(--mod); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-entity-tag { flex: none; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
 .map-attrs { display: flex; flex-direction: column; gap: 1px; }
 .map-attr-row { display: flex; align-items: center; gap: 8px; font-size: 11px; }
 /* Per-attribute access dot: green read+write, yellow read, red none — the
@@ -692,8 +693,8 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 .rule-badges { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; margin-bottom: 10px; }
 .rule-xpath { margin-top: 8px; }
 .rule-xpath-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
-.rule-xpath-code {
-  display: block;
+.rule-xpath-code, .oql-source {
+  display: block; margin: 0;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
