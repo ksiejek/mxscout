@@ -394,6 +394,7 @@ so has no object on the page at all. Nothing here is over 2,500 lines:
 | `public/transfer.js` | how a project leaves this browser and how one arrives |
 | `public/mprImport.js` | picking a Mendix project — one folder pick where the browser allows it, the progress dialog, and handing the finished model over |
 | `public/sqlite.js` · `public/bson.js` · `public/mpr.js` · `public/mprWorker.js` | reading the `.mpr` itself, in that order: SQLite pages, then the BSON documents inside them, then the model shape, all of it in a Web Worker off the page's main thread |
+| `public/exchange.js` | the flow-drawing handover file for MxScaffold — translation into that tool's vocabulary, and compaction |
 | `public/store.js` | every persistent read and write, and nothing else does storage |
 | `public/perf.js` | performance recordings: the admin port, saving and importing one, and every aggregation over its samples |
 | `public/timeline.js` | the Timeline view: one time axis, the tracks on it, and the panel for whatever is picked |

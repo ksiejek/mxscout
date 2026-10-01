@@ -1789,13 +1789,15 @@
     render();
   }
 
-  function renderFlowList(model, key, noun) {
+  // Which flows the list is showing right now: the module chips, the text
+  // filter and the role selector, applied in one place. The export button
+  // beside the list exports exactly this, so the two cannot disagree about
+  // what "shown" means — the whole reason the count is on the button.
+  function shownFlows(model, key) {
     var set = moduleRoleSetFor(model, state.detail.role);
-    var byModule = {};
-    (model[key] || []).forEach(function (f) {
-      if (!moduleShown(f.module)) return;
-      if (!passesFilter(f)) return;
-      var allowed = f.allowedModuleRoles || [];
+    return (model[key] || []).filter(function (f) {
+      if (!moduleShown(f.module)) return false;
+      if (!passesFilter(f)) return false;
       // A specific role sees only what it can actually run — same rule the
       // entity list already applies (entityAccessFor: hidden unless a rule
       // matches the selected role). A flow with NO allowed roles at all
@@ -1803,8 +1805,67 @@
       // a specific role it is hidden same as a genuinely role-gated one it
       // can't reach; only "Everything" (set === null) shows it, with its own
       // "not directly runnable" label in the popup.
-      if (set && !listHitsSet(allowed, set)) return;
-      (byModule[f.module] = byModule[f.module] || []).push({ flow: f, allowed: allowed });
+      return !(set && !listHitsSet(f.allowedModuleRoles || [], set));
+    });
+  }
+
+  // ---------- handing a drawing to MxScaffold ----------
+  // One call behind every way of asking for it, so the file is the same
+  // whichever button produced it (public/exchange.js explains why the two
+  // tools are joined by a file and not by code). Writing it is a download:
+  // no connection opens, which is why this needed no change to the server.
+  function exportFlows(model, scope, fileHint) {
+    var built = window.MxExchange.buildFlowsDocument(model, {
+      scope: scope, version: window.MxVersion && window.MxVersion.version()
+    });
+    if (!built.included) {
+      // A model imported as JSON, or built before MxScout read flow drawings,
+      // holds no drawing to export. Writing the file anyway would hand over
+      // flows with no steps, which reads as "these flows do nothing".
+      setMessage(built.skipped
+        ? 'This project’s model has no flow drawings in it — re-import the project folder to read them.'
+        : 'Nothing to export: no flows are shown.', 'error');
+      render();
+      return;
+    }
+    var when = new Date().toISOString().slice(0, 10);
+    var fileName = 'mxscout-flows-' + safeFileName(fileHint) + '-' + when + '.json';
+    // Indented rather than compact, at about 60 % more bytes on a whole
+    // project: this is a tool whose argument is "open it and read it
+    // yourself", and a handover file nobody can read by eye would be an odd
+    // exception to that. A single flow, the common case, is a few kilobytes.
+    downloadText(JSON.stringify(built.doc, null, 1), fileName, 'application/json');
+    setMessage(built.included + (built.included === 1 ? ' flow' : ' flows') + ' written to ' + fileName +
+      (built.skipped ? ' · ' + built.skipped + ' left out, no drawing stored for them' : ''), 'ok');
+    // setMessage only sets state — whoever asked for it repaints the screen.
+    render();
+  }
+
+  function renderFlowExportButton(model, key) {
+    var shown = shownFlows(model, key);
+    var drawable = shown.filter(function (f) { return f.graph && f.graph.nodes; });
+    if (!drawable.length) return null;
+    var names = {};
+    drawable.forEach(function (f) { names[f.qualifiedName] = true; });
+    return el('button', {
+      class: 'btn btn-sm',
+      text: 'Export ' + drawable.length + (drawable.length === 1 ? ' drawing' : ' drawings'),
+      // The number IS the scope: it counts what is on screen under the
+      // filters above, so there is nothing to guess about what lands in the
+      // file. Clear the filters and it counts the whole project.
+      title: 'Write the drawing of every ' + key.replace(/s$/, '') + ' shown here to a .json file ' +
+        'for MxScaffold. A download — nothing is sent anywhere.',
+      onclick: function () {
+        exportFlows(model, function (flow) { return names[flow.qualifiedName]; },
+          (state.detail.model.meta && state.detail.model.meta.appName) || 'project');
+      }
+    });
+  }
+
+  function renderFlowList(model, key, noun) {
+    var byModule = {};
+    shownFlows(model, key).forEach(function (f) {
+      (byModule[f.module] = byModule[f.module] || []).push({ flow: f, allowed: f.allowedModuleRoles || [] });
     });
     var modules = Object.keys(byModule).sort();
     if (!modules.length) return el('div', { class: 'empty' }, [el('p', { text: 'No ' + noun + ' match the current filter.' })]);
@@ -1954,10 +2015,12 @@
       controls = el('div', { class: 'view-controls' }, [subToggle, renderFilterInput('Filter entities…'), showModuleChips].filter(Boolean));
       body = state.detail.entitySub === 'map' ? renderEntitiesMap(model) : renderEntitiesList(model);
     } else if (state.detail.view === 'microflows') {
-      controls = el('div', { class: 'view-controls' }, [renderFilterInput('Filter microflows…'), showModuleChips].filter(Boolean));
+      controls = el('div', { class: 'view-controls' }, [renderFilterInput('Filter microflows…'), showModuleChips,
+        renderFlowExportButton(model, 'microflows')].filter(Boolean));
       body = renderFlowList(model, 'microflows', 'microflows');
     } else if (state.detail.view === 'nanoflows') {
-      controls = el('div', { class: 'view-controls' }, [renderFilterInput('Filter nanoflows…'), showModuleChips].filter(Boolean));
+      controls = el('div', { class: 'view-controls' }, [renderFilterInput('Filter nanoflows…'), showModuleChips,
+        renderFlowExportButton(model, 'nanoflows')].filter(Boolean));
       body = renderFlowList(model, 'nanoflows', 'nanoflows');
     } else if (state.detail.view === 'pages') {
       controls = el('div', { class: 'view-controls' }, [renderFilterInput('Filter pages…'), showModuleChips].filter(Boolean));
@@ -2375,7 +2438,7 @@
   window.MxObjects.init({
     el: el, state: state, render: render, setMessage: setMessage,
     withMod: withMod, moduleRoleSetFor: moduleRoleSetFor,
-    listHitsSet: listHitsSet, findEntity: findEntity
+    listHitsSet: listHitsSet, findEntity: findEntity, exportFlows: exportFlows
   });
   window.MxLive.init({
     el: el, state: state, api: api, render: render, setMessage: setMessage,

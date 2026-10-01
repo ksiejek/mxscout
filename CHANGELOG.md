@@ -17,6 +17,35 @@ claim a version it is not.
 
 ## Unreleased
 
+### Microflow drawings can leave as a file
+
+**MxScout now reads the drawing of a microflow, not just a summary of it, and
+can hand it over.** Studio Pro keeps the picture in the project file — the
+position and size of every activity, the arrows between them, which side each
+one leaves and enters by, the branch values, the error outlets. All of it was
+there and none of it was read. Now it is, for every microflow and nanoflow in
+a project, along with a readable label for each activity built from its own
+fields ("Retrieve from database · Order", "Call microflow · SUB_CalcDueDate").
+
+**Two new buttons write it out.** Above the Microflows and Nanoflows lists,
+one that says how many drawings it will write — the number counts what is on
+screen under the filters, so there is nothing to guess about what lands in the
+file. And inside a flow's own window, one that writes just that flow. The file
+is for **MxScaffold**, a separate planning tool that draws microflows; its
+format is MxScaffold's own handover JSON, which already had a kind for a
+domain model and now has one for flows.
+
+Two things worth knowing. The file is **not encrypted**: it carries project
+structure, so treat it like any other copy of the model — unlike a `.mxscout`
+package, which is. And writing it **opens no connection**: the file is built
+in the page and handed to the browser's own download, the same way the
+encrypted report and the package already are. The server never sees it, and
+nothing about MxScout's network behaviour changed.
+
+A project whose model was imported as JSON, rather than read from a project
+folder, holds no drawings — the buttons do not appear for it, and the export
+says so rather than writing a file full of flows with no steps.
+
 ### "What it does" was saying less than the truth about two things
 
 **A flow that reads objects over an association no longer claims to read

@@ -20,7 +20,8 @@
   'use strict';
 
   // Bound in init(), under the names the code already used.
-  var el, state, render, setMessage, withMod, moduleRoleSetFor, listHitsSet, findEntity, peekObject;
+  var el, state, render, setMessage, withMod, moduleRoleSetFor, listHitsSet, findEntity, peekObject,
+    exportFlows;
 
   function init(deps) {
     el = deps.el;
@@ -32,6 +33,7 @@
     listHitsSet = deps.listHitsSet;
     findEntity = deps.findEntity;
     peekObject = deps.peekObject;
+    exportFlows = deps.exportFlows;
   }
 
   var FLOW_SECTION_OF = { microflow: 'microflows', nanoflow: 'nanoflows', page: 'pages' };
@@ -1038,9 +1040,20 @@
             el('p', { class: 'muted', text: flow.qualifiedName + ' \u00B7 ' + noun })
           ]),
           el('div', { class: 'popup-head-actions' }, [
+            // Only when there IS a drawing to hand over: a model imported as
+            // JSON has none, and a button that writes an empty file is worse
+            // than no button at all.
+            flow.graph && flow.graph.nodes ? el('button', {
+              class: 'btn btn-sm', text: 'Export drawing',
+              title: 'Write this ' + noun + '’s drawing to a .json file for MxScaffold. ' +
+                'A download — nothing is sent anywhere.',
+              onclick: function () {
+                exportFlows(model, function (f) { return f.qualifiedName === flow.qualifiedName; }, flow.name);
+              }
+            }) : null,
             window.MxComments.addButton(commentTarget, '+ Comment'),
             el('button', { class: 'btn btn-sm', text: 'Close', onclick: close })
-          ])
+          ].filter(Boolean))
         ]),
         // Above the tabs, because it is true of the flow rather than of a tab.
         activityBand(),
