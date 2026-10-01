@@ -23,7 +23,10 @@
  * OQL source document, an access rule with member
  * accesses and an XPath constraint, a microflow nested two levels under a
  * folder (the walk-up to its owning module), a microflow with a body (loop,
- * retrieve, change, commit, delete, call, Java call, page open), an
+ * retrieve, change, commit, delete, call, Java call, page open) carrying the
+ * geometry and the edge list a real flow has — a position and size on every
+ * object, a decision with two enumeration cases, a merge, an error outlet, an
+ * annotation and an inheritance split — an
  * enumeration, a constant, a Java action, a page, a published REST service,
  * a scheduled event, module roles, navigation home pages, and a project
  * security document with the full Security-screen settings on it.
@@ -121,6 +124,61 @@ const U = {
   openOrdersSrc: id(0xae)
 };
 const E = { customer: id(0xb1), order: id(0xb2), openOrders: id(0xb3) };
+
+// Ids of the objects INSIDE a microflow body. Every object in a real .mpr flow
+// carries one, and the flow's single Flows array points at them — so a fixture
+// without them cannot exercise the graph at all. The hex of id(0xc0) reads
+// "c00102030405060708090a0b0c0d0e0f", which is what the test asserts against.
+const N = {
+  // CreateOrder: a straight line, plus the parameter chip Studio Pro draws
+  // on the canvas (a flow can carry it here AND in MicroflowParameterCollection;
+  // the collection is what extractParameters reads, this is what is drawn).
+  coParam: id(0xc0), coStart: id(0xc1), coCreate: id(0xc2), coCall: id(0xc3),
+  coJava: id(0xc4), coForm: id(0xc5), coEnd: id(0xc6),
+  // SweepOrders: the structural showcase — decision with two enumeration
+  // cases, a loop with its own two activities, a merge, an error handler, an
+  // annotation, and an inheritance split with an entity-named case.
+  swStart: id(0xd0), swRetrieve: id(0xd1), swSplit: id(0xd2), swLoop: id(0xd3),
+  swChange: id(0xd4), swCommit: id(0xd5), swMerge: id(0xd6), swDelete: id(0xd7),
+  swRest: id(0xd8), swAggregate: id(0xd9), swListOp: id(0xda), swWebService: id(0xdb),
+  swEnd: id(0xdc), swError: id(0xdd), swNote: id(0xde), swInherit: id(0xdf)
+};
+
+// A flow's geometry, in the two string shapes Mendix stores it in: the MIDDLE
+// point of the object (relative to its container, so a child of a loop is
+// relative to the loop) and the size, both "x;y".
+function at(x, y) { return x + ';' + y; }
+function size(w, h) { return w + ';' + h; }
+
+// One Microflows$SequenceFlow. Ports are the raw connection indexes Mendix
+// writes; 1 -> 3 is the overwhelmingly common pair in real projects (left to
+// right). `opts.case` is an enumeration case value, `opts.inherit` an entity
+// name, `opts.error` marks the error-handler outlet.
+function edge(from, to, opts) {
+  const o = opts || {};
+  const cases = o.case !== undefined
+    ? [{ $Type: 'Microflows$EnumerationCase', Value: o.case }]
+    : o.inherit !== undefined
+      ? [{ $Type: 'Microflows$InheritanceCase', Value: o.inherit }]
+      : [{ $Type: 'Microflows$NoCase' }];
+  return {
+    $Type: 'Microflows$SequenceFlow',
+    OriginPointer: bin(from), DestinationPointer: bin(to),
+    OriginConnectionIndex: o.fromSide === undefined ? 1 : o.fromSide,
+    DestinationConnectionIndex: o.toSide === undefined ? 3 : o.toSide,
+    IsErrorHandler: !!o.error,
+    CaseValues: marked(2, cases),
+    Line: { $Type: 'Microflows$BezierCurve', OriginControlVector: at(30, 0), DestinationControlVector: at(-30, 0) }
+  };
+}
+function annotationEdge(from, to) {
+  return {
+    $Type: 'Microflows$AnnotationFlow',
+    OriginPointer: bin(from), DestinationPointer: bin(to),
+    OriginConnectionIndex: 2, DestinationConnectionIndex: 0,
+    Line: { $Type: 'Microflows$BezierCurve', OriginControlVector: at(0, -10), DestinationControlVector: at(0, 10) }
+  };
+}
 
 // ---------------- the fake app --------------------------------------------
 function text(str) {
@@ -220,22 +278,45 @@ const UNITS = [
         VariableType: { $Type: 'DataTypes$ObjectType', Entity: bin(E.customer) } }
     ]) },
     ObjectCollection: { Objects: marked(2, [
-      { $Type: 'Microflows$StartEvent' },
-      { $Type: 'Microflows$ActionActivity', Action: {
-        $Type: 'Microflows$CreateChangeAction', Entity: 'Sales.Order', Commit: 'Yes',
-        Items: marked(2, [
-          { $Type: 'Microflows$ChangeActionItem', Attribute: 'Sales.Order.Number', Type: 'Set', Value: "'X'" }
-        ]) } },
-      { $Type: 'Microflows$ActionActivity', Action: {
-        $Type: 'Microflows$MicroflowCallAction',
-        MicroflowCall: { $Type: 'Microflows$MicroflowCall', Microflow: 'Sales.SweepOrders' } } },
-      { $Type: 'Microflows$ActionActivity', Action: {
-        $Type: 'Microflows$JavaActionCallAction', JavaAction: 'Sales.SendMail' } },
-      { $Type: 'Microflows$ActionActivity', Action: {
-        $Type: 'Microflows$ShowFormAction',
-        FormSettings: { $Type: 'Forms$FormSettings', Form: 'Sales.Order_Overview' } } },
-      { $Type: 'Microflows$EndEvent' }
-    ]) }
+      { $Type: 'Microflows$MicroflowParameter', $ID: bin(N.coParam), Name: 'Customer',
+        IsRequired: true, RelativeMiddlePoint: at(-180, 10), Size: size(30, 30),
+        VariableType: { $Type: 'DataTypes$ObjectType', Entity: bin(E.customer) } },
+      { $Type: 'Microflows$StartEvent', $ID: bin(N.coStart),
+        RelativeMiddlePoint: at(0, 100), Size: size(20, 20) },
+      { $Type: 'Microflows$ActionActivity', $ID: bin(N.coCreate),
+        RelativeMiddlePoint: at(160, 100), Size: size(120, 60),
+        // The caption a person typed, so it must survive untouched; every
+        // other activity here leaves AutoGenerateCaption at its default and
+        // has no readable caption at all.
+        AutoGenerateCaption: false, Caption: 'Open a fresh order',
+        Documentation: 'Numbered X until the real number is known.',
+        Action: {
+          $Type: 'Microflows$CreateChangeAction', Entity: 'Sales.Order', Commit: 'Yes',
+          Items: marked(2, [
+            { $Type: 'Microflows$ChangeActionItem', Attribute: 'Sales.Order.Number', Type: 'Set', Value: "'X'" }
+          ]) } },
+      { $Type: 'Microflows$ActionActivity', $ID: bin(N.coCall),
+        RelativeMiddlePoint: at(360, 100), Size: size(120, 60),
+        AutoGenerateCaption: true, Caption: 'Activity', Action: {
+          $Type: 'Microflows$MicroflowCallAction',
+          MicroflowCall: { $Type: 'Microflows$MicroflowCall', Microflow: 'Sales.SweepOrders' } } },
+      { $Type: 'Microflows$ActionActivity', $ID: bin(N.coJava),
+        RelativeMiddlePoint: at(560, 100), Size: size(120, 60), Action: {
+          $Type: 'Microflows$JavaActionCallAction', JavaAction: 'Sales.SendMail' } },
+      { $Type: 'Microflows$ActionActivity', $ID: bin(N.coForm),
+        RelativeMiddlePoint: at(760, 100), Size: size(120, 60), Disabled: true, Action: {
+          $Type: 'Microflows$ShowFormAction',
+          FormSettings: { $Type: 'Forms$FormSettings', Form: 'Sales.Order_Overview' } } },
+      { $Type: 'Microflows$EndEvent', $ID: bin(N.coEnd),
+        RelativeMiddlePoint: at(940, 100), Size: size(20, 20), ReturnValue: '$Order' }
+    ]) },
+    Flows: marked(2, [
+      edge(N.coStart, N.coCreate),
+      edge(N.coCreate, N.coCall),
+      edge(N.coCall, N.coJava),
+      edge(N.coJava, N.coForm),
+      edge(N.coForm, N.coEnd)
+    ])
   } },
 
   // No allowed roles at all: nothing in the client can set it off. What CAN
@@ -247,29 +328,86 @@ const UNITS = [
     AllowedModuleRoles: marked(1, []),
     ApplyEntityAccess: false,
     ObjectCollection: { Objects: marked(2, [
-      { $Type: 'Microflows$StartEvent' },
-      { $Type: 'Microflows$ActionActivity', Action: {
-        $Type: 'Microflows$RetrieveAction', ResultVariableName: 'OrderList',
-        RetrieveSource: { $Type: 'Microflows$DatabaseRetrieveSource', Entity: 'Sales.Order',
-          XpathConstraint: '[Sales.Order_Customer/Sales.Customer/Age > 18]' } } },
-      { $Type: 'Microflows$LoopedActivity',
+      { $Type: 'Microflows$StartEvent', $ID: bin(N.swStart),
+        RelativeMiddlePoint: at(0, 100), Size: size(20, 20) },
+      { $Type: 'Microflows$ActionActivity', $ID: bin(N.swRetrieve),
+        RelativeMiddlePoint: at(160, 100), Size: size(120, 60), Action: {
+          $Type: 'Microflows$RetrieveAction', ResultVariableName: 'OrderList',
+          RetrieveSource: { $Type: 'Microflows$DatabaseRetrieveSource', Entity: 'Sales.Order',
+            XpathConstraint: '[Sales.Order_Customer/Sales.Customer/Age > 18]' } } },
+      { $Type: 'Microflows$ExclusiveSplit', $ID: bin(N.swSplit),
+        RelativeMiddlePoint: at(340, 100), Size: size(90, 60), Caption: 'Any orders?',
+        SplitCondition: { $Type: 'Microflows$ExpressionSplitCondition', Expression: '$OrderList != empty' } },
+      // The children's points are relative to the LOOP, not to the canvas —
+      // which is what `parentId` on the node is for.
+      { $Type: 'Microflows$LoopedActivity', $ID: bin(N.swLoop),
+        RelativeMiddlePoint: at(520, 60), Size: size(320, 160),
         LoopSource: { $Type: 'Microflows$IterableList', ListVariableName: 'OrderList', VariableName: 'IteratorOrder' },
         ObjectCollection: { Objects: marked(2, [
-          { $Type: 'Microflows$ActionActivity', Action: {
-            $Type: 'Microflows$ChangeAction', ChangeVariableName: 'IteratorOrder', Commit: 'No',
-            Items: marked(2, [
-              { $Type: 'Microflows$ChangeActionItem', Attribute: 'Sales.Order.Number', Type: 'Set', Value: "''" }
-            ]) } },
-          { $Type: 'Microflows$ActionActivity', Action: {
-            $Type: 'Microflows$CommitAction', CommitVariableName: 'IteratorOrder', WithEvents: true } }
+          { $Type: 'Microflows$ActionActivity', $ID: bin(N.swChange),
+            RelativeMiddlePoint: at(90, 80), Size: size(120, 60), Action: {
+              $Type: 'Microflows$ChangeAction', ChangeVariableName: 'IteratorOrder', Commit: 'No',
+              Items: marked(2, [
+                { $Type: 'Microflows$ChangeActionItem', Attribute: 'Sales.Order.Number', Type: 'Set', Value: "''" }
+              ]) } },
+          { $Type: 'Microflows$ActionActivity', $ID: bin(N.swCommit),
+            RelativeMiddlePoint: at(230, 80), Size: size(120, 60), Action: {
+              $Type: 'Microflows$CommitAction', CommitVariableName: 'IteratorOrder', WithEvents: true } }
         ]) } },
-      { $Type: 'Microflows$ActionActivity', Action: {
-        $Type: 'Microflows$DeleteAction', DeleteVariableName: 'OrderList' } },
-      { $Type: 'Microflows$ActionActivity', Action: {
-        $Type: 'Microflows$RestCallAction',
-        HttpConfiguration: { $Type: 'Microflows$HttpConfiguration', CustomLocation: 'https://example.test/hook' } } },
-      { $Type: 'Microflows$EndEvent' }
-    ]) }
+      { $Type: 'Microflows$ExclusiveMerge', $ID: bin(N.swMerge),
+        RelativeMiddlePoint: at(900, 100), Size: size(20, 20) },
+      { $Type: 'Microflows$ActionActivity', $ID: bin(N.swDelete),
+        RelativeMiddlePoint: at(1000, 100), Size: size(120, 60), Action: {
+          $Type: 'Microflows$DeleteAction', DeleteVariableName: 'OrderList' } },
+      { $Type: 'Microflows$ActionActivity', $ID: bin(N.swRest),
+        RelativeMiddlePoint: at(1160, 100), Size: size(120, 60), Action: {
+          $Type: 'Microflows$RestCallAction',
+          HttpConfiguration: { $Type: 'Microflows$HttpConfiguration', CustomLocation: 'https://example.test/hook' } } },
+      // Three activities the "what it does" summary has never recognised and
+      // still does not: here they are only drawn, by the action they carry.
+      { $Type: 'Microflows$ActionActivity', $ID: bin(N.swAggregate),
+        RelativeMiddlePoint: at(1320, 100), Size: size(120, 60), Action: {
+          $Type: 'Microflows$AggregateAction', AggregateFunction: 'Count',
+          InputListVariableName: 'OrderList', OutputVariableName: 'OrderCount' } },
+      { $Type: 'Microflows$ActionActivity', $ID: bin(N.swListOp),
+        RelativeMiddlePoint: at(1480, 100), Size: size(120, 60), Action: {
+          $Type: 'Microflows$ListOperationsAction', OutputVariableName: 'Head' } },
+      { $Type: 'Microflows$ActionActivity', $ID: bin(N.swWebService),
+        RelativeMiddlePoint: at(1640, 100), Size: size(120, 60), Action: {
+          $Type: 'Microflows$CallWebServiceAction' } },
+      { $Type: 'Microflows$EndEvent', $ID: bin(N.swEnd),
+        RelativeMiddlePoint: at(1800, 100), Size: size(20, 20), ReturnValue: '' },
+      // An error outlet, the note beside the decision, and a split on the
+      // specialization of a variable — three shapes with no Action at all.
+      { $Type: 'Microflows$ErrorEvent', $ID: bin(N.swError),
+        RelativeMiddlePoint: at(1160, 260), Size: size(20, 20) },
+      { $Type: 'Microflows$Annotation', $ID: bin(N.swNote),
+        RelativeMiddlePoint: at(340, 260), Size: size(130, 40),
+        Caption: 'Nothing to sweep is not an error.' },
+      { $Type: 'Microflows$InheritanceSplit', $ID: bin(N.swInherit),
+        RelativeMiddlePoint: at(1000, 400), Size: size(90, 60),
+        SplitVariableName: 'IteratorOrder' }
+    ]) },
+    // One flat edge list for the whole flow: a real .mpr keeps the edges
+    // BETWEEN objects inside a loop here too, never on the loop itself
+    // (measured: 407 loops in a real project, not one with its own Flows).
+    Flows: marked(2, [
+      edge(N.swStart, N.swRetrieve),
+      edge(N.swRetrieve, N.swSplit),
+      edge(N.swSplit, N.swLoop, { case: 'true' }),
+      edge(N.swSplit, N.swMerge, { case: 'false', fromSide: 2, toSide: 0 }),
+      edge(N.swChange, N.swCommit),
+      edge(N.swLoop, N.swMerge),
+      edge(N.swMerge, N.swDelete),
+      edge(N.swDelete, N.swRest),
+      edge(N.swRest, N.swAggregate),
+      edge(N.swRest, N.swError, { error: true, fromSide: 2, toSide: 0 }),
+      edge(N.swAggregate, N.swListOp),
+      edge(N.swListOp, N.swWebService),
+      edge(N.swWebService, N.swEnd),
+      edge(N.swInherit, N.swEnd, { inherit: 'Sales.Order' }),
+      annotationEdge(N.swNote, N.swSplit)
+    ])
   } },
 
   { unit: U.page, container: U.module, containment: 'Documents', doc: {

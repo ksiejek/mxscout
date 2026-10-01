@@ -538,6 +538,183 @@
     return out;
   }
 
+  // ---------------- what a flow LOOKS LIKE ----------------
+  // Studio Pro keeps the drawing in the .mpr, so this reads a picture rather
+  // than making one. Measured on a real Mendix 11 project (Helpdesk, 1844
+  // flows): every one of 22 562 objects carries `RelativeMiddlePoint` and
+  // `Size` — 100 %, no exceptions — and all 18 462 edges carry both endpoints,
+  // the sides they leave and enter by, their branch value and their bezier
+  // control vectors. Nothing here needs laying out.
+  //
+  // Deliberately a SEPARATE reader from readFlowActivity above. That one
+  // answers "what will this do if I press Run": a summary, with an allowlist
+  // of the action types it understands, feeding a verdict a person reads
+  // before pressing a button. This one answers "what does this look like" and
+  // has NO allowlist — an activity node carries whatever action type the file
+  // names. That is why the thirteen action types the summary has never
+  // recognised (Aggregate, ListOperations, CallWebService, Cast, …) need no
+  // entry here, and why a Mendix release that adds a fourteenth will draw it
+  // without a code change. Keeping both is the point: a drawing may show
+  // something it cannot judge, a verdict may not.
+  //
+  // Three things measured rather than assumed, because each one would have
+  // been guessed wrong:
+  //   - A point is the MIDDLE of the object, and inside a loop it is relative
+  //     to the loop, not to the canvas. Hence `parentId` and no shifting.
+  //   - A LoopedActivity has no edge list of its own: the edges BETWEEN
+  //     objects inside it live in the flow's single top-level `Flows` array
+  //     (407 loops checked, not one with its own). So this keeps one flat
+  //     node list and one flat edge list, exactly as the file does.
+  //   - An edge carries 0 or exactly 1 case value, never more (18 462
+  //     checked), so `caseValue` is singular.
+  var NODE_KINDS = {
+    'Microflows$StartEvent': 'start',
+    'Microflows$EndEvent': 'end',
+    'Microflows$ErrorEvent': 'errorEvent',
+    'Microflows$BreakEvent': 'break',
+    'Microflows$ContinueEvent': 'continue',
+    'Microflows$ActionActivity': 'activity',
+    'Microflows$ExclusiveSplit': 'decision',
+    'Microflows$InheritanceSplit': 'objectTypeDecision',
+    'Microflows$ExclusiveMerge': 'merge',
+    'Microflows$LoopedActivity': 'loop',
+    'Microflows$Annotation': 'annotation',
+    'Microflows$MicroflowParameter': 'parameter'
+  };
+
+  // An object type with no entry above keeps its own short name (PascalCase,
+  // where every known kind is lowerCamel, so the two can never be confused).
+  // A node MxScout cannot name is still a node that was there; dropping it
+  // would silently cut a hole in somebody's diagram.
+  function nodeKindOf(type) {
+    return NODE_KINDS[type] || String(type || '').replace(/^.*\$/, '') || 'unknown';
+  }
+
+  // Mendix writes a point and a size as "x;y". Both are plain numbers and both
+  // can be negative — a flow's own start sits left of zero often enough.
+  function point(s) {
+    if (typeof s !== 'string') return null;
+    var parts = s.split(';');
+    if (parts.length !== 2) return null;
+    var x = Number(parts[0]), y = Number(parts[1]);
+    return (isFinite(x) && isFinite(y)) ? { x: x, y: y } : null;
+  }
+  function sizeFrom(s) {
+    var p = point(s);
+    return p ? { width: p.x, height: p.y } : null;
+  }
+
+  // The caption a person TYPED, and never the one Studio Pro generates. On a
+  // real project 9988 of 10 332 activities leave `AutoGenerateCaption` at
+  // true, and the `Caption` stored beside it is a dead placeholder — the word
+  // "Activity" 9895 times. Passing that through would label 96 % of the cards
+  // in a drawing with a word that means nothing. Generating the caption Studio
+  // Pro shows is a job of its own (step 70b); until it exists, a node with no
+  // authored caption says so with null, which is the truth.
+  //
+  // The flag only ever appears on an ActionActivity (checked: 10 332 of 10 332
+  // carry it, nothing else does). Every other shape's `Caption` is authored —
+  // a decision's label, an annotation's whole text — so it is kept as read.
+  function nodeCaptionOf(obj, kind) {
+    if (kind === 'parameter') return typeof obj.Name === 'string' && obj.Name ? obj.Name : null;
+    if (kind === 'activity') {
+      return obj.AutoGenerateCaption === false && typeof obj.Caption === 'string' && obj.Caption
+        ? obj.Caption : null;
+    }
+    return typeof obj.Caption === 'string' && obj.Caption ? obj.Caption : null;
+  }
+
+  // A loop runs over a list or until a condition stops being true. Both shapes
+  // name their parts differently, and a drawing needs the names: an empty box
+  // says "loop" and nothing about what it loops over.
+  function loopSourceOf(obj) {
+    var src = obj.LoopSource;
+    if (!src || typeof src !== 'object') return null;
+    if (src['$Type'] === 'Microflows$WhileLoopCondition') {
+      return {
+        mode: 'while', listVariable: null, iteratorVariable: null,
+        condition: str(src, 'WhileExpression')
+      };
+    }
+    return {
+      mode: 'list',
+      listVariable: str(src, 'ListVariableName'),
+      iteratorVariable: str(src, 'VariableName'),
+      condition: null
+    };
+  }
+
+  function readFlowGraph(raw) {
+    var collection = raw && raw.ObjectCollection;
+    if (!collection) return null; // no body to read, which is not an empty one
+
+    var nodes = [];
+    function walk(objects, parentId) {
+      payload(objects).forEach(function (obj) {
+        if (!obj || typeof obj !== 'object') return;
+        var kind = nodeKindOf(obj['$Type']);
+        var action = obj.Action && typeof obj.Action === 'object' ? obj.Action : null;
+        var condition = obj.SplitCondition && typeof obj.SplitCondition === 'object' ? obj.SplitCondition : null;
+        var ruleCall = condition && condition.RuleCall && typeof condition.RuleCall === 'object' ? condition.RuleCall : null;
+        nodes.push({
+          id: idHex(obj['$ID']),
+          kind: kind,
+          // The action type exactly as the file names it, minus the module
+          // prefix. Translating it into somebody else's vocabulary is the
+          // exporter's job, not the reader's.
+          action: action ? String(action['$Type'] || '').replace(/^.*\$/, '') || null : null,
+          caption: nodeCaptionOf(obj, kind),
+          documentation: str(obj, 'Documentation'),
+          at: point(obj.RelativeMiddlePoint),
+          size: sizeFrom(obj.Size),
+          parentId: parentId,
+          // A decision holds either an expression or a call to a rule, and
+          // the two are different things: putting a rule's name in
+          // `expression` would make the diamond claim it holds an expression.
+          expression: condition ? str(condition, 'Expression') : null,
+          rule: ruleCall ? str(ruleCall, 'Microflow') : null,
+          variable: str(obj, 'SplitVariableName'),
+          returnValue: str(obj, 'ReturnValue'),
+          loop: kind === 'loop' ? loopSourceOf(obj) : null,
+          disabled: obj.Disabled === true
+        });
+        if (obj.ObjectCollection) walk(obj.ObjectCollection.Objects, idHex(obj['$ID']));
+      });
+    }
+    walk(collection.Objects, null);
+
+    var edges = payload(raw.Flows).filter(function (f) {
+      return f && typeof f === 'object' && f['$Type'];
+    }).map(function (f) {
+      var kind = f['$Type'] === 'Microflows$AnnotationFlow' ? 'annotation'
+        : f['$Type'] === 'Microflows$SequenceFlow' ? 'sequence'
+          : String(f['$Type']).replace(/^.*\$/, '');
+      var one = payload(f.CaseValues)[0];
+      var caseType = one && one['$Type'] ? String(one['$Type']) : null;
+      var line = f.Line && typeof f.Line === 'object' ? f.Line : null;
+      return {
+        from: idHex(f.OriginPointer),
+        to: idHex(f.DestinationPointer),
+        // The raw connection index Mendix writes. It is the side of the box,
+        // and 1 -> 3 is by far the commonest pair (13 921 of 18 395 origins
+        // are 1), which is left-to-right — but WHICH number is the top is not
+        // established yet, so it is passed through rather than renamed into a
+        // compass direction this cannot yet prove.
+        fromSide: typeof f.OriginConnectionIndex === 'number' ? f.OriginConnectionIndex : null,
+        toSide: typeof f.DestinationConnectionIndex === 'number' ? f.DestinationConnectionIndex : null,
+        kind: kind,
+        caseKind: caseType === 'Microflows$EnumerationCase' ? 'enumeration'
+          : caseType === 'Microflows$InheritanceCase' ? 'inheritance' : null,
+        caseValue: one && typeof one.Value === 'string' && one.Value ? one.Value : null,
+        isError: f.IsErrorHandler === true,
+        fromVector: line ? point(line.OriginControlVector) : null,
+        toVector: line ? point(line.DestinationControlVector) : null
+      };
+    });
+
+    return { nodes: nodes, edges: edges };
+  }
+
   // A Texts$Text is how Mendix stores anything a person reads: a list of
   // translations, one per language. MxScout shows one string, so it takes the
   // English one when there is one and the first otherwise — never the
@@ -1062,6 +1239,9 @@
                 module: moduleName, name: raw.Name, qualifiedName: qn,
                 allowedModuleRoles: allowedModuleRoles,
                 parameters: parameters, activity: activity,
+                // What the flow LOOKS LIKE, from the same document again.
+                // Separate from `activity` on purpose — see readFlowGraph.
+                graph: readFlowGraph(raw),
                 calledBy: [], javaActionCalls: activity ? activity.javaActions : [],
                 entityRefs: entityRefs, constantRefs: [], enumerationRefs: []
               };
