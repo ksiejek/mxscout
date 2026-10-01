@@ -75,6 +75,12 @@ module.exports = async function (t) {
   function flowOf(model, qn) {
     return model.microflows.filter(function (f) { return f.qualifiedName === qn; })[0];
   }
+  // Looked up by id, never by position: the fixture grows, and a test that
+  // counts list slots breaks for a reason that has nothing to do with it.
+  function nodeById(flow, firstByte) {
+    const want = nodeId(firstByte);
+    return flow.graph.nodes.filter(function (n) { return n.id === want; })[0];
+  }
   const create = flowOf(v1, 'Sales.CreateOrder');
   const sweep = flowOf(v1, 'Sales.SweepOrders');
 
@@ -86,11 +92,12 @@ module.exports = async function (t) {
 
   // ---- nodes: kind, position, size ----
   t.ok(JSON.stringify(create.graph.nodes.map(function (n) { return n.kind; })) ===
-    JSON.stringify(['parameter', 'start', 'activity', 'activity', 'activity', 'activity', 'end']),
+    JSON.stringify(['parameter', 'start', 'activity', 'activity', 'activity', 'activity',
+      'activity', 'activity', 'end']),
     'every object in the body becomes a node, in document order, named by what it is: ' +
     JSON.stringify(create.graph.nodes.map(function (n) { return n.kind; })));
 
-  const createNode = create.graph.nodes[2];
+  const createNode = nodeById(create, 0xc2);
   t.ok(createNode.id === nodeId(0xc2),
     'a node is keyed by the object id the edges point at: ' + createNode.id);
   t.ok(createNode.at && createNode.at.x === 160 && createNode.at.y === 100,
@@ -106,21 +113,21 @@ module.exports = async function (t) {
   // "Activity" 9895 times. Passing that through would put it on 96% of cards.
   t.ok(createNode.caption === 'Open a fresh order',
     'a caption a person typed is kept: ' + JSON.stringify(createNode.caption));
-  t.ok(create.graph.nodes[3].caption === null,
+  t.ok(nodeById(create, 0xc3).caption === null,
     'an auto-generated caption is NOT passed through — the stored "Activity" is a placeholder, not a label: ' +
-    JSON.stringify(create.graph.nodes[3].caption));
+    JSON.stringify(nodeById(create, 0xc3).caption));
   t.ok(createNode.documentation === 'Numbered X until the real number is known.',
     'documentation written on an activity comes along: ' + JSON.stringify(createNode.documentation));
-  t.ok(create.graph.nodes[5].disabled === true && createNode.disabled === false,
+  t.ok(nodeById(create, 0xc5).disabled === true && createNode.disabled === false,
     'a disabled activity says so, and an ordinary one says it is not');
-  t.ok(create.graph.nodes[6].returnValue === '$Order',
-    'an end event carries what it returns: ' + JSON.stringify(create.graph.nodes[6].returnValue));
-  t.ok(create.graph.nodes[0].kind === 'parameter' && create.graph.nodes[0].caption === 'Customer',
+  t.ok(nodeById(create, 0xc6).returnValue === '$Order',
+    'an end event carries what it returns: ' + JSON.stringify(nodeById(create, 0xc6).returnValue));
+  t.ok(nodeById(create, 0xc0).kind === 'parameter' && nodeById(create, 0xc0).caption === 'Customer',
     'the parameter chip Studio Pro draws on the canvas is a node too');
 
   // ---- edges ----
   const ce = create.graph.edges;
-  t.ok(ce.length === 5 && ce[0].from === nodeId(0xc1) && ce[0].to === nodeId(0xc2),
+  t.ok(ce.length === 6 && ce[0].from === nodeId(0xc1) && ce[0].to === nodeId(0xc2),
     'edges point from node id to node id: ' + JSON.stringify(ce.map(function (e) { return e.from + '->' + e.to; })));
   t.ok(ce[0].fromSide === 1 && ce[0].toSide === 3,
     'the side an edge leaves and enters by is kept as the raw connection index: ' + ce[0].fromSide + '->' + ce[0].toSide);
@@ -131,10 +138,6 @@ module.exports = async function (t) {
     JSON.stringify([ce[0].fromVector, ce[0].toVector]));
 
   // ---- the loop: nesting, and coordinates relative to it ----
-  function nodeById(flow, firstByte) {
-    const want = nodeId(firstByte);
-    return flow.graph.nodes.filter(function (n) { return n.id === want; })[0];
-  }
   const loop = nodeById(sweep, 0xd3);
   const inLoop = nodeById(sweep, 0xd4);
   t.ok(!!loop && loop.kind === 'loop' && loop.parentId === null,

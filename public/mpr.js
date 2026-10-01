@@ -435,12 +435,22 @@
           var entity = null;
           if (typeof source.Entity === 'string') {
             entity = source.Entity;
-          } else if (source.AssociationId) {
-            // An association retrieve names the association by id, not by
-            // name, and which END it lands on depends on where it started —
-            // so it resolves through the association and then picks the end
-            // that is not where it came from, when that is known.
-            var assoc = ctx.associationById.get(idHex(source.AssociationId));
+          } else if (typeof source.AssociationId === 'string' && source.AssociationId) {
+            // `AssociationId` is a misleading name: it holds the association's
+            // QUALIFIED NAME, not an id. Measured on every project here —
+            // 3109 association retrieves across a Mendix 9 project and two
+            // Mendix 11 ones, every single one a string like
+            // "Sales.Order_Customer". Until 2026-10-01 this looked the
+            // association up by id and so never found one: on Helpdesk, 310
+            // flows retrieve ONLY over associations and 309 of them reported
+            // reading nothing at all. The fixture hid it, because its
+            // association carried no $ID and an id-keyed map therefore had a
+            // null key that a lookup with a null key found.
+            //
+            // Which END the retrieve lands on depends on where it started, so
+            // it resolves through the association and picks the end that is
+            // not where it came from, when that is known.
+            var assoc = ctx.associationByName.get(source.AssociationId);
             if (assoc) {
               var from = entityOfVar(source.StartVariableName);
               entity = (from && assoc.owner === from) ? assoc.other
@@ -509,7 +519,12 @@
           return;
         }
         if (type === 'Microflows$NanoflowCallAction') {
-          add(out.calls, typeof action.Nanoflow === 'string' ? action.Nanoflow : null);
+          // One level down, inside NanoflowCall — exactly like a microflow
+          // call above it, and NOT on the action itself. Read from the action
+          // until 2026-10-01, which meant every nanoflow call was missed:
+          // 212 of them on Helpdesk, none in any flow's call list.
+          var nanoCall = action.NanoflowCall || {};
+          add(out.calls, typeof nanoCall.Nanoflow === 'string' ? nanoCall.Nanoflow : null);
           return;
         }
         if (type === 'Microflows$JavaActionCallAction') {
@@ -1013,7 +1028,7 @@
     if (typeof input.appName === 'string' && input.appName) result.meta.appName = input.appName;
 
     var entityById = new Map();      // hex($ID) -> { qn, entity }
-    var associationById = new Map(); // hex($ID) -> the association it names
+    var associationByName = new Map(); // "Module.Assoc" -> the association it names
     // One entry per document that names anything: { kind, name, refs }. The
     // names cannot be resolved while this is being collected — the document
     // doing the naming is often read before the one being named — so they are
@@ -1148,9 +1163,9 @@
           type: a.Type || null
         };
         result.associations.push(assoc);
-        // Indexed by its own id because a microflow's association-based
-        // retrieve is the one reference in a flow body that is NOT by name.
-        associationById.set(idHex(a['$ID']), assoc);
+        // Indexed by qualified name, which is how a flow body's
+        // association-based retrieve names it (see readFlowActivity).
+        associationByName.set(pm.moduleName + '.' + a.Name, assoc);
       });
 
       payload(pm.doc.CrossAssociations).forEach(function (a) {
@@ -1164,7 +1179,7 @@
           type: a.Type || null
         };
         result.associations.push(cross);
-        associationById.set(idHex(a['$ID']), cross);
+        associationByName.set(pm.moduleName + '.' + a.Name, cross);
       });
     });
 
@@ -1230,7 +1245,7 @@
               // could not see. entityRefs and javaActionCalls have sat empty
               // on this shape since it was ported from MxSonar; they are what
               // this walk produces, so they get filled rather than duplicated.
-              var activity = readFlowActivity(raw, { parameters: parameters, associationById: associationById });
+              var activity = readFlowActivity(raw, { parameters: parameters, associationByName: associationByName });
               var entityRefs = activity
                 ? activity.reads.concat(activity.creates, activity.changes, activity.deletes, activity.commits)
                   .filter(function (v, i, all) { return v && all.indexOf(v) === i; }).sort()

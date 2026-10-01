@@ -17,6 +17,24 @@ claim a version it is not.
 
 ## Unreleased
 
+### "What it does" was saying less than the truth about two things
+
+**A flow that reads objects over an association no longer claims to read
+nothing.** The panel above the Run button lists the entities a flow touches
+before you set it off. It read an association-based retrieve from the wrong
+place, so those retrieves contributed nothing: on a real 1536-microflow
+project, 464 flows were missing entities they genuinely read, and 305 of them
+said they read nothing at all while reading from the database. They now name
+what they read, and the entity list on the flow does too.
+
+**A call to a nanoflow is counted as a call.** It was read from the action
+instead of from the call inside it, so none of them counted — 147 on the same
+project. The separate "Can be triggered by" panel was never affected: it finds
+call sites a different way, and had them right all along.
+
+Nothing else changed: the same reader, the same panel, two fields read from
+where Mendix actually keeps them.
+
 ### The Timeline's overview strip stops jumping
 
 **Dragging the edges of the window on the overview strip now does what the

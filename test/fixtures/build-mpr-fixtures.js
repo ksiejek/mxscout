@@ -124,6 +124,8 @@ const U = {
   openOrdersSrc: id(0xae)
 };
 const E = { customer: id(0xb1), order: id(0xb2), openOrders: id(0xb3) };
+// Associations carry an $ID of their own; see the Order_Customer unit below.
+const A = { orderCustomer: id(0xb4) };
 
 // Ids of the objects INSIDE a microflow body. Every object in a real .mpr flow
 // carries one, and the flow's single Flows array points at them — so a fixture
@@ -135,6 +137,7 @@ const N = {
   // the collection is what extractParameters reads, this is what is drawn).
   coParam: id(0xc0), coStart: id(0xc1), coCreate: id(0xc2), coCall: id(0xc3),
   coJava: id(0xc4), coForm: id(0xc5), coEnd: id(0xc6),
+  coAssocRetrieve: id(0xc7), coNanoCall: id(0xc8),
   // SweepOrders: the structural showcase — decision with two enumeration
   // cases, a loop with its own two activities, a merge, an error handler, an
   // annotation, and an inheritance split with an entity-named case.
@@ -246,7 +249,12 @@ const UNITS = [
       }
     ]),
     Associations: marked(3, [
-      { $Type: 'DomainModels$Association', Name: 'Order_Customer',
+      // The $ID matters: a real association has one, and without it every
+      // id-keyed index of associations ends up keyed by null — which made a
+      // lookup by the WRONG key succeed here while failing on every real
+      // project. A fixture missing a field a real file always carries does
+      // not simplify the test, it disables it.
+      { $Type: 'DomainModels$Association', Name: 'Order_Customer', $ID: bin(A.orderCustomer),
         ParentPointer: bin(E.order), ChildPointer: bin(E.customer), Type: 'Reference' }
     ]),
     CrossAssociations: marked(3, [])
@@ -303,6 +311,22 @@ const UNITS = [
       { $Type: 'Microflows$ActionActivity', $ID: bin(N.coJava),
         RelativeMiddlePoint: at(560, 100), Size: size(120, 60), Action: {
           $Type: 'Microflows$JavaActionCallAction', JavaAction: 'Sales.SendMail' } },
+      // A retrieve over an association, which names the association by its
+      // QUALIFIED NAME — never by an id, in any Mendix version measured
+      // (3109 of them across a Mendix 9 and two Mendix 11 projects, all
+      // strings). Starting at the Customer parameter, so it must land on
+      // Sales.Order: the end that is not where it came from.
+      { $Type: 'Microflows$ActionActivity', $ID: bin(N.coAssocRetrieve),
+        RelativeMiddlePoint: at(660, 220), Size: size(120, 60), Action: {
+          $Type: 'Microflows$RetrieveAction', ResultVariableName: 'CustomerOrders',
+          RetrieveSource: { $Type: 'Microflows$AssociationRetrieveSource',
+            AssociationId: 'Sales.Order_Customer', StartVariableName: 'Customer' } } },
+      // A nanoflow call keeps the called nanoflow one level down, inside
+      // NanoflowCall — not on the action itself.
+      { $Type: 'Microflows$ActionActivity', $ID: bin(N.coNanoCall),
+        RelativeMiddlePoint: at(660, 320), Size: size(120, 60), Action: {
+          $Type: 'Microflows$NanoflowCallAction',
+          NanoflowCall: { $Type: 'Microflows$NanoflowCall', Nanoflow: 'Sales.RefreshOrders' } } },
       { $Type: 'Microflows$ActionActivity', $ID: bin(N.coForm),
         RelativeMiddlePoint: at(760, 100), Size: size(120, 60), Disabled: true, Action: {
           $Type: 'Microflows$ShowFormAction',
@@ -315,7 +339,8 @@ const UNITS = [
       edge(N.coCreate, N.coCall),
       edge(N.coCall, N.coJava),
       edge(N.coJava, N.coForm),
-      edge(N.coForm, N.coEnd)
+      edge(N.coForm, N.coEnd),
+      edge(N.coAssocRetrieve, N.coNanoCall)
     ])
   } },
 

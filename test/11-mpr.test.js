@@ -163,6 +163,19 @@ module.exports = async function (t) {
   t.ok(v1.pages.length === 1 && v1.pages[0].qualifiedName === 'Sales.Order_Overview',
     'pages are read the same way: ' + JSON.stringify(v1.pages.map(function (p) { return p.qualifiedName; })));
 
+  // ---- the two references that sit one level below where they look ----
+  // Both were read from the wrong place until 2026-10-01, and both failed
+  // silently: the summary simply said less than the truth. An association
+  // retrieve names its association by QUALIFIED NAME (measured: 3109 of them
+  // across a Mendix 9 and two Mendix 11 projects, every one a string, never
+  // an id), and a nanoflow call keeps the nanoflow inside NanoflowCall rather
+  // than on the action.
+  t.ok(!!flow.activity && flow.activity.reads.indexOf('Sales.Order') !== -1,
+    'a retrieve over an association resolves to the entity at the far end: ' +
+    JSON.stringify(flow.activity && flow.activity.reads));
+  t.ok(!!flow.activity && flow.activity.calls.indexOf('Sales.RefreshOrders') !== -1,
+    'and a nanoflow call is counted as a call: ' + JSON.stringify(flow.activity && flow.activity.calls));
+
   // ---- the project's Security screen ----
   const sec = v1.security;
   t.ok(!!sec && sec.level === 'CheckEverything',
