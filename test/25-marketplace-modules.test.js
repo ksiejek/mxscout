@@ -28,7 +28,18 @@ const MODEL = {
     { qualifiedName: 'Sales.CancelOrder', name: 'CancelOrder', module: 'Sales', allowedModuleRoles: [], parameters: [] },
     { qualifiedName: 'CommunityCommons.StringUtils', name: 'StringUtils', module: 'CommunityCommons', allowedModuleRoles: [], parameters: [] }
   ],
-  nanoflows: [], pages: []
+  nanoflows: [], pages: [],
+  // The tree draws from `modules`, so a hidden module's documents never showed
+  // — but they were still being COUNTED, and a count that disagrees with what
+  // is on screen is the one thing a tree must not do.
+  folders: [
+    { module: 'Sales', name: 'Orders', path: [] },
+    { module: 'CommunityCommons', name: 'Utils', path: [] }
+  ],
+  documents: [
+    { module: 'Sales', name: 'CancelOrder', qualifiedName: 'Sales.CancelOrder', type: 'Microflows$Microflow', kind: 'microflow', path: ['Orders'] },
+    { module: 'CommunityCommons', name: 'StringUtils', qualifiedName: 'CommunityCommons.StringUtils', type: 'Microflows$Microflow', kind: 'microflow', path: ['Utils'] }
+  ]
 };
 
 module.exports = async function (t) {
@@ -82,6 +93,18 @@ module.exports = async function (t) {
   t.ok(/CancelOrder/.test(bodyText), 'the project’s own microflow is shown');
   t.ok(!/StringUtils/.test(bodyText) && !/CommunityCommons/.test(bodyText),
     'the marketplace module’s microflow is entirely absent too');
+
+  // ---- App Explorer: the counts must agree with the tree ----
+  await mx.evaluate(`Array.from(document.querySelectorAll('button,a')).filter(n => /^App Explorer/i.test(n.textContent.trim()))[0].click()`);
+  await mx.waitFor(`!!document.querySelector('.ex-tree')`, 8000, 'tree shown');
+  const hint = await mx.evaluate(`document.querySelector('.ex-hint').textContent`);
+  t.ok(/^1 document in 2 modules and 1 folder./.test(hint),
+    'the line above the tree counts only what is on screen: the hidden module’s document and folder are out of the total, ' +
+    'and the two modules are this project’s own plus the built-in System: ' + hint);
+  t.ok(!/CommunityCommons|StringUtils|Utils/.test(await mx.evaluate(`document.querySelector('.ex-tree').textContent`)),
+    'and nothing of that module is in the tree itself');
+  t.ok(await mx.evaluate(`Array.from(document.querySelectorAll('.tree-section')).find(b => /App Explorer/.test(b.textContent)).textContent`) === 'App Explorer1',
+    'the sidebar counts the same one');
 
   // ---- Settings: the toggle, off by default ----
   await mx.evaluate(`Array.from(document.querySelectorAll('button,a')).filter(n => n.textContent.trim() === 'Settings')[0].click()`);

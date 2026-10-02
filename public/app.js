@@ -240,6 +240,12 @@
       microflows: (model.microflows || []).filter(ownModuleKept),
       nanoflows: (model.nanoflows || []).filter(ownModuleKept),
       pages: (model.pages || []).filter(ownModuleKept),
+      // The tree renders from `modules`, so a hidden module's documents never
+      // got drawn — but they were still counted, and the line above the tree
+      // read "3,377 documents in 29 modules" while 23 modules' worth of them
+      // were not there to find.
+      documents: (model.documents || []).filter(ownModuleKept),
+      folders: (model.folders || []).filter(ownModuleKept),
       userRoles: (model.userRoles || []).map(function (r) {
         return Object.assign({}, r, {
           moduleRoles: (r.moduleRoles || []).filter(function (mr) { return !hiddenNames[String(mr).split('.')[0]]; })
