@@ -63,8 +63,10 @@ Mendix app — one module ("Sales"), two entities ("Customer"/"Order") linked by
 an association, a view entity ("OpenOrders") with its OQL in a separate
 `DomainModels$ViewEntitySourceDocument` unit — shaped from the Mendix
 metamodel's names, not copied from a real project — an access rule (including a marker-prefixed single-item
-`AllowedModuleRoles` array), a microflow nested two levels deep under a Folder
-unit (exercises `resolveOwningModule`'s walk-up), a microflow with a body —
+`AllowedModuleRoles` array), a folder tree (a folder inside a folder, a folder
+whose name contains a slash, and an empty one), a microflow one folder down
+and a page two folders down (exercises `locationOf`'s walk-up to the owning
+module and the path it collects, `test/40-mpr-project-tree.test.js`), a microflow with a body —
 drawn the way a real one is, with a middle point and a size on every object
 and one flat `Flows` edge list carrying sides, branch values, an error outlet,
 an annotation line and bezier control vectors (`test/38-mpr-flow-graph.test.js`) — a

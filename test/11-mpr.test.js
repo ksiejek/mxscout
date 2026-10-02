@@ -73,9 +73,12 @@ module.exports = async function (t) {
     return { model: model, filesRead: seen.length };
   })()`);
 
-  // Fourteen of the fifteen units: the Folder is never opened, because
-  // nothing the walk needs is inside one.
-  t.ok(v2.filesRead === 14, 'v2 opens only the units the walk actually needs: ' + v2.filesRead);
+  // All seventeen. It used to be fourteen of fifteen, with the Folder units
+  // skipped because nothing the walk needed was inside one — until the folder
+  // names BECAME something it needs: they are the project tree. A folder unit
+  // holds one field, its Name, so this is three more BSON documents of a few
+  // dozen bytes; on a real project it is 435 more out of 3,879.
+  t.ok(v2.filesRead === 17, 'v2 opens only the units the walk actually needs: ' + v2.filesRead);
 
   // ---- the two formats are the same app, and say so in the same words ----
   // Everything except meta must come out byte-identical from both shapes.

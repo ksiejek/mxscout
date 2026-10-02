@@ -15,6 +15,10 @@
  *   - `security`, `moduleRoles` — the project's whole Security screen
  *   - `publishedServices`, `automation` — what the app exposes, and what runs
  *     on a timer with no user behind it
+ *   - `folders`, `documents` — the project TREE: Studio Pro's own App
+ *     Explorer, modules and the folders a team made inside them, and every
+ *     document in them by name and kind, including the two dozen kinds
+ *     MxScout models nothing else about
  * Still empty, and still on the shape only so an MxSonar export loads
  * unmodified: `constantRefs`, `enumerationRefs`, `xpathReferencedEntities`,
  * and the `javaActions` / `constants` lists. Nothing renders them.
@@ -213,6 +217,13 @@
       microflows: [], nanoflows: [], pages: [],
       javaActions: [], constants: [], enumerations: [],
       publishedServices: [], automation: [],
+      // The project tree. `folders` carries the empty ones too, which is not
+      // pedantry: in four measured projects 14 to 34 folders hold no document
+      // at all, and they are named `#v1.0.0`, `_Version 11.1.0`,
+      // `__Excel Importer 11.1.0` — a team's way of writing down which
+      // version of a Marketplace module it took. Dropping them would delete
+      // the only note somebody left.
+      folders: [], documents: [],
       security: null
     };
   }
@@ -1243,9 +1254,14 @@
     return into;
   }
 
-  // What a source IS, in the words a tester would use for it. Anything not
+  // What a document IS, in the words a tester would use for it. Anything not
   // listed falls back to the type's own name rather than being dropped — a
-  // reference from a shape this does not recognise is still a reference.
+  // reference from a shape this does not recognise is still a reference, and
+  // a document of a kind nobody here has heard of is still in the project.
+  // Two callers, deliberately the same map: the "called by" line on a flow,
+  // and the label on a row of the project tree. A document named one way in
+  // one place and another way in the other would be two answers to one
+  // question.
   var SOURCE_KIND = {
     'Microflows$Microflow': 'microflow',
     'Microflows$Nanoflow': 'nanoflow',
@@ -1266,7 +1282,18 @@
     'Workflows$Workflow': 'workflow',
     'ImportMappings$ImportMapping': 'import mapping',
     'ExportMappings$ExportMapping': 'export mapping',
-    'Queues$Queue': 'queue'
+    'Queues$Queue': 'queue',
+    // Listed only because the fallback's de-CamelCasing lowercases a name
+    // that is a proper noun: "java script action" reads as a typo, and the
+    // older OData type (Mendix's own spelling, Odata) would otherwise sit in
+    // a tree next to its newer sibling under a differently-cased name for the
+    // same thing. 32 document types measured across four projects; these five
+    // are the only ones the fallback got cosmetically wrong.
+    'JavaActions$JavaAction': 'Java action',
+    'JavaScriptActions$JavaScriptAction': 'JavaScript action',
+    'JsonStructures$JsonStructure': 'JSON structure',
+    'XmlSchemas$XmlSchema': 'XML schema',
+    'Rest$PublishedOdataServiceImpl': 'published OData service'
   };
   function sourceKindOf(type) {
     if (SOURCE_KIND[type]) return SOURCE_KIND[type];
@@ -1330,7 +1357,28 @@
     model.enumerations.sort(function (a, b) { return a.qualifiedName.localeCompare(b.qualifiedName); });
     model.publishedServices.sort(function (a, b) { return a.qualifiedName.localeCompare(b.qualifiedName); });
     model.automation.sort(function (a, b) { return a.qualifiedName.localeCompare(b.qualifiedName); });
+    model.folders.sort(treeOrder);
+    model.documents.sort(treeOrder);
     return model;
+  }
+
+  // Tree order: module, then the folder path, then the name. The path is
+  // compared NAME BY NAME rather than as a joined string, because a folder
+  // name may contain a slash — `Endpoint/Service mapping`,
+  // `Private - String en/de-cryption`, 2 to 12 of them in each of the four
+  // projects measured — so there is no separator available that could not
+  // also be part of a name. The type breaks a last tie: one folder really can
+  // hold two documents of the same name (24 such pairs in Helpdesk, e.g. a
+  // scheduled event named after the microflow it runs).
+  function treeOrder(a, b) {
+    if (a.module !== b.module) return String(a.module).localeCompare(String(b.module));
+    var ap = a.path || [], bp = b.path || [];
+    for (var i = 0; i < Math.min(ap.length, bp.length); i++) {
+      if (ap[i] !== bp[i]) return String(ap[i]).localeCompare(String(bp[i]));
+    }
+    if (ap.length !== bp.length) return ap.length - bp.length;
+    if (a.name !== b.name) return String(a.name).localeCompare(String(b.name));
+    return String(a.type || '').localeCompare(String(b.type || ''));
   }
 
   // ---------------- the model builder ----------------
@@ -1580,20 +1628,53 @@
       if (current !== entity) entity.persistable = current.persistable;
     });
 
-    // Pass 2b: Documents — microflows, nanoflows and pages only (see the
-    // file header for what MxSonar computes here that MxScout doesn't need).
-    // v2 projects can nest documents inside Folder units rather than putting
-    // them directly under the module, so the owning module isn't always the
-    // immediate ContainerID — walk upward until a unit ID IS a module's.
-    function resolveOwningModule(containerIdBytes) {
+    // Pass 2a: the folders. The `Unit` table IS the project tree — a document
+    // sits in a folder, that folder in another, and the outermost in a module
+    // — and this walk has always climbed it; it just used to keep only the
+    // module it landed on and drop every folder name it passed. A folder unit
+    // carries nothing but its Name, so this is the whole of what there is to
+    // read, and it is read before the documents because a document needs to
+    // name the folder it is in.
+    var folderByUnit = new Map(); // hex(folder's UnitID) -> { name, container }
+    var folderRows = byContainment.get('Folders') || [];
+    report('Reading folders', 0, folderRows.length);
+    for (var f = 0; f < folderRows.length; f++) {
+      var fDoc = await decodeUnit(folderRows[f][col.UnitID]);
+      if (fDoc && typeof fDoc.Name === 'string' && fDoc.Name) {
+        folderByUnit.set(idHex(folderRows[f][col.UnitID]),
+          { name: fDoc.Name, container: folderRows[f][col.ContainerID] });
+      }
+      report('Reading folders', f + 1, folderRows.length);
+    }
+
+    // Where a unit sits: which module, and through which folders. Documents
+    // can be nested in Folder units rather than put directly under the module
+    // (3307 of 3377 are, in Helpdesk), so the owning module is not the
+    // immediate ContainerID — climb until a unit ID IS a module's, collecting
+    // the folders passed through on the way.
+    //
+    // The bound is not decoration. The project's own root unit is its OWN
+    // container — measured in all four projects to hand — so a climb that
+    // overshoots the module never reaches a top and would spin until the
+    // guard stops it. Deepest real nesting measured is 4 folders.
+    function locationOf(containerIdBytes) {
       var current = containerIdBytes;
+      var path = [];
       for (var depth = 0; current && depth < 20; depth++) {
         var hex = idHex(current);
-        if (hex && moduleUnitIndex.has(hex)) return moduleUnitIndex.get(hex);
+        if (hex && moduleUnitIndex.has(hex)) return { module: moduleUnitIndex.get(hex), path: path };
+        var folder = hex ? folderByUnit.get(hex) : null;
+        if (folder) path.unshift(folder.name);
         current = getContainerId(current);
       }
-      return null;
+      return { module: null, path: [] };
     }
+
+    folderByUnit.forEach(function (folder) {
+      var at = locationOf(folder.container);
+      if (!at.module) return;
+      result.folders.push({ module: at.module, name: folder.name, path: at.path });
+    });
 
     var viewSources = {}; // "Module.Doc" -> the OQL of a view entity's source document
     var documentRows = byContainment.get('Documents') || [];
@@ -1603,12 +1684,26 @@
       var raw = await decodeUnit(docRow[col.UnitID]);
       if (raw && typeof raw.Name === 'string' && raw.Name) {
         var type = raw['$Type'];
-        var ownerModule = resolveOwningModule(docRow[col.ContainerID]);
+        var at = locationOf(docRow[col.ContainerID]);
+        var ownerModule = at.module;
         // EVERY document is a possible source of a reference, not only the
         // three kinds MxScout models: a scheduled event, a published REST
         // operation, a snippet's button and a menu item all name a flow, and
         // a flow nothing else names is the whole point of reading them.
         noteReferences(type, (ownerModule ? ownerModule + '.' : '') + raw.Name, raw);
+        // And every document gets a line in the tree, whether or not MxScout
+        // models what is inside it. 29 kinds in Helpdesk, of which 3 are
+        // modelled: without this, a person looking for the snippet, the Java
+        // action or the constant they were told about finds nothing and has
+        // no way to tell "not in this project" from "not read by this tool".
+        // `kind` is the same readable word the call-site list already uses,
+        // from the same map, so the two can never disagree.
+        if (ownerModule) {
+          result.documents.push({
+            module: ownerModule, name: raw.Name, qualifiedName: ownerModule + '.' + raw.Name,
+            type: type, kind: sourceKindOf(type), path: at.path
+          });
+        }
         if (type === 'Microflows$Microflow' || type === 'Microflows$Nanoflow' || type === 'Forms$Page') {
           var moduleName = ownerModule;
           if (moduleName) {
@@ -1628,6 +1723,12 @@
                 : [];
               var flow = {
                 module: moduleName, name: raw.Name, qualifiedName: qn,
+                // Where it lives, outermost folder first; empty when it sits
+                // directly in the module. Carried on the flow itself, not
+                // looked up in `documents` by name, because a qualified name
+                // is NOT unique across kinds: 10 names in Helpdesk, 39 in
+                // Avalon, belong to both a microflow and a page.
+                path: at.path,
                 allowedModuleRoles: allowedModuleRoles,
                 parameters: parameters, activity: activity,
                 // What the flow LOOKS LIKE, from the same document again.
@@ -1646,7 +1747,7 @@
               }
             } else {
               result.pages.push({
-                module: moduleName, name: raw.Name, qualifiedName: qn,
+                module: moduleName, name: raw.Name, qualifiedName: qn, path: at.path,
                 allowedModuleRoles: allowedModuleRoles, parameters: parameters, calledBy: []
               });
             }
@@ -1749,7 +1850,7 @@
     var moduleSecurityRows = byContainment.get('ModuleSecurity') || [];
     for (var ms = 0; ms < moduleSecurityRows.length; ms++) {
       var msRow = moduleSecurityRows[ms];
-      var owner = resolveOwningModule(msRow[col.ContainerID]);
+      var owner = locationOf(msRow[col.ContainerID]).module;
       if (!owner) continue;
       var msDoc = await decodeUnit(msRow[col.UnitID]);
       if (!msDoc || msDoc['$Type'] !== 'Security$ModuleSecurity') continue;

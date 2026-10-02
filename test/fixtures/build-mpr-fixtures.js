@@ -21,8 +21,10 @@
  * The app is small but deliberately covers every shape the reader knows:
  * a module with two entities and an association, a view entity with its
  * OQL source document, an access rule with member
- * accesses and an XPath constraint, a microflow nested two levels under a
- * folder (the walk-up to its owning module), a microflow with a body (loop,
+ * accesses and an XPath constraint, a folder tree (a folder in a folder, a
+ * folder named with a slash in it, and an empty one), a microflow one folder
+ * down and a page two (the walk-up to its owning module, and the path it
+ * collects on the way), a microflow with a body (loop,
  * retrieve, change, commit, delete, call, Java call, page open) carrying the
  * geometry and the edge list a real flow has — a position and size on every
  * object, a decision with two enumeration cases, a merge, an error outlet, an
@@ -121,7 +123,15 @@ const U = {
   restService:   id(0xab),
   page:          id(0xac),
   navigation:    id(0xad),
-  openOrdersSrc: id(0xae)
+  openOrdersSrc: id(0xae),
+  // The project tree needs three folder shapes a real project always has and
+  // one folder cannot show: a folder inside a folder, a folder whose name
+  // contains a slash (so a path joined into one string would be ambiguous —
+  // 2 to 12 such names in each of the four projects measured), and a folder
+  // with nothing in it, which teams use to write down a Marketplace module's
+  // version and which a tree built only from documents would silently drop.
+  subFolder:     id(0xaf),
+  emptyFolder:   id(0xb0)
 };
 const E = { customer: id(0xb1), order: id(0xb2), openOrders: id(0xb3) };
 // Associations carry an $ID of their own; see the Order_Customer unit below.
@@ -273,6 +283,14 @@ const UNITS = [
 
   { unit: U.folder, container: U.module, containment: 'Folders', doc: {
     $Type: 'Projects$Folder', Name: 'Orders'
+  } },
+
+  { unit: U.subFolder, container: U.folder, containment: 'Folders', doc: {
+    $Type: 'Projects$Folder', Name: 'Export/Import'
+  } },
+
+  { unit: U.emptyFolder, container: U.module, containment: 'Folders', doc: {
+    $Type: 'Projects$Folder', Name: '#v1.0.0'
   } },
 
   // Two levels deep under a folder, to exercise the walk up to the owning
@@ -483,7 +501,9 @@ const UNITS = [
     ])
   } },
 
-  { unit: U.page, container: U.module, containment: 'Documents', doc: {
+  // Two folders deep, so a document's own path is more than one name long and
+  // the slash inside the second folder's name is inside a real path.
+  { unit: U.page, container: U.subFolder, containment: 'Documents', doc: {
     $Type: 'Forms$Page', Name: 'Order_Overview',
     AllowedModuleRoles: marked(1, ['Sales.User'])
   } },

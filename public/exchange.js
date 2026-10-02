@@ -169,6 +169,12 @@
     }).filter(function (edge) { return edge.from && edge.to; });
 
     var out = { name: flow.qualifiedName, kind: kind, module: flow.module };
+    // Where it sits inside its module, outermost folder first, omitted when it
+    // sits directly in the module. MxScaffold is building a project explorer
+    // of its own (its WORKFLOW.md, step E), and a flow handed over without
+    // this would arrive in a flat heap: in the projects measured here, over
+    // 99 % of microflows live in a folder somebody chose to make.
+    put(out, 'path', (flow.path && flow.path.length) ? flow.path : null);
     put(out, 'parameters', (flow.parameters || []).map(function (p) {
       return { name: p.name, type: parameterType(p) };
     }));
