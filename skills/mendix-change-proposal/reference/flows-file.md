@@ -32,7 +32,7 @@ Two habits of the format, both deliberate:
 | `module` | Overrides the module taken from `name`. Use it when the name has no dot. |
 | `kind` | `"nanoflow"` or `"microflow"`. Anything else (including absent) reads as `microflow`. |
 | `path` | Folders from the module down, outermost first — a **list of names**, not a joined path, because a Mendix folder name may itself contain a slash. Omit it for a document sitting straight in the module. |
-| `parameters` | `[{name, type, description}]`. `type` in Mendix's own notation: `Sales.Order`, `List of Sales.OrderLine`, `String`. |
+| `parameters` | `[{name, type, description}]`. `type` in Mendix's own notation: `Sales.Order`, `List of Sales.OrderLine`, `String`. This is the header and inspector side of a parameter; the chip **drawn on the canvas** is a separate `parameter` step in `steps`, and a real flow carries both with the same names. |
 | `allowedModuleRoles` | Written by MxScout; **the importer does not read it** today, so a proposal cannot set it. An empty list, in MxScout's own role filter, means the flow is invisible under every specific role. |
 | `applyEntityAccess` | Boolean. Same: written, not read on import. |
 | `steps` | The elements. |
@@ -70,6 +70,15 @@ so they never collide with anything already in the project.
 | `caseValue` | The value on a branch outlet: `true`, `false`, or an enumeration value. **This is where a decision's outcomes come from.** All outcomes `true`/`false` → a boolean split; anything else → an enumeration split. |
 | `caseKind` | Written by MxScout; the importer ignores it. |
 | `fromSide`, `toSide`, `fromVector`, `toVector` | The side the arrow leaves and enters, and the curve's control vectors. MxScout writes them; the importer does not read them yet, so keep them for the day it does — but do not count on the curve surviving the trip. |
+
+## What the import does not do
+
+- **It does not number the steps.** The file has no numbers and
+  `importFlows` computes none, so every card arrives with a `0` badge until the
+  person presses **Renumber**. Nothing is wrong with the document; say it in
+  the rationale so the drawing is not read as broken.
+- **It does not lay anything out.** Unlike the domain model file, there is no
+  fallback arrangement — see `at` above.
 
 ## What the file does not carry
 

@@ -151,7 +151,39 @@ function checkSteps(flow, where, problems) {
     }
   });
 
+  checkParameters(flow, where, steps, problems);
   checkEdges(flow, where, byId, problems);
+}
+
+/* A parameter lives in two places: `parameters` on the flow, which the header
+ * and the inspector read, and a `parameter` step, which is the chip drawn on
+ * the canvas. Every real flow carries both. Adding one half is the easy
+ * mistake, and it produces a document whose canvas and header disagree. */
+function checkParameters(flow, where, steps, problems) {
+  const warn = (at, text) => problems.push({ level: 'WARNING', where: at, text: text });
+
+  const declared = new Set((Array.isArray(flow.parameters) ? flow.parameters : [])
+    .filter((p) => p && typeof p.name === 'string').map((p) => p.name));
+  const drawn = new Map();
+  steps.forEach((step) => {
+    if (!step || (step.kind !== 'parameter' && step.type !== 'parameter')) return;
+    const name = step.title || step.caption;
+    if (name) drawn.set(name, step.id);
+  });
+  if (declared.size === 0 && drawn.size === 0) return;
+
+  drawn.forEach((id, name) => {
+    if (!declared.has(name)) {
+      warn(where + '.' + id, 'a parameter chip named "' + name + '" is drawn on the canvas, but `parameters` ' +
+        'on the flow does not list it — the header and the drawing would disagree');
+    }
+  });
+  declared.forEach((name) => {
+    if (!drawn.has(name)) {
+      warn(where, 'parameter "' + name + '" is on the flow but has no `parameter` step, so it is in the header ' +
+        'and not on the canvas');
+    }
+  });
 }
 
 function checkEdges(flow, where, byId, problems) {

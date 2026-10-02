@@ -139,6 +139,35 @@ module.exports = async function (t) {
   }), null);
   t.ok(levels(missingParent) === 'ERROR', 'a parent that is not in the flow is an error: ' + levels(missingParent));
 
+  // A parameter is written twice: `parameters` on the flow, which the header
+  // and inspector read, and a `parameter` step, which is the chip on the
+  // canvas. Found by running the skill against a real Helpdesk microflow —
+  // every real flow carries both, and adding one half is the easy mistake.
+  const headerOnly = review(flowsDoc({
+    parameters: [{ name: 'Ticket', type: 'TicketsAndTeams.Ticket' }],
+    steps: [{ id: 'n1', kind: 'start', type: 'start', at: { x: 0, y: 0 } }],
+  }), null);
+  t.ok(levels(headerOnly) === 'WARNING' && says(headerOnly, 'not on the canvas'),
+    'a parameter on the flow with no chip drawn for it is flagged');
+
+  const canvasOnly = review(flowsDoc({
+    steps: [
+      { id: 'n1', kind: 'start', type: 'start', at: { x: 0, y: 0 } },
+      { id: 'n2', kind: 'parameter', type: 'parameter', title: 'Ticket', at: { x: 0, y: -170 } },
+    ],
+  }), null);
+  t.ok(levels(canvasOnly) === 'WARNING' && says(canvasOnly, 'would disagree'),
+    'and so is a chip on the canvas that the flow does not declare');
+
+  const bothHalves = review(flowsDoc({
+    parameters: [{ name: 'Ticket', type: 'TicketsAndTeams.Ticket' }],
+    steps: [
+      { id: 'n1', kind: 'start', type: 'start', at: { x: 0, y: 0 } },
+      { id: 'n2', kind: 'parameter', type: 'parameter', title: 'Ticket', at: { x: 0, y: -170 } },
+    ],
+  }), null);
+  t.ok(bothHalves.length === 0, 'both halves together are the shape a real flow has, and pass');
+
   // ---- the domain model file, where the merge rule is the opposite ----
   const before = {
     mxscaffold: 'domain-model',

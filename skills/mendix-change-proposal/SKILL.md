@@ -65,9 +65,26 @@ wrong activity is worse than a visible gap. If no type fits what you mean, use
 
 **Give positions.** A step without `at` lands at `{x: 0, y: 0}`, so a proposal
 written without positions imports as one pile. Copy the original's coordinates
-for steps you kept, place new ones in the gaps (the files use ~180 px between
-step centres horizontally, ~120 px vertically), and tell the person about the
-**Auto-arrange** button if you would rather it laid itself out.
+for steps you kept, place new ones in the gaps (measured on real Mendix
+drawings: ~165–180 px between step centres horizontally, ~110–130 px
+vertically), and tell the person about the **Auto-arrange** button if you would
+rather it laid itself out. Coordinates in a real project are frequently large
+and negative — Studio Pro's canvas has no origin at the top left. Leave them
+alone; the reader fits the document to the screen when it opens.
+
+**Every card shows `0` until somebody presses Renumber.** The file carries no
+step numbers, and the import does not compute them — `importFlows` merges the
+documents and stops there. So the proposal arrives with a `0` badge on every
+card, and the number appears only when the person presses **Renumber** in the
+flow's inspector. Say so in the rationale; otherwise the first impression of
+the drawing is that the numbering is broken.
+
+**A parameter is written twice, and both halves are needed.** `parameters` on
+the flow is what the header chips and the inspector read. A `parameter` step in
+`steps` is the chip drawn *on the canvas*, above the start event. Real flows
+carry both, saying the same names. A proposal that adds a parameter to only one
+of them produces a document whose canvas and whose header disagree — and the
+checker will say so.
 
 **Branch outcomes live on the edges, not on the step.** A `decision` gets its
 outcomes from the `caseValue` of the edges leaving it. Two edges with
