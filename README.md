@@ -414,6 +414,30 @@ so has no object on the page at all. Nothing here is over 2,500 lines:
 | `public/version.js` | which version is running and what is in it |
 | `public/index.html` · `public/styles.css` | the page every one of those renders into, and the stylesheet they all share |
 
+Two directories are deliberately not in that table, because nothing in them
+runs as part of the app: `test/` (see below) and `skills/`.
+
+## The change-proposal skill
+
+`skills/mendix-change-proposal/` is a skill for a coding agent, not code the
+app loads. It picks up where the handover file leaves off: you export a
+drawing from MxScout, ask for a change, and get back a second file in the same
+format plus the reasoning — which MxScaffold imports and draws next to the
+original, so the proposal is something to look at rather than something to
+read.
+
+It is a folder of Markdown and one zero-dependency Node script
+(`check-proposal.js`), which answers the question the format itself cannot:
+will the other tool draw what this file says? The rule that earns it is that
+MxScaffold's importer **never overwrites** a flow it already has — it skips it
+as "already here" — so a proposal that keeps the original's name imports as
+nothing at all, and no screen says so. `node check-proposal.js proposal.json
+--against original.json` catches exactly that. `test/43-change-proposal-skill.test.js`
+runs its checks over a document built by the real exporter, so the two cannot
+drift apart quietly.
+
+To use it, copy that folder into `~/.claude/skills/`.
+
 ## Versions and updates
 
 The sidebar shows which version is running — read from the running server, so
