@@ -98,11 +98,11 @@ module.exports = async function (t) {
     'a team wrote down which version of a Marketplace module it took');
 
   // ---- documents: all of them, not only the three kinds MxScout models ----
-  t.ok(v1.documents.length === 9,
+  t.ok(v1.documents.length === 10,
     'every named document under a module gets a line: ' + v1.documents.length);
   const kinds = v1.documents.map(function (d) { return d.kind; }).sort();
   t.ok(JSON.stringify(kinds) === JSON.stringify(['Java action', 'constant', 'enumeration',
-    'microflow', 'microflow', 'page', 'published REST service', 'scheduled event',
+    'microflow', 'microflow', 'page', 'page', 'published REST service', 'scheduled event',
     'view entity source document']),
     'including the kinds MxScout models nothing else about: ' + JSON.stringify(kinds));
   t.ok(docOf(v1, 'SendMail').kind === 'Java action',
@@ -131,21 +131,24 @@ module.exports = async function (t) {
   }
   t.ok(JSON.stringify(flowOf(v1, 'Sales.CreateOrder').path) === JSON.stringify(['Orders']),
     'a microflow carries where it lives: ' + JSON.stringify(flowOf(v1, 'Sales.CreateOrder').path));
-  t.ok(JSON.stringify(v1.pages[0].path) === JSON.stringify(['Orders', 'Export/Import']),
-    'and so does a page: ' + JSON.stringify(v1.pages[0].path));
+  const overview = v1.pages.filter(function (p) { return p.name === 'Order_Overview'; })[0];
+  t.ok(JSON.stringify(overview.path) === JSON.stringify(['Orders', 'Export/Import']),
+    'and so does a page: ' + JSON.stringify(overview.path));
 
   // ---- order ----
   // Folders before the documents beside them, and a path compared name by
   // name: "Orders" sorts before "Orders / Export/Import", which a joined
   // string would also get right here and would get wrong on a name whose
   // slash falls between two real folder names.
-  t.ok(JSON.stringify(v1.documents.map(function (d) { return d.path.concat([d.name]).join(' > '); })) ===
-    JSON.stringify([
-      'MaxOrders', 'NightlySweep', 'OpenOrders', 'orders', 'SendMail', 'Status', 'SweepOrders',
-      'Orders > CreateOrder', 'Orders > Export/Import > Order_Overview'
-    ]),
-    'documents come out in tree order: module, then folder path, then name: ' +
-    JSON.stringify(v1.documents.map(function (d) { return d.path.concat([d.name]).join(' > '); })));
+  const order = v1.documents.map(function (d) { return d.path.concat([d.name]).join(' > '); });
+  t.ok(JSON.stringify(order) === JSON.stringify([
+    'MaxOrders', 'OpenOrders', 'orders', 'SendMail', 'Status', 'SweepOrders', 'SweepOrders',
+    'Orders > CreateOrder', 'Orders > CreateOrder', 'Orders > Export/Import > Order_Overview'
+  ]), 'documents come out in tree order: module, then folder path, then name: ' + JSON.stringify(order));
+  t.ok(JSON.stringify(v1.documents.filter(function (d) { return d.name === 'CreateOrder'; })
+    .map(function (d) { return d.kind; })) === JSON.stringify(['page', 'microflow']),
+    'and where two documents in one folder share a name, the type breaks the tie rather than one of ' +
+    'them disappearing: ' + JSON.stringify(v1.documents.filter(function (d) { return d.name === 'CreateOrder'; })));
 
   // ---- and it reaches the handover file MxScaffold reads ----
   await loadScript('/exchange.js');

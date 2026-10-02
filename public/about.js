@@ -39,7 +39,7 @@
           ['Licence', 'GPL-3.0-or-later — the complete source is readable, unminified, with no build step between it and what runs'],
           ['Runtime', 'Node.js, standard library only (http, fs, path, crypto, url)'],
           ['Third-party dependencies', 'None. package.json declares no dependencies; there is no node_modules, no lockfile and no npm install step'],
-          ['Size', 'About 21,500 lines across 31 files — small enough to read end to end. The test suite ships alongside it in test/, another 55 files and about 8,100 lines that never run as part of the app'],
+          ['Size', 'About 21,500 lines across 31 files — small enough to read end to end. The test suite ships alongside it in test/, another 56 files and about 8,300 lines that never run as part of the app'],
           ['Install footprint', 'A folder. No installer, no administrator rights, no system service, no scheduled task, no registry or autostart entry, no PATH change'],
           ['Starting it', 'A script in that folder: start.sh, or MxScout.cmd / MxScout.command for a double-click. It runs Node.js on the files already there and opens the browser on 127.0.0.1. On a machine with no Node.js installed, and only after the person typing yes to the question, the launcher downloads the official Node build from nodejs.org into ./runtime — one folder, deleted like any other, no installer and no administrator rights. That is the only thing MxScout ever writes outside the browser, it happens in the launcher and never in the server process, and it never happens without being asked. Answering no, or having no network, leaves the folder untouched'],
           ['Runs as', 'The user who starts it, with that user’s permissions. Nothing is elevated'],

@@ -81,7 +81,7 @@ module.exports = async function (t) {
     return true; })()`);
 
   const ready = await mx.waitFor(`(function(){ var m = document.querySelector('.modal'); return m && /Found App\\.mpr/.test(m.textContent) && m.textContent; })()`, 8000, 'ready step');
-  t.ok(/17 content files \(v2 project format\)/.test(ready), 'the modal names the file it found and its format: ' + ready);
+  t.ok(/18 content files \(v2 project format\)/.test(ready), 'the modal names the file it found and its format: ' + ready);
   t.ok(await mx.evaluate(`document.querySelector('.modal input[type=text]').value`) === 'App',
     'the project name is pre-filled from the .mpr file name');
 

@@ -131,7 +131,14 @@ const U = {
   // with nothing in it, which teams use to write down a Marketplace module's
   // version and which a tree built only from documents would silently drop.
   subFolder:     id(0xaf),
-  emptyFolder:   id(0xb0)
+  emptyFolder:   id(0xb0),
+  // A PAGE called CreateOrder, in the same folder as the MICROFLOW called
+  // CreateOrder. Not a contrived collision: a qualified name identifies a
+  // document only together with its kind, and 10 names in Helpdesk, 39 in
+  // Avalon belong to both a microflow and a page. Without a pair here, a
+  // reader that resolves "Sales.CreateOrder" to whichever of the two it
+  // indexed last passes every test.
+  createOrderPage: id(0xb5)
 };
 const E = { customer: id(0xb1), order: id(0xb2), openOrders: id(0xb3) };
 // Associations carry an $ID of their own; see the Order_Customer unit below.
@@ -505,6 +512,25 @@ const UNITS = [
   // the slash inside the second folder's name is inside a real path.
   { unit: U.page, container: U.subFolder, containment: 'Documents', doc: {
     $Type: 'Forms$Page', Name: 'Order_Overview',
+    AllowedModuleRoles: marked(1, ['Sales.User']),
+    // A button that opens another page. The chain of $Types is the measured
+    // one — Forms$ActionButton > Forms$FormAction > Forms$FormSettings, with
+    // the target under `Form` — hung straight off the page rather than under
+    // the dozen levels of layout a real page nests it in: the depth is
+    // quantity, the chain is shape. It names "Sales.CreateOrder", which is
+    // BOTH a page and a microflow here, and `Form` is what says which.
+    Widgets: marked(2, [
+      { $Type: 'Forms$ActionButton', Name: 'OpenCreateOrder',
+        Action: { $Type: 'Forms$FormAction',
+          FormSettings: { $Type: 'Forms$FormSettings', Form: 'Sales.CreateOrder' } } }
+    ])
+  } },
+
+  // The other half of that pair. Same folder as the microflow of this name —
+  // one folder really does hold two documents with one name (24 such pairs in
+  // Helpdesk).
+  { unit: U.createOrderPage, container: U.folder, containment: 'Documents', doc: {
+    $Type: 'Forms$Page', Name: 'CreateOrder',
     AllowedModuleRoles: marked(1, ['Sales.User'])
   } },
 
@@ -539,8 +565,14 @@ const UNITS = [
   // Runs SweepOrders with no user at all — outside every role in the model.
   // Note it carries BOTH the legacy Interval/IntervalType pair AND the
   // Schedule child, exactly as a real project does; only the child is current.
+  //
+  // And it is NAMED after the microflow it runs, which is what teams really do
+  // — in Helpdesk the events Queues.QueuesStats, Queues.ScheduledQueuesRun and
+  // Queues.DeleteOldQueues are each named after their own microflow. That made
+  // "is this reference the document itself?" a question a NAME cannot answer,
+  // and answering it by name alone silently dropped every one of them.
   { unit: U.scheduled, container: U.module, containment: 'Documents', doc: {
-    $Type: 'ScheduledEvents$ScheduledEvent', Name: 'NightlySweep',
+    $Type: 'ScheduledEvents$ScheduledEvent', Name: 'SweepOrders',
     Enabled: true, Microflow: 'Sales.SweepOrders', TimeZone: 'UTC',
     Interval: 99, IntervalType: 'Second',
     Schedule: { $Type: 'ScheduledEvents$DaySchedule', Multiplier: 1 }

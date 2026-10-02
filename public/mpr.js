@@ -1234,8 +1234,27 @@
   // Deliberately NOT matched: ConcurrencyErrorMicroflow and friends, because
   // they are different property names. AuthenticationMicroflow is listed
   // explicitly — a service's authentication microflow really does run.
-  var REFERENCE_KEYS = { Microflow: 1, Nanoflow: 1, Form: 1, Page: 1, AuthenticationMicroflow: 1 };
+  //
+  // The property name also says WHICH KIND of thing is being named, and that
+  // matters because a qualified name does not identify a document on its own:
+  // in Helpdesk 10 names belong to both a microflow and a page, in Avalon 39.
+  // `SpecialForms.EditForm` is a microflow AND a page there; the microflow
+  // `NewForm` names it under `Microflow` (it calls the flow) while the
+  // microflow `EditForm` names it under `Form` (it opens the page). Collecting
+  // both as the same bare string put every one of those references on
+  // whichever of the two was inserted into the lookup last — giving the page
+  // a caller it does not have and leaving the microflow saying nothing reaches
+  // it. Flow versus page is the only split needed: across four real projects
+  // there is not one name shared by a microflow and a nanoflow.
+  var REFERENCE_KEYS = {
+    Microflow: 'flow', Nanoflow: 'flow', AuthenticationMicroflow: 'flow',
+    Form: 'page', Page: 'page'
+  };
 
+  // into: { "Module.Name": 'flow' | 'page' | 'both' }. One document really can
+  // name the same string both ways — a snippet with a button that calls the
+  // nanoflow and a link that opens the page of the same name — so the two
+  // answers are kept rather than one overwriting the other.
   function collectReferences(doc, into) {
     if (!doc || typeof doc !== 'object' || doc instanceof Uint8Array) return into;
     if (Array.isArray(doc)) {
@@ -1246,7 +1265,8 @@
     for (var k = 0; k < keys.length; k++) {
       var value = doc[keys[k]];
       if (typeof value === 'string') {
-        if (REFERENCE_KEYS[keys[k]] === 1 && value) into[value] = true;
+        var wants = REFERENCE_KEYS[keys[k]];
+        if (wants && value) into[value] = (into[value] && into[value] !== wants) ? 'both' : wants;
       } else {
         collectReferences(value, into);
       }
@@ -1453,15 +1473,21 @@
 
     var entityById = new Map();      // hex($ID) -> { qn, entity }
     var associationByName = new Map(); // "Module.Assoc" -> the association it names
-    // One entry per document that names anything: { kind, name, refs }. The
-    // names cannot be resolved while this is being collected — the document
-    // doing the naming is often read before the one being named — so they are
+    // One entry per document that names anything:
+    // { kind, name, refs: [{ name, wants: 'flow'|'page'|'both' }] }. The names
+    // cannot be resolved while this is being collected — the document doing
+    // the naming is often read before the one being named — so they are
     // resolved in one pass at the end.
     var referenceSources = [];
     function noteReferences(kindType, name, doc) {
       var refs = collectReferences(doc, {});
       var names = Object.keys(refs);
-      if (names.length) referenceSources.push({ kind: sourceKindOf(kindType), name: name, refs: names });
+      if (names.length) {
+        referenceSources.push({
+          kind: sourceKindOf(kindType), name: name,
+          refs: names.map(function (n) { return { name: n, wants: refs[n] }; })
+        });
+      }
     }
     var parsedModules = [];
     var moduleUnitIndex = new Map(); // hex(module unit's own UnitID) -> moduleName
@@ -1868,23 +1894,48 @@
     // A name that matches nothing in the model is dropped without ceremony:
     // it is a layout, a snippet, a page template or a document type MxScout
     // does not model, and none of those are things this can be wrong about.
-    var targetByName = new Map();
-    ['microflows', 'nanoflows', 'pages'].forEach(function (key) {
-      result[key].forEach(function (item) { targetByName.set(item.qualifiedName, item); });
-    });
+    //
+    // Two lookups, not one, and each holds a LIST: a qualified name does not
+    // identify a document (see REFERENCE_KEYS). The property that carried the
+    // name says whether a flow or a page was meant, so that is where it goes —
+    // and because a list cannot be overwritten, two documents of one kind
+    // sharing a name both get the reference rather than one of them silently
+    // taking it. No such pair exists in the four projects measured; this is
+    // simply the shape that cannot have the bug.
+    var flowByName = new Map();
+    var pageByName = new Map();
+    function index(map, item, kind) {
+      if (!map.has(item.qualifiedName)) map.set(item.qualifiedName, []);
+      map.get(item.qualifiedName).push({ item: item, kind: kind });
+    }
+    result.microflows.forEach(function (item) { index(flowByName, item, 'microflow'); });
+    result.nanoflows.forEach(function (item) { index(flowByName, item, 'nanoflow'); });
+    result.pages.forEach(function (item) { index(pageByName, item, 'page'); });
+
     referenceSources.forEach(function (source) {
-      source.refs.forEach(function (name) {
-        var target = targetByName.get(name);
-        if (!target || target.qualifiedName === source.name) return;
-        if (target.calledBy.some(function (c) { return c.name === source.name && c.kind === source.kind; })) return;
-        target.calledBy.push({ kind: source.kind, name: source.name });
+      source.refs.forEach(function (ref) {
+        var targets = [];
+        if (ref.wants !== 'page') targets = targets.concat(flowByName.get(ref.name) || []);
+        if (ref.wants !== 'flow') targets = targets.concat(pageByName.get(ref.name) || []);
+        targets.forEach(function (found) {
+          var target = found.item;
+          // Itself means the same name AND the same kind — a flow that calls
+          // itself. The microflow `SpecialForms.EditForm` opening the PAGE of
+          // that name is not a self-reference, and a check on the name alone
+          // would drop exactly the references this split exists to get right.
+          if (target.qualifiedName === source.name && found.kind === source.kind) return;
+          if (target.calledBy.some(function (c) { return c.name === source.name && c.kind === source.kind; })) return;
+          target.calledBy.push({ kind: source.kind, name: source.name });
+        });
       });
     });
-    targetByName.forEach(function (target) {
-      // A source with no name of its own — the project's navigation document
-      // is the one that matters — sorts by what it IS instead.
-      target.calledBy.sort(function (a, b) {
-        return (a.name || a.kind).localeCompare(b.name || b.kind);
+    ['microflows', 'nanoflows', 'pages'].forEach(function (key) {
+      result[key].forEach(function (target) {
+        // A source with no name of its own — the project's navigation document
+        // is the one that matters — sorts by what it IS instead.
+        target.calledBy.sort(function (a, b) {
+          return (a.name || a.kind).localeCompare(b.name || b.kind);
+        });
       });
     });
     // Says that this model was built by a reader that looked. Without it, an

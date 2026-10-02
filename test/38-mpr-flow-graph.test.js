@@ -272,6 +272,6 @@ module.exports = async function (t) {
     }));
 
   // ---- a page is not a flow ----
-  t.ok(v1.pages.length === 1 && v1.pages[0].graph === undefined,
+  t.ok(v1.pages.length === 2 && v1.pages.every(function (p) { return p.graph === undefined; }),
     'a page gets no graph: it has a body, but not this kind of one');
 };

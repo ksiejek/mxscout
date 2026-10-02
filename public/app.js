@@ -2459,7 +2459,11 @@
   window.MxObjects.init({
     el: el, state: state, render: render, setMessage: setMessage,
     withMod: withMod, moduleRoleSetFor: moduleRoleSetFor,
-    listHitsSet: listHitsSet, findEntity: findEntity, exportFlows: exportFlows
+    listHitsSet: listHitsSet, findEntity: findEntity, exportFlows: exportFlows,
+    // "Reached from" opens the thing that reaches this one OVER this popup.
+    // objects.js has asked for this since the list was built (2026-09-12) and
+    // was never given it, so every one of those links threw and did nothing.
+    peekObject: peekObject
   });
   window.MxLive.init({
     el: el, state: state, api: api, render: render, setMessage: setMessage,

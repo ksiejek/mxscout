@@ -592,7 +592,20 @@
 
       var kids = [el('h4', { text: 'Reached from (' + rows.length + ')' })];
       kids.push(el('div', { class: 'trig-list' }, rows.map(function (s) {
-        var target = s.name ? findFlow(model, 'microflow', s.name) || findFlow(model, 'nanoflow', s.name) || findFlow(model, 'page', s.name) : null;
+        // The kind first, then the fallback, because a qualified name does not
+        // identify a document: 10 names in one measured project belong to both
+        // a microflow and a page, and trying microflow first would open the
+        // wrong one of the two every time a page was the thing that named it.
+        var kinds = FLOW_NOUN[s.kind] ? [s.kind] : ['microflow', 'nanoflow', 'page'];
+        var found = null;
+        if (s.name) {
+          kinds.concat(['microflow', 'nanoflow', 'page']).some(function (kind) {
+            var hit = findFlow(model, kind, s.name);
+            if (hit) found = { kind: kind, item: hit };
+            return !!hit;
+          });
+        }
+        var target = found ? found.item : null;
         var kindLabel = el('span', { class: 'trig-kind', text: s.kind || 'names it' });
         if (!target) {
           // A scheduled event, a published service, a snippet: real, named,
@@ -603,8 +616,7 @@
             el('span', { class: 'trig-name', text: s.name || '—' })
           ]);
         }
-        var sectionKey = target === findFlow(model, 'microflow', s.name) ? 'microflows'
-          : target === findFlow(model, 'nanoflow', s.name) ? 'nanoflows' : 'pages';
+        var sectionKey = FLOW_SECTION_OF[found.kind];
         return el('div', { class: 'trig-row' }, [
           kindLabel,
           el('button', {

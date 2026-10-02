@@ -78,7 +78,7 @@ module.exports = async function (t) {
   // names BECAME something it needs: they are the project tree. A folder unit
   // holds one field, its Name, so this is three more BSON documents of a few
   // dozen bytes; on a real project it is 435 more out of 3,879.
-  t.ok(v2.filesRead === 17, 'v2 opens only the units the walk actually needs: ' + v2.filesRead);
+  t.ok(v2.filesRead === 18, 'v2 opens only the units the walk actually needs: ' + v2.filesRead);
 
   // ---- the two formats are the same app, and say so in the same words ----
   // Everything except meta must come out byte-identical from both shapes.
@@ -163,8 +163,10 @@ module.exports = async function (t) {
   t.ok(!!flow && JSON.stringify(flow.parameters) === JSON.stringify(
     [{ name: 'Customer', type: 'Object', entityQualifiedName: 'Sales.Customer', enumerationQualifiedName: null, isList: false }]),
     'and its object parameter resolves to the entity it points at: ' + JSON.stringify(flow && flow.parameters));
-  t.ok(v1.pages.length === 1 && v1.pages[0].qualifiedName === 'Sales.Order_Overview',
-    'pages are read the same way: ' + JSON.stringify(v1.pages.map(function (p) { return p.qualifiedName; })));
+  t.ok(v1.pages.length === 2 && JSON.stringify(v1.pages.map(function (p) { return p.qualifiedName; })) ===
+    JSON.stringify(['Sales.CreateOrder', 'Sales.Order_Overview']),
+    'pages are read the same way, including the one whose qualified name a microflow also has: ' +
+    JSON.stringify(v1.pages.map(function (p) { return p.qualifiedName; })));
 
   // ---- the two references that sit one level below where they look ----
   // Both were read from the wrong place until 2026-10-01, and both failed

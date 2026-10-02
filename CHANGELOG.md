@@ -17,6 +17,34 @@ claim a version it is not.
 
 ## Unreleased
 
+### "Reached from" was pointing at the wrong document, and sometimes at none
+
+**A microflow that said "nothing in this model reaches this" was often wrong.**
+Three separate faults, all in the one path that works out what reaches a flow
+no role can trigger:
+
+- A reference in a Mendix project is a plain name, and the same name can
+  belong to two documents — a microflow and a page both called
+  `Sales.EditForm`, or a scheduled event named after the microflow it runs.
+  MxScout matched on the name alone, so for a shared name whichever document
+  it had indexed last took every reference. The property the name sits under
+  says which kind was meant, and now that is what decides.
+- "Is this the document talking about itself?" was answered by name alone too,
+  so a scheduled event named after its own microflow looked like the microflow
+  mentioning itself and was dropped. That is how Mendix teams normally name
+  them, so this one was quietly losing a lot.
+- The rows under **Reached from** look like links, and had never been
+  clickable: clicking one threw and did nothing, since the day the list was
+  added. They work now, and they open the right one of two documents sharing a
+  name.
+
+Measured on four real projects, the number of microflows, nanoflows and pages
+saying "nothing reaches this" fell from 234 to 206, 337 to 280, 155 to 148 and
+107 to 98. Six references in one of them moved off a page that never had them.
+
+Re-import a project (Replace model…) to get the corrected answers — this is
+read at import time, not while browsing.
+
 ### The project, as its own tree
 
 **A new first section, App Explorer: modules, the folders your team made
