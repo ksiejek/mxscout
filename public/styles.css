@@ -2456,3 +2456,66 @@ button.trig-name { padding: 0; font-size: 12.5px; }
   font-weight: 600;
   color: color-mix(in srgb, var(--alarm) 85%, var(--text));
 }
+
+/* ---------- App Explorer (public/explorer.js) ----------
+   One tree, one row shape, indentation from a custom property rather than a
+   class per level: the depth is data (a document can sit five folders down in
+   a real project) and a stylesheet cannot hold a class per possible depth.
+   New rules, so the spacing and type scales from :root throughout. */
+/* Capped rather than full-bleed: a row is a name on the left and a count or a
+   kind on the right, and on a wide screen an uncapped row puts half a metre of
+   nothing between the two things the eye has to pair up. Deep nesting still
+   fits — five folders of indentation is 120px of the 110ch. */
+.ex-tree { display: flex; flex-direction: column; gap: var(--space-1); max-width: 110ch; }
+.ex-hint { margin: 0 0 var(--space-3); max-width: 90ch; }
+.ex-module-block { display: flex; flex-direction: column; }
+
+.ex-row {
+  --ex-depth: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  padding-left: calc(var(--space-2) + var(--ex-depth) * var(--space-4));
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+}
+button.ex-row { cursor: pointer; }
+button.ex-row:hover { background: var(--panel-2); }
+/* A row with nothing to open must not look like one that has something: no
+   hover, no pointer, and its name in the muted colour. */
+.ex-doc-flat { color: var(--muted); cursor: default; }
+.ex-folder-empty { cursor: default; }
+
+.ex-module {
+  border-left: 3px solid color-mix(in srgb, var(--mod) 70%, transparent);
+  font-size: var(--text-base);
+  font-weight: 600;
+  margin-top: var(--space-2);
+}
+.ex-folder { color: color-mix(in srgb, var(--text) 85%, var(--muted)); }
+.ex-folder.open, .ex-module.open { color: var(--text); }
+.ex-domain { color: color-mix(in srgb, var(--accent) 60%, var(--text)); }
+
+.ex-name { overflow-wrap: anywhere; }
+.ex-count, .ex-kind { font-size: var(--text-xs); color: var(--muted); flex: none; }
+.ex-kind { margin-left: auto; }
+.ex-count { margin-left: auto; }
+
+/* The one piece of motion: the disclosure arrow turns. Everything else about
+   expanding is a re-render, so there is nothing else to animate honestly. */
+.ex-chev {
+  flex: none;
+  width: 10px;
+  color: var(--muted);
+  transform: rotate(0deg);
+  transition: transform 120ms ease;
+}
+.ex-chev.open { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .ex-chev { transition: none; } }

@@ -310,7 +310,12 @@
         // so the Settings toggle can recompute state.detail.model without
         // re-reading the project record on every click.
         showMarketplaceModules: showMarketplaceModules,
-        view: 'entities',        // entities | microflows | nanoflows | pages
+        view: 'entities',        // explorer | entities | microflows | nanoflows | pages
+        // App Explorer (see explorer.js): which module and folder rows are
+        // expanded, keyed by JSON.stringify([module, ...path]). Session state
+        // on purpose — a tree somebody opened five levels into last week is
+        // not a preference, and nothing here is worth a write to storage.
+        explorer: { open: {} },
         entitySub: 'list',       // list | map  (only meaningful in the entities view)
         mapZoom: 1,              // map view: scroll-to-zoom factor, kept across re-renders
         filter: '',              // free-text filter shared across views
@@ -448,7 +453,10 @@
       microflows: countOf(model, 'microflows'),
       nanoflows: countOf(model, 'nanoflows'),
       pages: countOf(model, 'pages'),
-      userRoles: countOf(model, 'userRoles')
+      userRoles: countOf(model, 'userRoles'),
+      // Absent on a project stored before the tree was read, which is why the
+      // sidebar's count is allowed to be missing rather than shown as 0.
+      documents: countOf(model, 'documents')
     };
   }
 
@@ -643,6 +651,12 @@
   // also why the old row of tabs above the content is gone: two places naming
   // the current section would eventually disagree.
   var PROJECT_SECTIONS = [
+    // First, because it is the only section that answers "where is this" rather
+    // than "show me all of these" — and because Studio Pro's App Explorer is
+    // where a Mendix developer already looks first. Counts documents, which is
+    // the one number here bigger than what MxScout models: it includes the
+    // kinds it can name but not open.
+    { key: 'explorer', label: 'App Explorer', countKey: 'documents' },
     { key: 'entities', label: 'Entities', countKey: 'entities' },
     { key: 'microflows', label: 'Microflows', countKey: 'microflows' },
     { key: 'nanoflows', label: 'Nanoflows', countKey: 'nanoflows' },
@@ -670,7 +684,11 @@
     // summary exists — listing projects must never load a model.
     if (state.activeId === project.id && state.detail) {
       var list = state.detail.model[section.countKey];
-      return Array.isArray(list) ? list.length : 0;
+      // No list at all is not a count of zero. A model from a JSON import, or
+      // one stored before MxScout read the project tree, has no `documents` —
+      // and a "0" beside App Explorer would say the project has no documents
+      // in it, which is a different claim from "this model cannot say".
+      return Array.isArray(list) ? list.length : null;
     }
     var summary = project.summary || {};
     return typeof summary[section.countKey] === 'number' ? summary[section.countKey] : null;
@@ -2007,7 +2025,10 @@
     // View body + its own controls.
     var body, controls;
     var showModuleChips = renderModuleChips(model);
-    if (state.detail.view === 'entities') {
+    if (state.detail.view === 'explorer') {
+      controls = el('div', { class: 'view-controls' }, [renderFilterInput('Filter documents…'), showModuleChips].filter(Boolean));
+      body = window.MxExplorer.renderPanel(model);
+    } else if (state.detail.view === 'entities') {
       var subToggle = el('div', { class: 'sub-toggle' }, [
         el('button', { class: 'btn btn-sm' + (state.detail.entitySub === 'list' ? ' btn-primary' : ''), text: 'List', onclick: function () { state.detail.entitySub = 'list'; render(); } }),
         el('button', { class: 'btn btn-sm' + (state.detail.entitySub === 'map' ? ' btn-primary' : ''), text: 'Map', onclick: function () { state.detail.entitySub = 'map'; render(); } })
@@ -2175,7 +2196,7 @@
     var d = (state.about || state.guide || state.newProject.open) ? null : state.detail;
     var fullBleed = d && (
       d.view === 'microflows' || d.view === 'nanoflows' || d.view === 'pages' || d.view === 'entities' ||
-      d.view === 'comments' || d.view === 'performance' || d.view === 'security'
+      d.view === 'comments' || d.view === 'performance' || d.view === 'security' || d.view === 'explorer'
     );
     var wrap = el('div', { class: 'content-wrap' + (fullBleed ? ' wide' : '') }, [body]);
     if (state.message) {
@@ -2458,6 +2479,13 @@
     el: el, state: state, store: store, render: render, setMessage: setMessage,
     finishCreatingProject: finishCreatingProject, finishReplacingProject: finishReplacingProject,
     openProject: openProject, findProject: findProject
+  });
+  window.MxExplorer.init({
+    el: el, state: state, render: render, moduleShown: moduleShown, withMod: withMod,
+    // A document opened from the tree is an ASIDE to the tree — closing it has
+    // to put the reader back on the same branch, half of which they expanded by
+    // hand. Same reason the performance analyzer gets peekObject.
+    peekObject: peekObject, scopeToModule: scopeToModule
   });
   window.MxSecurity.init({ el: el, state: state, moduleColor: moduleColor, withMod: withMod,
     // A rule MxScout could not follow is listed on this page and read in the

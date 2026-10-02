@@ -111,9 +111,18 @@ read and write lives in `public/store.js` and nowhere else.
 
 ## Browsing a project
 
-Open a project and you get five views over its model, all driven entirely by
+Open a project and you get six views over its model, all driven entirely by
 the stored model (no server, no live app needed):
 
+- **App Explorer** — the project as its own tree: modules, the folders the team
+  made inside them, and every document in them. Every document, not only the
+  kinds MxScout models: a real project holds around 29 kinds and MxScout models
+  the inside of three, so a snippet, a Java action or a constant is here with
+  its kind on it and nothing to click — which is a true answer, where leaving it
+  out looked exactly like "not in this project". Empty folders are kept too: in
+  every project measured, some of them are a note (`#v1.0.0` is how a team
+  records which version of a Marketplace module it took). Nothing here renames,
+  moves or deletes anything — MxScout never writes a `.mpr`.
 - **Entities** — as a **List** (grouped by module, with per-role access
   badges) or a **Map** (a domain overview: each module's entities plus the
   relationships between them). Click any entity for its attributes and
@@ -394,6 +403,7 @@ so has no object on the page at all. Nothing here is over 2,500 lines:
 | `public/transfer.js` | how a project leaves this browser and how one arrives |
 | `public/mprImport.js` | picking a Mendix project — one folder pick where the browser allows it, the progress dialog, and handing the finished model over |
 | `public/sqlite.js` · `public/bson.js` · `public/mpr.js` · `public/mprWorker.js` | reading the `.mpr` itself, in that order: SQLite pages, then the BSON documents inside them, then the model shape, all of it in a Web Worker off the page's main thread |
+| `public/explorer.js` | the App Explorer: the project as its own tree — modules, folders, and every document in them, including the kinds MxScout models nothing else about |
 | `public/exchange.js` | the flow-drawing handover file for MxScaffold — translation into that tool's vocabulary, and compaction |
 | `public/store.js` | every persistent read and write, and nothing else does storage |
 | `public/perf.js` | performance recordings: the admin port, saving and importing one, and every aggregation over its samples |

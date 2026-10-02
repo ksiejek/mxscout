@@ -189,6 +189,39 @@ module.exports = async function (t) {
     .match(/another ([\d,]+) files/) || [])[1];
   t.ok(claimed && Number(claimed.replace(/,/g, '')) === realFiles,
     'the About page\'s count of the test suite matches what is actually in test/: says ' + claimed + ', is ' + realFiles);
+
+  // The source map has the same problem and had already drifted the same way:
+  // it listed 29 entries while calling itself 28, because a file was added and
+  // the sentence above the list was not. A map that misses a file is worse than
+  // a wrong number — "a file the source map does not name is a file nobody
+  // auditing this can find" — so both are counted here against the disk.
+  const aboutSrc = fsMod.readFileSync(pathMod.join(__dirname, '..', 'public', 'about.js'), 'utf8');
+  const entries = (aboutSrc.match(/\['(public|server)\/[^']*'/g) || []).map((m) => m.slice(2, -1));
+  const listedFiles = new Set();
+  entries.forEach((entry) => entry.split(' · ').forEach((f) => listedFiles.add(f)));
+  const onDisk = [];
+  (function walk(dir, prefix) {
+    fsMod.readdirSync(dir, { withFileTypes: true }).forEach((e) => {
+      const rel = prefix + e.name;
+      if (e.isDirectory()) walk(pathMod.join(dir, e.name), rel + '/');
+      else onDisk.push(rel);
+    });
+  })(pathMod.join(__dirname, '..', 'public'), 'public/');
+  (function walk(dir, prefix) {
+    fsMod.readdirSync(dir, { withFileTypes: true }).forEach((e) => {
+      const rel = prefix + e.name;
+      if (e.isDirectory()) walk(pathMod.join(dir, e.name), rel + '/');
+      else onDisk.push(rel);
+    });
+  })(pathMod.join(__dirname, '..', 'server'), 'server/');
+  const unlisted = onDisk.filter((f) => !listedFiles.has(f));
+  t.ok(unlisted.length === 0, 'every file the app runs is named in the About page\'s source map: ' + JSON.stringify(unlisted));
+  const stale = [...listedFiles].filter((f) => onDisk.indexOf(f) === -1);
+  t.ok(stale.length === 0, 'and the map names no file that is gone: ' + JSON.stringify(stale));
+  const sentence = /(\d+) entries below, (\d+) files/.exec(aboutSrc) || [];
+  t.ok(Number(sentence[1]) === entries.length && Number(sentence[2]) === onDisk.length,
+    'and the sentence introducing it counts both correctly: says ' + sentence[1] + ' entries / ' +
+    sentence[2] + ' files, is ' + entries.length + ' / ' + onDisk.length);
   t.ok(/Versions and updates/.test(about), 'About has a section on versions and updates');
   t.ok(/does not check whether a newer version exists/.test(about), 'and states the policy in those words');
   t.ok(/never rewrites its own files|git pull/.test(about), 'and says who performs an update');

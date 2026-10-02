@@ -17,6 +17,39 @@ claim a version it is not.
 
 ## Unreleased
 
+### The project, as its own tree
+
+**A new first section, App Explorer: modules, the folders your team made
+inside them, and every document in them.** Until now MxScout read a folder
+only to work out which module something belonged to, and then forgot the name
+— so a project that its developers had carefully organised arrived here as
+four flat lists.
+
+**It shows every document, not only the kinds MxScout models.** One real
+project holds 3,377 documents of 29 kinds, and MxScout models the inside of
+three of them. A snippet, a Java action, a constant, a layout or a mapping is
+now a row with its kind on it and nothing to click, because leaving it out
+looked exactly like "not in this project" — which was a different and wrong
+answer. The three kinds that have a window still open one, over the tree, so
+closing it leaves your branches where you left them.
+
+Empty folders are kept as well. In every project measured, some of them are a
+note rather than an oversight: `#v1.0.0` and `_Version 11.1.0` are how a team
+writes down which version of a Marketplace module it took.
+
+Typing in the filter opens whatever still has something in it, and clearing it
+puts the tree back the way you had it. A module leads with its **Domain
+model**, which takes you to that module's entities.
+
+**Nothing here renames, moves, creates or deletes anything.** MxScout has no
+way to write a Mendix project file and is not getting one; a tree that offered
+to reorganise your app would be offering something it cannot do.
+
+Two smaller things came with it. Flows handed to MxScaffold now say which
+folder they came out of. And the About page's source map is now checked against
+the disk by the test suite — it had drifted to naming 28 entries when it listed
+29, which is exactly the kind of small untruth that page cannot afford.
+
 ### Microflow drawings can leave as a file
 
 **MxScout now reads the drawing of a microflow, not just a summary of it, and
