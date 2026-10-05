@@ -17,6 +17,43 @@ claim a version it is not.
 
 ## Unreleased
 
+### Log analysis — brought over from MxDevSwissTool
+
+**A new section in the sidebar, Log analysis: the log tools from
+[MxDevSwissTool](https://github.com/RealMecowhy/MxDevSwissTool), written by
+Mikołaj ([RealMecowhy](https://github.com/RealMecowhy)) and used here under
+its MIT licence.** The analysis is theirs — every parser, rule and heuristic
+was carried over unchanged, so MxScout reads a log the way their tool does,
+and their own test assertions run against the ported code in `npm test` to keep
+it that way. The licence text and the list of what came from where are in
+`THIRD-PARTY-NOTICES.md`; every ported file carries a header naming the
+original. The screens are MxScout's own.
+
+It works on a log with no project open: it is not part of a model. Eight tools
+over **one loaded file** — the bar under the tabs says what is loaded and hands
+it to the next tool, so a 60 MB log is read once:
+
+- **Log Viewer** — Studio Pro CSV, Mendix Cloud live logs, on-premises logs and
+  Grafana exports; stream with level, node and text filters, a records-over-time
+  chart you can drag to narrow, bookmarks, merge and undo, Insights, a Levels
+  Matrix, Correlation Flow, Sequence Diagram, Gantt Chart, and error
+  aggregation by signature.
+- **Query Extractor** — SQL, OQL, XPath and query plans out of a TRACE log, runnable
+  SQL with its parameters filled in, duplicates (N+1), slow queries, compare.
+- **Microflow Tracer** — executions, call trees, N+1 patterns, background runs.
+- **REST & WS** — consumed and published calls, paired with their responses.
+- **Error Decoder** — explains the mechanism behind an error and what to check.
+- **Nginx** — router access and error logs, p95/p99, whose fault each 404 is,
+  and a Timeline Correlator that lines requests up with runtime activity.
+- **Anonymizer** — masks addresses, tokens, ids and more before a log leaves.
+- **Incident Report** — one self-contained HTML file from what the tools show.
+
+Nothing you load leaves the tab. Two things from the original were left out
+because they contact the network or are not log analysis: the Nginx
+analyzer's geolocation lookup, and the rest of MxDevSwissTool's toolbox. Its
+charting libraries are replaced by charts drawn directly, so MxScout still has
+no third-party code beyond the licence notice above.
+
 ### "Reached from" was pointing at the wrong document, and sometimes at none
 
 **A microflow that said "nothing in this model reaches this" was often wrong.**

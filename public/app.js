@@ -63,6 +63,13 @@
     // Same top-level-screen treatment as About: null when closed, truthy
     // while open, and mutually exclusive with it (see openGuide/openAbout).
     guide: null,
+    // Log analysis — the Log Viewer, Query Extractor, Microflow Tracer and the
+    // rest (see public/logs/). A top-level screen like About and Getting
+    // started: it needs no project, so opening it leaves the open project
+    // alone, and it is mutually exclusive with those two. The module keeps
+    // its own state (a loaded log is large and lives in memory only), so
+    // this is only the flag that says whether it is on screen.
+    logs: null,
     // Set by openProject() while a project is open, cleared by closeProject().
     // Holds the PARSED model (kept out of the project index so the list stays
     // cheap) plus everything the browsing views need — which view is active,
@@ -703,6 +710,7 @@
   function goToSection(key) {
     state.about = null;
     state.guide = null;
+    state.logs = null;
     state.newProject.open = false;
     state.detail.view = key;
     state.detail.selectedEntity = null;
@@ -721,6 +729,7 @@
           if (isActive) return;
           state.about = null;
           state.guide = null;
+          state.logs = null;
           state.newProject.open = false;
           openProject(project.id).then(render);
         }
@@ -771,6 +780,7 @@
       onclick: function () {
         state.about = null;
         state.guide = null;
+        state.logs = null;
         state.newProject.open = true;
         setMessage(null);
         render();
@@ -778,13 +788,27 @@
     });
 
     var allProjects = el('button', {
-      class: 'tree-all' + ((!state.detail && !state.about && !state.guide) ? ' active' : ''),
+      class: 'tree-all' + ((!state.detail && !state.about && !state.guide && !state.logs) ? ' active' : ''),
       text: 'All projects',
       onclick: function () {
         state.about = null;
         state.guide = null;
+        state.logs = null;
         state.newProject.open = false;
         closeProject();
+        render();
+      }
+    });
+
+    // Log analysis lives under its own heading rather than among the projects:
+    // a log is not part of a model, and the screen works with none open. Same
+    // toggle as About and Getting started — pressing it again leaves it.
+    var logsBtn = el('button', {
+      class: 'tree-all' + (state.logs ? ' active' : ''),
+      text: 'Log analysis',
+      title: 'Read a Mendix log: Log Viewer, Query Extractor, Microflow Tracer, REST & WS, Error Decoder, Nginx, Anonymizer, Incident Report',
+      onclick: function () {
+        if (state.logs) closeLogs(); else openLogs();
         render();
       }
     });
@@ -830,6 +854,8 @@
       newBtn,
       el('div', { class: 'sidebar-scroll' }, [
         allProjects,
+        el('div', { class: 'sidebar-label', text: 'Tools' }),
+        logsBtn,
         el('div', { class: 'sidebar-label', text: 'Projects' }),
         renderProjectTree()
       ]),
@@ -2137,6 +2163,7 @@
   function openAbout() {
     state.about = { health: null };
     state.guide = null;
+    state.logs = null;
     setMessage(null);
     // Version comes from the running server rather than a constant in this
     // file, so the page can never claim a version that isn't the one serving
@@ -2151,6 +2178,47 @@
     setMessage(null);
   }
 
+  // ---------- log analysis ----------
+  // The screens and the engines behind them live in public/logs/. All that
+  // belongs here is whether the section is showing: opening it leaves the
+  // open project exactly as it was, and the module keeps its own state — a
+  // loaded log is large, lives in memory only, and must survive this file
+  // redrawing the page around it.
+  function openLogs(toolId) {
+    state.logs = {};
+    state.about = null;
+    state.guide = null;
+    state.newProject.open = false;
+    setMessage(null);
+    window.MxLogs.open(toolId);
+  }
+
+  function closeLogs() {
+    state.logs = null;
+    setMessage(null);
+  }
+
+  // A PostgreSQL message names a table (`shop$order`); a developer thinks in
+  // entities (`Shop.Order`). The open project's model is the one source that
+  // can say which is which, so the log tools are handed that map — and
+  // withdrawn it when no project is open. Rebuilt only when the model object
+  // itself changes, not on every redraw.
+  var lastLogModel;
+  function syncLogEntities() {
+    var model = state.detail ? state.detail.model : null;
+    if (model === lastLogModel) return;
+    lastLogModel = model;
+    var map = null;
+    if (model && Array.isArray(model.entities)) {
+      map = {};
+      model.entities.forEach(function (e) {
+        if (e && e.qualifiedName) map[e.qualifiedName.replace('.', '$').toLowerCase()] = e.qualifiedName;
+      });
+    }
+    window.MxLogs.setTableMap(map);
+    window.MxLogs.setEntityResolver(map ? function (table) { return map[String(table).toLowerCase()] || null; } : null);
+  }
+
   // ---------- guide (the Getting started walkthrough) ----------
   // The document itself lives in guide.js, built the same way about.js is —
   // data rendered by one function. Nothing here needs a project or the
@@ -2158,11 +2226,13 @@
   function openGuide() {
     state.guide = {};
     state.about = null;
+    state.logs = null;
     setMessage(null);
   }
 
   function closeGuide() {
     state.guide = null;
+    state.logs = null;
     setMessage(null);
   }
 
@@ -2178,6 +2248,9 @@
       body = window.MxAbout.render(state.about.health ? state.about.health.version : null);
     } else if (state.guide) {
       body = window.MxGuide.render();
+    } else if (state.logs) {
+      syncLogEntities();
+      body = window.MxLogs.render();
     } else if (state.storageError) {
       body = el('div', { class: 'empty' }, [
         el('h2', { text: 'This browser’s storage is unavailable' }),
@@ -2199,12 +2272,14 @@
     // reading width a real project's role table wrapped chips mid-name.
     // About stays at reading width — its tables and paragraphs both read
     // better narrow than stretched across a wide screen.
-    var d = (state.about || state.guide || state.newProject.open) ? null : state.detail;
+    var d = (state.about || state.guide || state.logs || state.newProject.open) ? null : state.detail;
     var fullBleed = d && (
       d.view === 'microflows' || d.view === 'nanoflows' || d.view === 'pages' || d.view === 'entities' ||
       d.view === 'comments' || d.view === 'performance' || d.view === 'security' || d.view === 'explorer'
     );
-    var wrap = el('div', { class: 'content-wrap' + (fullBleed ? ' wide' : '') }, [body]);
+    // Log analysis takes the whole width AND the whole height: a log is wide,
+    // and its lists scroll inside the screen rather than the page.
+    var wrap = el('div', { class: 'content-wrap' + ((fullBleed || state.logs) ? ' wide' : '') + (state.logs ? ' lg-wrap' : '') }, [body]);
     if (state.message) {
       var msgNode = el('div', { class: 'msg ' + state.message.kind, text: state.message.text });
       if (state.message.action) {
@@ -2220,6 +2295,8 @@
       renderSidebar(),
       el('main', { class: 'main' }, [wrap])
     ]));
+    // Put back what a detach took: scroll positions inside the log screen.
+    if (state.logs) window.MxLogs.afterAttach();
 
     // The package dialogs sit above everything else that is not the palette:
     // both are mid-transaction, and losing one to a stray click would lose an
@@ -2251,7 +2328,7 @@
 
     // Every modal belongs to a screen underneath it; none of them may float
     // over the About page or the guide.
-    if (state.about || state.guide) return;
+    if (state.about || state.guide || state.logs) return;
 
     if (state.confirmDelete) {
       var modal = renderConfirmDelete();
