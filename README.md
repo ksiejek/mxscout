@@ -32,6 +32,15 @@ six steps — import, browse as a role, open an object, connect to a running
 app, run a flow, then write it up and send it — against a fictional app, so it
 needs no project of your own open to make sense.
 
+**Log analysis** in the sidebar is a second job MxScout does without any
+project open — and, when one is, a section of that project: reading a Mendix
+application's logs (Log Viewer, Query Extractor, Microflow Tracer, REST & WS
+Extractor, Error Decoder, Nginx analyzer, Anonymizer, Incident Report, all over
+one loaded file) against its model. A warning that names a microflow opens that
+microflow, and one click turns it into a comment on it. It is the work of
+Mikołaj (RealMecowhy), [MxDevSwissTool](https://github.com/RealMecowhy/MxDevSwissTool),
+used under its MIT licence — see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
 Two things keep it that safe to point at a real project:
 
 - **The model is read, never queried.** Point MxScout at the project folder
@@ -412,6 +421,7 @@ so has no object on the page at all. Nothing here is over 2,500 lines:
 | `public/about.js` | the About & security page — data, rendered by one function that only sets text |
 | `public/guide.js` | the Getting started walkthrough — same shape as About, but its mockups reuse the real screens' component classes |
 | `public/version.js` | which version is running and what is in it |
+| `public/logs/` | the log analysis, from MxDevSwissTool — `engine/` is the original's analysis code, `ui/` is the MxScout screen over it, plus three same-origin workers and `logs.css` (see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)) |
 | `public/index.html` · `public/styles.css` | the page every one of those renders into, and the stylesheet they all share |
 
 Two directories are deliberately not in that table, because nothing in them
@@ -485,6 +495,11 @@ calls `t.ok(condition, message)`. What it covers today:
 - one repo-wide invariant: exactly one place in `public/` assigns markup, and
   it is the documented clipboard fallback — a second one fails the suite,
   because the About page makes that claim to a security reviewer;
+- the log analysis: the original author's own assertions run against the
+  ported engine, and the screen is driven in a real browser — one file loaded,
+  handed to every tool, nothing thrown, nothing requested beyond this server;
+- the log analysis as a section of a project: a log read against the model — chips on
+  errors that name a microflow or entity, Open, and Report into a real comment;
 - the production guard, including a check that its two copies still agree;
 - the whole bridge in a real browser — ten rows, a real count, paging, live
   search, search by id, and a second entity coming back with *its* columns;
@@ -516,3 +531,8 @@ not part of this download.
 with no build step between it and what runs. That is also the argument this
 project makes to a security reviewer: read it yourself, there is nothing
 hidden to take on faith.
+
+The log analysis (`public/logs/`) is derived from
+[MxDevSwissTool](https://github.com/RealMecowhy/MxDevSwissTool) by Mikołaj
+(RealMecowhy), MIT licence, Copyright (c) 2026 Mikołaj; the notice and licence
+text are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

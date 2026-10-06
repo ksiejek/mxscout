@@ -68,16 +68,18 @@ module.exports = async function (t) {
   // wrong. Matches assignment and injection, not the word in a comment.
   const ASSIGNS_MARKUP = /\.(inner|outer)HTML\s*=|insertAdjacentHTML\s*\(|document\.write\s*\(/g;
   const sites = [];
-  fs.readdirSync(path.join(__dirname, '..', 'public'))
-    .filter((f) => f.endsWith('.js'))
-    .forEach((f) => {
-      const src = fs.readFileSync(path.join(__dirname, '..', 'public', f), 'utf8');
+  (function scan(dir, prefix) {
+    fs.readdirSync(dir, { withFileTypes: true }).forEach((e) => {
+      if (e.isDirectory()) return scan(path.join(dir, e.name), prefix + e.name + '/');
+      if (!e.name.endsWith('.js')) return;
+      const src = fs.readFileSync(path.join(dir, e.name), 'utf8');
       let m;
       ASSIGNS_MARKUP.lastIndex = 0;
       while ((m = ASSIGNS_MARKUP.exec(src)) !== null) {
-        sites.push(f + ':' + (src.slice(0, m.index).split('\n').length));
+        sites.push(prefix + e.name + ':' + (src.slice(0, m.index).split('\n').length));
       }
     });
+  })(path.join(__dirname, '..', 'public'), '');
   t.ok(sites.length === 1 && sites[0].indexOf('report.js') === 0,
     'exactly one place in public/ assigns markup, and it is the documented clipboard fallback: ' + JSON.stringify(sites));
 

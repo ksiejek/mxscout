@@ -151,8 +151,10 @@
   // popup that is itself on top of the page. Routed through setMessage, the
   // banner ends up hidden behind two overlays, invisible until both are
   // closed by hand.
-  function openEditor(target, existing) {
-    editor = { target: target, finding: existing || null, message: null };
+  // `draft` ({ severity, problem, change }) pre-fills a NEW comment — the log screen uses it to start a
+  // comment on a microflow with the log lines already in it. Nothing is saved until Save comment.
+  function openEditor(target, existing, draft) {
+    editor = { target: target, finding: existing || null, message: null, draft: existing ? null : (draft || null) };
     app.render();
   }
 
@@ -190,7 +192,7 @@
     var severitySelect = app.el('select', { class: 'role-select' });
     SEVERITIES.forEach(function (s) {
       var o = app.el('option', { value: s, text: s });
-      if ((finding ? finding.severity : 'medium') === s) o.setAttribute('selected', 'selected');
+      if ((finding ? finding.severity : ((editor.draft && editor.draft.severity) || 'medium')) === s) o.setAttribute('selected', 'selected');
       severitySelect.appendChild(o);
     });
 
@@ -200,9 +202,9 @@
     // .comment-problem in styles.css and toWordHtml in report.js) and the box
     // is tall enough to hold a few before it starts scrolling.
     var problem = app.el('textarea', { class: 'editor-area', rows: '6', placeholder: 'What is the problem?' });
-    problem.value = finding ? finding.problem : '';
+    problem.value = finding ? finding.problem : ((editor.draft && editor.draft.problem) || '');
     var change = app.el('textarea', { class: 'editor-area', rows: '6', placeholder: 'What should change?' });
-    change.value = finding ? finding.change : '';
+    change.value = finding ? finding.change : ((editor.draft && editor.draft.change) || '');
 
     var attrBlock = target.kind === 'entity'
       ? attributeChecklist(target, finding ? finding.target.attributes : [])
@@ -932,6 +934,7 @@
     renderEditor: renderEditor,
     renderReportModal: renderReportModal,
     editorOpen: editorOpen,
+    openEditor: openEditor,
     addButton: addButton,
     findingsFor: findingsFor,
     severityBadge: severityBadge,
