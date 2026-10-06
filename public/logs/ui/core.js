@@ -138,12 +138,18 @@
 
   // A dialog over the Log analysis screen. { title, body, actions:[{label, primary, danger, onClick}], wide }.
   // Esc and a click on the backdrop close it; so does an action unless its handler returns false.
+  // The dialogs that are open, so something that leaves for another screen (a model object opening over
+  // this one) can put them away first rather than being drawn underneath them.
+  var openModals = [];
+  L.closeModals = function () { openModals.slice().forEach(function (close) { close(); }); };
+
   L.modal = function (opts) {
     L.overlayHost();
     var onKey = null, closed = false;
     function close() {
       if (closed) return;
       closed = true;
+      openModals.splice(openModals.indexOf(close), 1);
       if (onKey) document.removeEventListener('keydown', onKey, true);
       if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
       if (opts.onClose) opts.onClose();
@@ -162,6 +168,7 @@
     var backdrop = h('div', { class: 'modal-backdrop lg-modal-backdrop', onmousedown: function (e) { if (e.target === backdrop) close(); } }, [box]);
     onKey = function (e) { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
     document.addEventListener('keydown', onKey, true);
+    openModals.push(close);
     host.appendChild(backdrop);
     var first = box.querySelector('textarea, input, select, button.btn-primary, button');
     if (first) first.focus();
@@ -454,6 +461,63 @@
   // database. MxScout has the model of the project that is open, so app.js hands over a resolver.
   // The engine reads `window.mxEntityForTable`; this just keeps the names in one place.
   L.setEntityResolver = function (fn) { window.mxEntityForTable = fn || null; };
+
+  // ---------- optional: the model of the open project ----------
+  // When the log screen is opened from inside a project, app.js hands over a bridge to that project's
+  // model, and the log can then say WHICH microflow, page or entity a message is about — and open it, or
+  // write a comment on it. With no project open there is no bridge and none of this appears.
+  //
+  //   bridge = { projectName, index: { 'Mod.Name': { kind, section, qualifiedName, module, name } },
+  //              tables: { 'mod$name': 'Mod.Name' }, open(obj), report(obj, draft), findings(obj) → number }
+  L.model = null;
+  var modelListeners = [];
+  L.setModel = function (bridge) {
+    L.model = bridge || null;
+    modelListeners.forEach(function (cb) { cb(); });
+  };
+  L.onModel = function (cb) { modelListeners.push(cb); };
+
+  // The model objects a piece of text names. A name is `Module.Name`; a stack frame or a URL has dots too,
+  // so every neighbouring pair of a dotted chain is tried against the index rather than the chain as a
+  // whole (`foo.Sales.ACT_Save` finds `Sales.ACT_Save`). A PostgreSQL table (`sales$order`) finds its entity.
+  var CHAIN = /[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+/g;
+  var TABLE = /\b[A-Za-z0-9_]+\$[A-Za-z0-9_]+\b/g;
+  L.modelFind = function (text, limit) {
+    var m = L.model;
+    if (!m || !text) return [];
+    limit = limit || 8;
+    var out = [], seen = {}, t, i;
+    function take(qn) {
+      var o = m.index[qn];
+      if (o && !seen[qn]) { seen[qn] = true; out.push(o); }
+    }
+    CHAIN.lastIndex = 0;
+    while (out.length < limit && (t = CHAIN.exec(text)) !== null) {
+      var parts = t[0].split('.');
+      for (i = 0; i < parts.length - 1; i++) take(parts[i] + '.' + parts[i + 1]);
+    }
+    if (m.tables) {
+      TABLE.lastIndex = 0;
+      while (out.length < limit && (t = TABLE.exec(text)) !== null) {
+        var qn = m.tables[t[0].toLowerCase()];
+        if (qn) take(qn);
+      }
+    }
+    return out.slice(0, limit);
+  };
+
+  // What goes into a new comment when it is started from a log: where it was seen, and the lines themselves.
+  var KIND_WORD = { entity: 'entity', microflow: 'microflow', nanoflow: 'nanoflow', page: 'page' };
+  L.entryDraft = function (e, o) {
+    var lines = String(e.msg || '').split('\n').slice(0, 14).join('\n');
+    if (lines.length > 1600) lines = lines.slice(0, 1600) + '…';
+    return {
+      severity: (e.level === 'ERROR' || e.level === 'CRITICAL') ? 'high' : 'medium',
+      problem: 'Seen in the log (' + (e.file || 'log') + ', line ' + e.line + ', ' + e.ts + ', ' + e.level + ' ' + e.node + ') — this ' +
+        KIND_WORD[o.kind] + ' is named in:\n\n' + lines,
+      change: ''
+    };
+  };
 
   // A scroll position is lost when an element leaves the document, and app.js redraws the page (and so
   // detaches this whole screen) for reasons of its own — a toast timing out, say. Every scroller that

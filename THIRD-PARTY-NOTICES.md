@@ -45,8 +45,8 @@ MxScout reads a log the same way the original does.
   charts, dialogs and the Data Hub bar are written fresh in MxScout's
   interface, built with the DOM helpers (no markup strings, in line with the
   rule described on the About page).
-- The integration in `public/app.js`, `public/index.html`, `public/palette.js`.
-- `test/44-logs.test.js` and its fixture.
+- The integration in `public/app.js` (the Logs section of a project, and the link from a log line to the model object it names), `public/comments.js` (a comment started with a draft), `public/index.html`, `public/palette.js`.
+- `test/44-logs.test.js`, `test/45-logs-project.test.js` and the fixture.
 
 ### What was deliberately left out
 

@@ -353,7 +353,14 @@
       h('div', { class: 'lg-dsub lg-mono' }, [
         e.startTs + (e.endTs ? ' → ' + (e.endTs.length > 11 ? e.endTs.substring(11) : e.endTs) : ' → (unfinished)') + ' · corr ' + e.corrId + ' · ',
         h('strong', { class: 'lg-accent', text: window.mftFmtMs(e.durationMs) })
-      ])
+      ]),
+      // The flow this execution is of, if the open project has it — to open it, or to report it.
+      W.modelLinks(e.name, function (o) {
+        var n1 = e.nPlusOne && e.nPlusOne.length ? ' N+1: ' + e.nPlusOne.map(function (d) { return (d.caption || d.type) + ' ×' + d.count; }).join(', ') + '.' : '';
+        return { severity: 'medium', change: '',
+          problem: 'Loaded log — execution of ' + e.name + ' at ' + e.startTs + ' (corr ' + e.corrId + ') took ' + window.mftFmtMs(e.durationMs) +
+            ' over ' + e.steps.length + ' step' + (e.steps.length === 1 ? '' : 's') + '.' + n1 };
+      }, 1)
     ]);
 
     // Timeline: this execution's own steps (sub-flow steps live in their own executions).

@@ -33,9 +33,11 @@ app, run a flow, then write it up and send it — against a fictional app, so it
 needs no project of your own open to make sense.
 
 **Log analysis** in the sidebar is a second job MxScout does without any
-project open: reading a Mendix application's logs — the Log Viewer, Query
-Extractor, Microflow Tracer, REST & WS Extractor, Error Decoder, Nginx analyzer,
-Anonymizer and Incident Report, all over one loaded file. It is the work of
+project open — and, when one is, a section of that project: reading a Mendix
+application's logs (Log Viewer, Query Extractor, Microflow Tracer, REST & WS
+Extractor, Error Decoder, Nginx analyzer, Anonymizer, Incident Report, all over
+one loaded file) against its model. A warning that names a microflow opens that
+microflow, and one click turns it into a comment on it. It is the work of
 Mikołaj (RealMecowhy), [MxDevSwissTool](https://github.com/RealMecowhy/MxDevSwissTool),
 used under its MIT licence — see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
@@ -496,6 +498,8 @@ calls `t.ok(condition, message)`. What it covers today:
 - the log analysis: the original author's own assertions run against the
   ported engine, and the screen is driven in a real browser — one file loaded,
   handed to every tool, nothing thrown, nothing requested beyond this server;
+- the log analysis as a section of a project: a log read against the model — chips on
+  errors that name a microflow or entity, Open, and Report into a real comment;
 - the production guard, including a check that its two copies still agree;
 - the whole bridge in a real browser — ten rows, a real count, paging, live
   search, search by id, and a second entity coming back with *its* columns;

@@ -628,3 +628,28 @@
   .lg-corr-split { flex-direction: column; }
   .lg-corr-list { width: auto; max-height: 240px; border-right: 0; border-bottom: 1px solid var(--border); }
 }
+
+/* ---------- links into the model of the open project ---------- */
+.lg-head-project { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+.lg-head-project strong { color: var(--accent); font-weight: 600; }
+.lg-mlinks { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; padding: 2px 0 4px 42px; }
+.lg-mlinks-label { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }
+.lg-mlink { display: inline-flex; align-items: center; gap: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); overflow: hidden; font-size: 12px; max-width: 100%; }
+.lg-mkind { font-size: 10px; font-weight: 700; padding: 3px 6px; color: var(--bg); background: var(--muted); align-self: stretch; display: inline-flex; align-items: center; }
+.lg-mkind-microflow { background: var(--accent); }
+.lg-mkind-nanoflow { background: var(--lg-ok); }
+.lg-mkind-entity { background: var(--lg-info); }
+.lg-mkind-page { background: var(--lg-warn); }
+.lg-mname { font: inherit; font-size: 12px; font-family: var(--lg-mono); color: var(--text); background: none; border: 0; padding: 3px 8px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lg-mname:hover { color: var(--accent); text-decoration: underline; }
+.lg-mcount { font-size: 11px; color: var(--muted); padding: 0 6px; }
+.lg-mflag { font: inherit; font-size: 11px; font-weight: 600; color: var(--accent); background: none; border: 0; border-left: 1px solid var(--border); padding: 3px 8px; cursor: pointer; }
+.lg-mflag:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.lg-sig-detail .lg-mlinks, .lg-insights-items .lg-mlinks, .lg-dhead .lg-mlinks { padding-left: 0; }
+.lg-insights-items .lg-mlinks { padding: 0 0 6px 8px; }
+.lg-model-intro { margin: 4px 2px 12px; font-size: 13px; }
+.lg-model-list { display: flex; flex-direction: column; gap: 8px; padding-bottom: 16px; }
+.lg-model-card { border: 1px solid var(--border); border-radius: 10px; background: var(--panel); padding: 10px 12px; }
+.lg-model-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.lg-model-counts { font-size: 12px; margin-right: auto; }
+.lg-model-sample { margin-top: 6px; font-family: var(--lg-mono); font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

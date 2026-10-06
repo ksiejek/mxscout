@@ -38,6 +38,9 @@ module.exports = async function (t) {
   const tab = (re) => mx.evaluate(`Array.from(document.querySelectorAll('.lg-tab')).find(b => ${re}.test(b.textContent)).click()`);
   const count = (sel) => mx.evaluate(`document.querySelectorAll(${JSON.stringify(sel)}).length`);
 
+  // Earlier tests leave a project open in this browser; the model-less entry is for when none is.
+  await mx.evaluate(`(Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'All projects') || { click() {} }).click()`);
+  await mx.waitFor(`!!Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Log analysis')`, 5000, 'tools entry');
   await click(/^Log analysis$/);
   await mx.waitFor(`!!document.querySelector('.lg')`, 8000, 'log analysis screen');
   const tabs = await mx.evaluate(`Array.from(document.querySelectorAll('.lg-tabs-main .lg-tab')).map(b => b.textContent)`);

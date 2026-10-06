@@ -374,7 +374,13 @@
     selected = q;
     var runnable = window.lqeBuildRunnableSql(q);
     ui.runnable = runnable;
-    L.replace(ui.sqlOut, [W.sqlBlock(runnable)]);
+    // The entities this statement reads (its tables) and anything else of the open project it names.
+    var mlinks = W.modelLinks(runnable + '\n' + (q.xpathContent || ''), function (o) {
+      return { severity: 'medium', change: '',
+        problem: 'Loaded log — a ' + (q.duration ? q.duration + ' ms ' : '') + q.type + ' touching this ' + o.kind + ' at ' + q.timestamp +
+          '.\n\n' + runnable.slice(0, 1200) + (runnable.length > 1200 ? '…' : '') };
+    }, 4);
+    L.replace(ui.sqlOut, [mlinks, W.sqlBlock(runnable)]);
 
     L.replace(ui.sourceOut, [q.xpathContent ? W.sqlBlock(q.xpathContent, { class: 'lg-code lg-code-sql lg-code-plain' }) : h('div', { class: 'lg-muted-block', text: 'No source available (XPath/OQL) for this query.' })]);
 

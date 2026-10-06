@@ -679,6 +679,9 @@
     { key: 'security', label: 'Security', countKey: null },
     { key: 'performance', label: 'Performance', countKey: null },
     { key: 'comments', label: 'Comments', countKey: null },
+    // The project's logs, read against its own model: a warning that names a microflow opens that
+    // microflow, and can be turned into a comment on it. Also reachable with no project open (Tools).
+    { key: 'logs', label: 'Logs', countKey: null },
     { key: 'live', label: 'Live app', countKey: null, apart: true },
     { key: 'settings', label: 'Settings', countKey: null, apart: true }
   ];
@@ -854,11 +857,13 @@
       newBtn,
       el('div', { class: 'sidebar-scroll' }, [
         allProjects,
-        el('div', { class: 'sidebar-label', text: 'Tools' }),
-        logsBtn,
+        // With a project open, logs are one of ITS sections (below) — this entry is for reading a log with no
+        // model, and two doors to the same screen would disagree about whether it knows the project.
+        (state.activeId && state.detail) ? null : el('div', { class: 'sidebar-label', text: 'Tools' }),
+        (state.activeId && state.detail) ? null : logsBtn,
         el('div', { class: 'sidebar-label', text: 'Projects' }),
         renderProjectTree()
-      ]),
+      ].filter(Boolean)),
       el('div', { class: 'sidebar-foot' }, [guide, about, versionBtn])
     ]);
   }
@@ -2198,25 +2203,48 @@
     setMessage(null);
   }
 
-  // A PostgreSQL message names a table (`shop$order`); a developer thinks in
-  // entities (`Shop.Order`). The open project's model is the one source that
-  // can say which is which, so the log tools are handed that map — and
-  // withdrawn it when no project is open. Rebuilt only when the model object
-  // itself changes, not on every redraw.
+  // The open project's model, handed to the log screen: a PostgreSQL message names a table (`shop$order`)
+  // where a developer thinks in entities (`Shop.Order`), and a warning that says `Sales.ACT_Save` can open
+  // that microflow and be turned into a comment on it. Only the model of the OPEN project is ever offered,
+  // and it is withdrawn when none is. Rebuilt only when the model object itself changes, not on every redraw.
   var lastLogModel;
+  var LOG_SECTIONS = [['entities', 'entity'], ['microflows', 'microflow'], ['nanoflows', 'nanoflow'], ['pages', 'page']];
   function syncLogEntities() {
     var model = state.detail ? state.detail.model : null;
     if (model === lastLogModel) return;
     lastLogModel = model;
-    var map = null;
-    if (model && Array.isArray(model.entities)) {
-      map = {};
-      model.entities.forEach(function (e) {
-        if (e && e.qualifiedName) map[e.qualifiedName.replace('.', '$').toLowerCase()] = e.qualifiedName;
-      });
+    if (!model) {
+      window.MxLogs.setTableMap(null);
+      window.MxLogs.setEntityResolver(null);
+      window.MxLogs.setModel(null);
+      return;
     }
-    window.MxLogs.setTableMap(map);
-    window.MxLogs.setEntityResolver(map ? function (table) { return map[String(table).toLowerCase()] || null; } : null);
+    var index = {}, tables = {};
+    LOG_SECTIONS.forEach(function (pair) {
+      (model[pair[0]] || []).forEach(function (item) {
+        if (!item || !item.qualifiedName) return;
+        index[item.qualifiedName] = { kind: pair[1], section: pair[0], qualifiedName: item.qualifiedName, module: item.module, name: item.name };
+        if (pair[0] === 'entities') tables[item.qualifiedName.replace('.', '$').toLowerCase()] = item.qualifiedName;
+      });
+    });
+    window.MxLogs.setTableMap(tables);
+    window.MxLogs.setEntityResolver(function (table) { return tables[String(table).toLowerCase()] || null; });
+    var project = findProject(state.activeId);
+    window.MxLogs.setModel({
+      projectName: project ? project.name : 'This project',
+      index: index,
+      tables: tables,
+      // Open it as an ASIDE, over the log: closing it puts the reader back on the same line.
+      open: function (o) { peekObject(o.section, { name: o.name, qualifiedName: o.qualifiedName }); },
+      // Start a comment on it, with the log lines already written in. Nothing is saved until Save comment.
+      report: function (o, draft) {
+        var item = (model[o.section] || []).filter(function (x) { return x.qualifiedName === o.qualifiedName; })[0] || o;
+        window.MxComments.openEditor(commentTargetFor(o.section, item), null, draft);
+      },
+      findings: function (o) {
+        return window.MxComments.findingsFor(o.qualifiedName).filter(function (f) { return f.status === 'open'; }).length;
+      }
+    });
   }
 
   // ---------- guide (the Getting started walkthrough) ----------
@@ -2236,6 +2264,12 @@
     setMessage(null);
   }
 
+  // The Logs section of the open project (as opposed to the model-less Tools entry, state.logs).
+  function logsInProject() {
+    return !!(state.detail && state.activeId && state.detail.view === 'logs' &&
+      !state.about && !state.guide && !state.newProject.open && !state.storageError);
+  }
+
   // ---------- render ----------
   function render() {
     var app = document.getElementById('app');
@@ -2248,7 +2282,7 @@
       body = window.MxAbout.render(state.about.health ? state.about.health.version : null);
     } else if (state.guide) {
       body = window.MxGuide.render();
-    } else if (state.logs) {
+    } else if (state.logs || logsInProject()) {
       syncLogEntities();
       body = window.MxLogs.render();
     } else if (state.storageError) {
@@ -2272,6 +2306,7 @@
     // reading width a real project's role table wrapped chips mid-name.
     // About stays at reading width — its tables and paragraphs both read
     // better narrow than stretched across a wide screen.
+    var showingLogs = !!(state.logs || logsInProject());
     var d = (state.about || state.guide || state.logs || state.newProject.open) ? null : state.detail;
     var fullBleed = d && (
       d.view === 'microflows' || d.view === 'nanoflows' || d.view === 'pages' || d.view === 'entities' ||
@@ -2279,7 +2314,7 @@
     );
     // Log analysis takes the whole width AND the whole height: a log is wide,
     // and its lists scroll inside the screen rather than the page.
-    var wrap = el('div', { class: 'content-wrap' + ((fullBleed || state.logs) ? ' wide' : '') + (state.logs ? ' lg-wrap' : '') }, [body]);
+    var wrap = el('div', { class: 'content-wrap' + ((fullBleed || showingLogs) ? ' wide' : '') + (showingLogs ? ' lg-wrap' : '') }, [body]);
     if (state.message) {
       var msgNode = el('div', { class: 'msg ' + state.message.kind, text: state.message.text });
       if (state.message.action) {
@@ -2296,7 +2331,7 @@
       el('main', { class: 'main' }, [wrap])
     ]));
     // Put back what a detach took: scroll positions inside the log screen.
-    if (state.logs) window.MxLogs.afterAttach();
+    if (showingLogs) window.MxLogs.afterAttach();
 
     // The package dialogs sit above everything else that is not the palette:
     // both are mid-transaction, and losing one to a stray click would lose an

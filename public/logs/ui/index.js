@@ -69,9 +69,18 @@
     ui.hub.appendChild(right);
   }
 
+  // Opened from inside a project, the screen knows its model: say so, because it changes what the tools offer.
+  function renderProject() {
+    var m = L.model;
+    ui.project.hidden = !m;
+    if (!m) return;
+    L.replace(ui.project, [h('strong', { text: m.projectName }), ' is open — warnings and errors that name its microflows, pages or entities link into the model, and can be commented on from here.']);
+  }
+
   function build() {
     L.overlayHost();
     ui.hint = h('p', { class: 'lg-head-hint' });
+    ui.project = h('p', { class: 'lg-head-project', hidden: true });
     ui.back = h('button', { class: 'lg-back', type: 'button', hidden: true, onclick: function () { L.goBack(); } });
     ui.hub = h('div', { class: 'lg-hub', hidden: true });
     ui.panels = h('div', { class: 'lg-panels' });
@@ -82,12 +91,15 @@
       h('header', { class: 'lg-head' }, [
         h('div', { class: 'lg-head-row' }, [h('h2', { text: 'Log analysis' }), ui.back]),
         ui.hint,
+        ui.project,
         h('p', { class: 'lg-credit' }, ['Log analysis comes from ', h('strong', { text: 'MxDevSwissTool' }), ' by Mikołaj (RealMecowhy) — MIT licence — brought into MxScout as a module. Nothing you load leaves this tab.'])
       ]),
       tabs.el, ui.hub, ui.panels, L.overlayHost()
     ]);
 
     L.onNav(function (id, from) { show(id, from); });
+    L.onModel(renderProject);
+    renderProject();
     L.hub.onChange(renderHub);
     show(L.nav.current);
     return root;

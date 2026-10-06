@@ -326,6 +326,35 @@
     };
   };
 
+  // ---------- links into the model ----------
+  var KIND_BADGE = { entity: 'E', microflow: 'MF', nanoflow: 'NF', page: 'P' };
+
+  // One model object, as a chip: what it is, its name (opens it), and a flag that starts a comment on it
+  // with the log lines already in. `draft` is a function from the object to { severity, problem, change }.
+  W.modelChip = function (o, draft) {
+    var m = L.model;
+    var n = m && m.findings ? m.findings(o) : 0;
+    return h('span', { class: 'lg-mlink' }, [
+      h('span', { class: 'lg-mkind lg-mkind-' + o.kind, title: o.kind, text: KIND_BADGE[o.kind] || '?' }),
+      h('button', {
+        class: 'lg-mname', type: 'button', text: o.qualifiedName, title: 'Open ' + o.qualifiedName + ' in the model',
+        onclick: function (ev) { ev.stopPropagation(); L.closeModals(); m.open(o); }
+      }),
+      n ? h('span', { class: 'lg-mcount', title: n + ' open comment' + (n === 1 ? '' : 's') + ' on this object', text: n + ' 💬' }) : null,
+      draft ? h('button', {
+        class: 'lg-mflag', type: 'button', text: '⚑ Report', title: 'Write a comment on ' + o.qualifiedName + ' from these log lines',
+        onclick: function (ev) { ev.stopPropagation(); L.closeModals(); m.report(o, draft(o)); }
+      }) : null
+    ]);
+  };
+
+  // A row of chips for every model object a text names; null when nothing is named (or there is no model).
+  W.modelLinks = function (text, draft, limit) {
+    var found = L.modelFind(text, limit);
+    if (!found.length) return null;
+    return h('div', { class: 'lg-mlinks' }, [h('span', { class: 'lg-mlinks-label', text: 'In your model' })].concat(found.map(function (o) { return W.modelChip(o, draft); })));
+  };
+
   // A file picker button that also takes a drop. Returns { button, input, open() }.
   W.filePicker = function (label, opts, onFiles) {
     opts = opts || {};

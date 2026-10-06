@@ -48,6 +48,27 @@ it to the next tool, so a 60 MB log is read once:
 - **Anonymizer** — masks addresses, tokens, ids and more before a log leaves.
 - **Incident Report** — one self-contained HTML file from what the tools show.
 
+**It is a section of the project, and that is where it earns its keep.** Open a
+project and *Logs* is in its list, beside Comments. Read there, a log is read
+against that project's model:
+
+- A warning or error that names a microflow, nanoflow, page or entity of the
+  project — or a PostgreSQL table such as `sales$order`, which is resolved to
+  its entity — carries a chip under the line. Click the name and the object
+  opens over the log; close it and you are back on the same line.
+- **⚑ Report** starts a comment on that object with the log lines, the time and
+  a severity from the level already written in. Nothing is saved until you save
+  it, and then it is an ordinary comment — in the object's Comments tab, on the
+  Comments page, in a report.
+- A new tab, **In your model**, ranks the objects the errors point at, with
+  their error and warning counts, and narrows the stream to any of them. The
+  same chips appear on the Insights breakdown, Aggregate Errors signatures,
+  the Microflow Tracer's execution, the Query Extractor's statement and the
+  Error Decoder.
+
+With no project open the same tools work under *Tools → Log analysis*, without
+the links.
+
 Nothing you load leaves the tab. Two things from the original were left out
 because they contact the network or are not log analysis: the Nginx
 analyzer's geolocation lookup, and the rest of MxDevSwissTool's toolbox. Its

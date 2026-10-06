@@ -148,6 +148,11 @@
             }) : null
           ]);
           list.appendChild(row);
+          var ml = W.modelLinks(it.label, function (o) {
+            return { severity: sev === 'error' ? 'high' : 'medium', change: '',
+              problem: 'Loaded log — ' + c.title + ' (' + c.subtitle + '):\n\n' + it.label + ' — ' + it.count + '× in the log, and it names this ' + o.kind + '.' };
+          }, 3);
+          if (ml) list.appendChild(ml);
         });
         if (items.length > shown.length) list.appendChild(h('div', { class: 'lg-insights-more', text: '…and ' + (items.length - shown.length) + ' more' }));
       }
@@ -244,6 +249,88 @@
     foot.appendChild(h('td', { class: 'lm-cell lm-total', text: String(m.grandTotal) }));
 
     out.appendChild(h('div', { class: 'lg-matrix-wrap' }, [h('table', { class: 'lg-matrix' }, [h('thead', null, [headRow]), tbody, h('tfoot', null, [foot])])]));
+  };
+
+  // ---------- In your model ----------
+  // The warnings and errors, grouped by the microflow, page or entity of the open project they name — the
+  // answer to "where in the model does this hurt". Cached per loaded entry array, like Insights.
+  var modelCache = null;
+  function modelHits(entries) {
+    if (modelCache && modelCache.entries === entries && modelCache.model === L.model) return modelCache.hits;
+    var map = {};
+    entries.forEach(function (e) {
+      if (e.level !== 'WARN' && e.level !== 'ERROR' && e.level !== 'CRITICAL') return;
+      L.modelFind(e.msg, 6).forEach(function (o) {
+        var g = map[o.qualifiedName] || (map[o.qualifiedName] = { obj: o, errors: 0, warnings: 0, first: null, firstError: null, last: null });
+        if (e.level === 'WARN') g.warnings++; else g.errors++;
+        if (!g.first) g.first = e;
+        if (!g.firstError && e.level !== 'WARN') g.firstError = e;
+        g.last = e;
+      });
+    });
+    var hits = Object.keys(map).map(function (k) { return map[k]; });
+    hits.sort(function (a, b) { return (b.errors - a.errors) || (b.warnings - a.warnings) || a.obj.qualifiedName.localeCompare(b.obj.qualifiedName); });
+    modelCache = { entries: entries, model: L.model, hits: hits };
+    return hits;
+  }
+
+  S.renderModel = function (out) {
+    L.clear(out);
+    if (!L.model) {
+      out.appendChild(W.empty('No project is open', [
+        h('p', { class: 'muted', text: 'Open Log analysis from inside a project (its Logs section) and this tab lists the microflows, pages and entities of that project that your warnings and errors name — each one opens in the model, and can be commented on straight from the log.' })
+      ]));
+      return;
+    }
+    if (!S.all.length) {
+      out.appendChild(W.empty('Load a log to see where it points in ' + L.model.projectName, [
+        h('p', { class: 'muted', text: 'Warnings and errors that name a microflow, nanoflow, page or entity of this project are grouped here.' })
+      ]));
+      return;
+    }
+    var hits = modelHits(S.all);
+    if (!hits.length) {
+      out.appendChild(W.empty('Nothing in this log names an object of ' + L.model.projectName, [
+        h('p', { class: 'muted', text: 'Only WARNING, ERROR and CRITICAL lines are looked at. If the log is from a different application, or the model is an older version, the names will not match.' })
+      ]));
+      return;
+    }
+    var totalE = hits.reduce(function (n, g) { return n + g.errors; }, 0);
+    out.appendChild(h('p', { class: 'lg-model-intro' }, [
+      h('strong', { text: String(hits.length) }), ' object' + (hits.length === 1 ? '' : 's') + ' of ',
+      h('strong', { text: L.model.projectName }), ' named in ', h('strong', { text: L.fmtInt(totalE) }), ' error' + (totalE === 1 ? '' : 's') + ' and warnings. ',
+      h('span', { class: 'muted', text: 'Open one to see it in the model, or report it: the comment starts with the log lines already in it.' })
+    ]));
+    var list = h('div', { class: 'lg-model-list' });
+    hits.forEach(function (g) {
+      var o = g.obj;
+      var sample = g.firstError || g.first;
+      function draft() {
+        var d = L.entryDraft(sample, o);
+        var n = g.errors + g.warnings;
+        d.problem = 'In the loaded log, this ' + o.kind + ' is named in ' + g.errors + ' error' + (g.errors === 1 ? '' : 's') + ' and ' + g.warnings +
+          ' warning' + (g.warnings === 1 ? '' : 's') + ' (' + n + ' lines, ' + g.first.ts + ' → ' + g.last.ts + ').\n\nFirst ' +
+          (g.firstError ? 'error' : 'warning') + ' (' + (sample.file || 'log') + ', line ' + sample.line + ', ' + sample.node + '):\n\n' + d.problem.split('\n\n').slice(1).join('\n\n');
+        d.severity = g.errors ? 'high' : 'medium';
+        return d;
+      }
+      list.appendChild(h('div', { class: 'lg-model-card' }, [
+        h('div', { class: 'lg-model-head' }, [
+          W.modelChip(o, draft),
+          h('span', { class: 'lg-model-counts' }, [
+            g.errors ? h('span', { class: 'lg-tone-error', text: g.errors + ' error' + (g.errors === 1 ? '' : 's') }) : null,
+            g.errors && g.warnings ? ' · ' : null,
+            g.warnings ? h('span', { class: 'lg-tone-warn', text: g.warnings + ' warning' + (g.warnings === 1 ? '' : 's') }) : null
+          ]),
+          h('button', {
+            class: 'btn btn-ghost btn-sm', type: 'button', text: 'Show in stream', title: 'Narrow the Log Stream to the lines that name ' + o.qualifiedName,
+            onclick: function () { S.filterInsight('', 'WARN,ERROR,CRITICAL', o.qualifiedName, ''); }
+          })
+        ]),
+        h('div', { class: 'lg-model-sample', title: sample.msg.split('\n')[0], text: sample.ts + '  ' + sample.node + ': ' + sample.msg.split('\n')[0] })
+      ]));
+    });
+    out.appendChild(list);
   };
 
   // ---------- Correlation Flow ----------
@@ -479,6 +566,11 @@
           var detail = h('div', { class: 'lg-sig-detail', hidden: true }, [
             h('div', { class: 'lg-label', text: 'Exception/Message Signature Pattern:' }),
             h('pre', { class: 'lg-code lg-code-plain', text: s.stack.length ? s.header + '\n' + s.stack.map(function (f) { return '    ' + f; }).join('\n') : s.header }),
+            W.modelLinks(s.header + '\n' + s.stack.join('\n'), function (o) {
+              var d = L.entryDraft({ level: s.type === 'exception' ? 'ERROR' : 'WARN', file: '', line: s.samples[0] ? s.samples[0].line : '?', ts: s.samples[0] ? s.samples[0].ts : '', node: '', msg: s.header + '\n' + s.stack.join('\n') }, o);
+              d.problem = 'This error occurs ' + s.count + '× in the loaded log and names this ' + o.kind + ':\n\n' + s.header + (s.stack.length ? '\n' + s.stack.slice(0, 10).join('\n') : '');
+              return d;
+            }),
             h('div', { class: 'lg-label', text: 'Sample Occurrences (Top 5):' }),
             h('ul', { class: 'lg-sig-samples' }, s.samples.map(function (smp) {
               return h('li', null, [h('span', { class: 'lg-sig-where', text: 'Line ' + smp.line + ' [' + smp.ts + ']' }), ': ', h('code', { text: smp.raw })]);

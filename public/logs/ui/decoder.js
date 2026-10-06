@@ -141,6 +141,12 @@
     var many = result.matches.length > 1;
     out.appendChild(h('div', { class: 'lg-edx-context' }, [result.input.lineCount + ' line(s) analyzed · ' + stackNote + ' · ', h('strong', { text: String(result.matches.length) }), ' matched pattern' + (many ? 's' : '') +
       (many ? ' — shown most specific first. A wrapped exception’s deepest match is usually its root cause; read the cards together.' : '')]));
+    var inModel = W.modelLinks(result.input.text, function (o) {
+      return { severity: 'high', change: '',
+        problem: 'Decoded: ' + result.matches[0].title + (context && context.ts ? ' (' + context.ts + ')' : '') + ' — this ' + o.kind + ' is named in:\n\n' +
+          result.input.text.split('\n').slice(0, 12).join('\n') };
+    });
+    if (inModel) out.appendChild(inModel);
     result.matches.forEach(function (m) { out.appendChild(card(m, result.input.text)); });
     out.appendChild(h('div', { class: 'lg-edx-disclaimer', text: 'This decoder explains error mechanisms and lists causes to check — it does not prescribe fixes. Always confirm the matched pattern fits your actual message before acting on it.' }));
   }

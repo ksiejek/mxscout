@@ -345,6 +345,12 @@
       });
       row.appendChild(h('div', { class: 'lg-stack' }, [toggle, body]));
     }
+    // A warning or an error that names something in the open project's model says so under the line — the
+    // quiet levels do not, or a TRACE log would be one long strip of chips.
+    if (L.model && (e.level === 'WARN' || e.level === 'ERROR' || e.level === 'CRITICAL')) {
+      var links = W.modelLinks(e.msg, function (o) { return L.entryDraft(e, o); });
+      if (links) row.appendChild(links);
+    }
     return row;
   }
 
@@ -1043,6 +1049,7 @@
     bookmarks.clear();
     updateBookmarkBar();
     S.renderMatrix(ui.matrixOut);
+    S.renderModel(ui.modelOut);
     ui.scopeNote.hidden = true;
     ui.hitNav.hidden = true;
   }
@@ -1136,6 +1143,7 @@
   function refreshActiveTab() {
     if (currentTab === 'insights') S.renderInsights(ui.insightsOut);
     if (currentTab === 'matrix') S.renderMatrix(ui.matrixOut);
+    if (currentTab === 'model') S.renderModel(ui.modelOut);
     if (currentTab === 'correlation') S.renderCorrelationList(ui.corrList, ui.corrInput, selectCorrelation);
   }
 
@@ -1297,6 +1305,7 @@
     ui.corrInput.addEventListener('input', onCorrelationInput);
     ui.corrStreamBtn = h('button', { class: 'btn btn-ghost btn-sm', type: 'button', text: 'Show in Log Stream', hidden: true, title: 'Open the full, scrollable list of these entries in the Log Stream', onclick: function () { S.filterByCorrId(ui.corrInput.value.trim()); } });
     ui.corrList = L.keepScroll(h('div', { class: 'lg-corr-list' }));
+    ui.modelOut = L.keepScroll(h('div', { class: 'lg-scroll' }));
     ui.corrOut = L.keepScroll(h('div', { class: 'lg-corr-out' }, [h('span', { class: 'muted', text: 'Pick a correlation ID from the list, or paste one above.' })]));
     ui.seqOut = L.keepScroll(h('div', { class: 'lg-scroll' }, [h('div', { class: 'lg-empty-output', text: 'Sequence diagram will appear here…' })]));
     ui.ganttOut = L.keepScroll(h('div', { class: 'lg-scroll' }, [h('div', { class: 'lg-empty-output', text: 'Gantt chart will appear here…' })]));
@@ -1305,6 +1314,7 @@
       stream: streamPane,
       insights: h('div', { class: 'lg-pane', hidden: true }, [ui.insightsOut]),
       matrix: h('div', { class: 'lg-pane', hidden: true }, [ui.matrixOut]),
+      model: h('div', { class: 'lg-pane', hidden: true }, [ui.modelOut]),
       correlation: h('div', { class: 'lg-pane lg-corr', hidden: true }, [
         h('div', { class: 'lg-corr-bar' }, [ui.corrInput,
           h('button', { class: 'btn btn-primary btn-sm', type: 'button', text: 'Track', title: 'Scan every loaded line for this text — works for correlation IDs and for anything else you have, such as a session ID or user name', onclick: trackCorrelation }),
@@ -1325,14 +1335,17 @@
 
     ui.tabs = W.tabs([
       { id: 'stream', label: 'Log Stream' }, { id: 'insights', label: 'Insights' }, { id: 'matrix', label: 'Levels Matrix' },
+      { id: 'model', label: 'In your model', title: 'Which microflows, pages and entities of the open project the warnings and errors name' },
       { id: 'correlation', label: 'Correlation Flow' }, { id: 'sequence', label: 'Sequence Diagram' }, { id: 'gantt', label: 'Gantt Chart' }
     ], 'stream', showTab);
 
-    var root = h('div', { class: 'lg-tool lg-viewer' }, [actions, ui.tabs.el, h('div', { class: 'lg-panes' }, [ui.panes.stream, ui.panes.insights, ui.panes.matrix, ui.panes.correlation, ui.panes.sequence, ui.panes.gantt])]);
+    var root = h('div', { class: 'lg-tool lg-viewer' }, [actions, ui.tabs.el, h('div', { class: 'lg-panes' }, [ui.panes.stream, ui.panes.insights, ui.panes.matrix, ui.panes.model, ui.panes.correlation, ui.panes.sequence, ui.panes.gantt])]);
     document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closeContextMenu(); });
 
     S.renderInsights(ui.insightsOut);
     S.renderMatrix(ui.matrixOut);
+    S.renderModel(ui.modelOut);
+    L.onModel(function () { S.renderModel(ui.modelOut); });
     S.renderCorrelationList(ui.corrList, ui.corrInput, selectCorrelation);
     return root;
   }
