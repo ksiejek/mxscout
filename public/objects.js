@@ -1027,8 +1027,10 @@
           }],
       ['comments', 'Comments', function () { return renderCommentsTab(commentTarget); }]
     ];
-    // The drawing, as Studio Pro has it. A page has none in the model.
-    if (sel.kind !== 'page') {
+    // The drawing, as Studio Pro has it — only where the model holds one: a
+    // page has none, and neither has a flow from a model imported as JSON. An
+    // empty tab would only say "nothing here" one click later.
+    if (sel.kind !== 'page' && flow.graph && flow.graph.nodes && flow.graph.nodes.length) {
       TABS.splice(1, 0, ['diagram', 'Diagram', function () { return diagramPane(); }]);
     }
     function diagramPane() {

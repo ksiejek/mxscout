@@ -41,7 +41,7 @@ it itself, for microflows and nanoflows alike.
 - It opens readable — at its start, near full size — with Fit one click away;
   drag to move, Ctrl + wheel to zoom.
 
-A model imported as JSON carries no drawings; the tab says so.
+A model imported as JSON carries no drawings, so its flows have no Diagram tab.
 
 ### Log analysis — brought over from MxDevSwissTool
 

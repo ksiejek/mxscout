@@ -27,6 +27,10 @@ module.exports = async function (t) {
   await mx.waitFor(`!!Array.from(document.querySelectorAll('button')).find(n => n.textContent.trim() === 'LogDemo')`, 10000, 'project in sidebar');
   const btn = (re) => `Array.from(document.querySelectorAll('button')).filter(b => ${re}.test(b.textContent.trim()))`;
 
+  // The app reopens the last project on its own once storage answers; wait for that to have happened, or it
+  // can reopen it right after "All projects" and take the Tools entry away again.
+  await mx.waitFor(`!!document.querySelector('.tree-project, .tree-empty')`, 10000, 'projects listed');
+  await new Promise((r) => setTimeout(r, 800));
   await mx.evaluate(`(Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'All projects') || { click() {} }).click()`);
   await mx.waitFor(`!!Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Log analysis')`, 5000, 'tools entry');
   // No project open: the Tools entry is there. With one open it is the project's section instead.
