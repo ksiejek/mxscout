@@ -625,6 +625,18 @@
     var x = Number(parts[0]), y = Number(parts[1]);
     return (isFinite(x) && isFinite(y)) ? { x: x, y: y } : null;
   }
+  // A flow's return type as a person reads it. The type names are Mendix's own
+  // (DataTypes$BooleanType → "Boolean"); only the ones that carry a target say more.
+  function dataTypeText(t) {
+    if (!t || typeof t !== 'object') return null;
+    var k = String(t['$Type'] || '').replace(/^.*\$/, '').replace(/Type$/, '');
+    if (!k) return null;
+    if (k === 'Void') return 'Nothing';
+    if (k === 'Object') return str(t, 'Entity') || 'Object';
+    if (k === 'List') return 'List of ' + (str(t, 'Entity') || 'objects');
+    if (k === 'Enumeration') return str(t, 'Enumeration') ? 'Enumeration ' + str(t, 'Enumeration') : 'Enumeration';
+    return k;
+  }
   function sizeFrom(s) {
     var p = point(s);
     return p ? { width: p.x, height: p.y } : null;
@@ -1761,7 +1773,11 @@
                 // Separate from `activity` on purpose — see readFlowGraph.
                 graph: readFlowGraph(raw),
                 calledBy: [], javaActionCalls: activity ? activity.javaActions : [],
-                entityRefs: entityRefs, constantRefs: [], enumerationRefs: []
+                entityRefs: entityRefs, constantRefs: [], enumerationRefs: [],
+                // What it hands back, in words ("Boolean", "List of Sales.Order");
+                // null when the file does not say, which is not "Nothing".
+                returnType: dataTypeText(raw.MicroflowReturnType || raw.ReturnType),
+                documentation: str(raw, 'Documentation')
               };
               if (type === 'Microflows$Microflow') {
                 // Only a microflow has it; a nanoflow runs in the client and

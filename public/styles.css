@@ -379,6 +379,13 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
    stayed cramped; the grids' own auto-fill minmax already keeps a card from
    stretching absurdly. */
 .content-wrap.wide { max-width: none; }
+/* Documentation fills the column the way the log viewer does: full width, and
+   full height so the reader's rail and page scroll inside the screen rather
+   than the page. The reader itself (.dx) is height:100% and lives in docs.css,
+   which is also what the exported file carries; .dx-host is only ever here. */
+.content-wrap.dx-wrap { max-width: none; padding: 14px 18px 18px; }
+.dx-host { height: calc(100vh - 32px); min-height: 540px; }
+@media (max-width: 720px) { .content-wrap.dx-wrap { padding: 0; } .dx-host { height: auto; min-height: 0; } }
 .detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
 .detail-title h2 { margin: 0 0 2px; font-size: 18px; }
 .detail-title p { margin: 0; }

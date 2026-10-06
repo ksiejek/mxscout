@@ -17,6 +17,41 @@ claim a version it is not.
 
 ## Unreleased
 
+### Documentation — the whole model, in one place and one encrypted file
+
+**Every project has a new Documentation section: everything the model says
+about itself, drawn as a documentation portal, and exportable as a single
+encrypted HTML file.** It is built from the model each time one is loaded —
+there is nothing to keep in step by hand — and it never leaves the browser
+except as the file you choose to export.
+
+- A rail of five views. **Start** is a hero and the project's numbers —
+  modules, microflows, nanoflows, pages, entities, roles, scheduled events,
+  published services. **Modules** is what each one holds, own modules before
+  Marketplace. **References** is every microflow, nanoflow and page, each on
+  its own page: what it takes and returns, who may run it, what it calls and
+  what calls it, and — for a flow — its **workflow drawn top to bottom**, the
+  same cards the mendix-docs skill produces, a decision's branches side by
+  side, loops as frames, error handling as a side path. **Domain** is each
+  entity with its attributes and access, and the entities that point to it and
+  that it points to. **Quality** is where the model looks unfinished: what
+  nothing reaches, entities with no access rule, microflows that skip entity
+  access, disabled steps.
+- A step that calls another flow opens it. A flow's page has **Open in
+  MxScout**, which brings up that object's own window — with the Studio Pro
+  drawing — over the documentation.
+- **Export is one HTML file, encrypted.** It carries the documentation (under
+  a fresh access code, the same WebCrypto envelope as the review report), the
+  reader's own source, and its stylesheet — nothing else. It opens in any
+  browser, asks for the code, and shows exactly what the app showed. The
+  documentation names an application's weak spots, so it is never written in
+  the clear; the code travels separately from the file. It is built in your
+  browser and handed to the download — the server never sees it, and nothing
+  is sent anywhere.
+
+A model imported as JSON carries no drawings, so its flows are listed without a
+workflow; load the model from the Mendix project folder to see them.
+
 ### Microflows and nanoflows, drawn
 
 **A flow's window has a new Diagram tab: the flow drawn the way Studio Pro

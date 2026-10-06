@@ -679,6 +679,10 @@
     { key: 'security', label: 'Security', countKey: null },
     { key: 'performance', label: 'Performance', countKey: null },
     { key: 'comments', label: 'Comments', countKey: null },
+    // Everything the model says about itself, drawn in the mendix-docs look and
+    // exportable as one encrypted HTML file. Rebuilt from the model, so no
+    // count: it is the whole project, not a pile of one kind of thing.
+    { key: 'docs', label: 'Documentation', countKey: null },
     // The project's logs, read against its own model: a warning that names a microflow opens that
     // microflow, and can be turned into a comment on it. Also reachable with no project open (Tools).
     { key: 'logs', label: 'Logs', countKey: null },
@@ -2270,6 +2274,13 @@
       !state.about && !state.guide && !state.newProject.open && !state.storageError);
   }
 
+  // The Documentation section carries its own chrome (a top bar, a rail), so it
+  // renders full-bleed like the logs, outside the usual detail head.
+  function docsInProject() {
+    return !!(state.detail && state.activeId && state.detail.view === 'docs' &&
+      !state.about && !state.guide && !state.newProject.open && !state.storageError);
+  }
+
   // ---------- render ----------
   function render() {
     var app = document.getElementById('app');
@@ -2285,6 +2296,8 @@
     } else if (state.logs || logsInProject()) {
       syncLogEntities();
       body = window.MxLogs.render();
+    } else if (docsInProject()) {
+      body = window.MxDocs.render(state.detail.model, findProject(state.activeId));
     } else if (state.storageError) {
       body = el('div', { class: 'empty' }, [
         el('h2', { text: 'This browser’s storage is unavailable' }),
@@ -2307,6 +2320,7 @@
     // About stays at reading width — its tables and paragraphs both read
     // better narrow than stretched across a wide screen.
     var showingLogs = !!(state.logs || logsInProject());
+    var showingDocs = docsInProject();
     var d = (state.about || state.guide || state.logs || state.newProject.open) ? null : state.detail;
     var fullBleed = d && (
       d.view === 'microflows' || d.view === 'nanoflows' || d.view === 'pages' || d.view === 'entities' ||
@@ -2314,7 +2328,7 @@
     );
     // Log analysis takes the whole width AND the whole height: a log is wide,
     // and its lists scroll inside the screen rather than the page.
-    var wrap = el('div', { class: 'content-wrap' + ((fullBleed || showingLogs) ? ' wide' : '') + (showingLogs ? ' lg-wrap' : '') }, [body]);
+    var wrap = el('div', { class: 'content-wrap' + ((fullBleed || showingLogs || showingDocs) ? ' wide' : '') + (showingLogs ? ' lg-wrap' : '') + (showingDocs ? ' dx-wrap' : '') }, [body]);
     if (state.message) {
       var msgNode = el('div', { class: 'msg ' + state.message.kind, text: state.message.text });
       if (state.message.action) {
@@ -2348,6 +2362,9 @@
 
     var reportModal = window.MxComments.renderReportModal();
     if (reportModal) { app.appendChild(reportModal); return; }
+
+    var docsExportModal = window.MxDocs.renderExportModal();
+    if (docsExportModal) { app.appendChild(docsExportModal); return; }
 
     var commentEditor = window.MxComments.renderEditor();
     if (commentEditor) app.appendChild(commentEditor);
@@ -2576,6 +2593,9 @@
   window.MxAccessRule.init({ el: el, state: state, findEntity: findEntity });
   // The drawing of a flow — read, never laid out — for the flow window's Diagram tab.
   window.MxFlowDraw.init({ el: el });
+  // The Documentation section, built from the model and exportable as one
+  // encrypted HTML file.
+  window.MxDocs.init({ el: el, state: state, render: render, peekObject: peekObject, findProject: findProject, downloadText: downloadText });
   window.MxObjects.init({
     el: el, state: state, render: render, setMessage: setMessage,
     withMod: withMod, moduleRoleSetFor: moduleRoleSetFor,
