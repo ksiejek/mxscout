@@ -120,7 +120,7 @@ read and write lives in `public/store.js` and nowhere else.
 
 ## Browsing a project
 
-Open a project and you get six views over its model, all driven entirely by
+Open a project and you get seven views over its model, all driven entirely by
 the stored model (no server, no live app needed):
 
 - **App Explorer** — the project as its own tree: modules, the folders the team
@@ -154,6 +154,18 @@ the stored model (no server, no live app needed):
   the app publishes to the outside (REST, OData, web services, each with its
   own role list and its own authentication) and what runs on a timer with
   nobody signed in.
+- **Documentation** — the whole model as a documentation portal, built from it
+  each time one is loaded: a Start page of the project's numbers, the Modules
+  and what each holds, References (every microflow, nanoflow and page — what it
+  takes and returns, who runs it, what it calls and calls it, and a flow's
+  **workflow drawn top to bottom**), the Domain model, and a Quality view of
+  where the model looks unfinished. A call in a workflow opens that flow;
+  **Open in MxScout** brings up any object's own window over the page. It
+  exports as **one encrypted HTML file** — the documentation under a fresh
+  access code (the same WebCrypto envelope as the review report), the reader's
+  own source and its stylesheet, nothing else — that opens in any browser, asks
+  for the code, and shows exactly what the app showed. Built in your browser,
+  handed to the download; the server never sees it and nothing is sent anywhere.
 
 Two things MxScout works out for itself from the model, rather than showing
 you a list to work out yourself:
@@ -416,6 +428,8 @@ so has no object on the page at all. Nothing here is over 2,500 lines:
 | `public/exchange.js` | the flow-drawing handover file for MxScaffold — translation into that tool's vocabulary, and compaction |
 | `public/store.js` | every persistent read and write, and nothing else does storage |
 | `public/perf.js` | performance recordings: the admin port, saving and importing one, and every aggregation over its samples |
+| `public/flowdraw.js` | the Diagram tab: a microflow or nanoflow drawn from Studio Pro's own layout in the model — no layout library — with the whole text of a step on hover |
+| `public/docs-data.js` · `public/docs-view.js` · `public/docs.js` · `public/docs.css` | the Documentation section: the model read out of itself (`docs-data`), one self-contained reader the app runs and the export carries (`docs-view`), the section and its encrypted one-file export (`docs`), and the `.dx`-scoped stylesheet that travels with it |
 | `public/timeline.js` | the Timeline view: one time axis, the tracks on it, and the panel for whatever is picked |
 | `public/palette.js` | the command palette |
 | `public/about.js` | the About & security page — data, rendered by one function that only sets text |
@@ -498,6 +512,8 @@ calls `t.ok(condition, message)`. What it covers today:
 - the log analysis: the original author's own assertions run against the
   ported engine, and the screen is driven in a real browser — one file loaded,
   handed to every tool, nothing thrown, nothing requested beyond this server;
+- the flow drawing: every node at its place, loops as containers, branch values on
+  the arrows, the whole text of a step on hover, and a call that opens the called flow;
 - the log analysis as a section of a project: a log read against the model — chips on
   errors that name a microflow or entity, Open, and Report into a real comment;
 - the production guard, including a check that its two copies still agree;

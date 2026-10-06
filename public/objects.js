@@ -459,6 +459,7 @@
       ['data', 'Data', function () { return renderEntityDataTab(model, entity); }],
       ['comments', 'Comments', function () { return renderCommentsTab(commentTarget); }]
     ];
+
     // 'attributes'/'constraints' were two separate tabs; both now map to the
     // merged 'access' tab, so a remembered old value still lands somewhere.
     var activeTab = state.detail.entityTab || 'access';
@@ -1026,6 +1027,38 @@
           }],
       ['comments', 'Comments', function () { return renderCommentsTab(commentTarget); }]
     ];
+    // The drawing, as Studio Pro has it — only where the model holds one: a
+    // page has none, and neither has a flow from a model imported as JSON. An
+    // empty tab would only say "nothing here" one click later.
+    if (sel.kind !== 'page' && flow.graph && flow.graph.nodes && flow.graph.nodes.length) {
+      TABS.splice(1, 0, ['diagram', 'Diagram', function () { return diagramPane(); }]);
+    }
+    function diagramPane() {
+      function target(qn) {
+        var found = null;
+        ['microflows', 'nanoflows', 'pages'].forEach(function (sec) {
+          if (found) return;
+          var hit = (model[sec] || []).filter(function (x) { return x.qualifiedName === qn; })[0];
+          if (hit) found = { section: sec, item: hit };
+        });
+        if (!found && findEntity(model, qn)) found = { section: 'entities', item: findEntity(model, qn) };
+        return found;
+      }
+      return el('div', { class: 'popup-section fd-pane' }, [
+        window.MxFlowDraw.renderKept(sel.kind + ':' + flow.qualifiedName, flow, {
+          height: '62vh',
+          canOpen: function (qn) { return !!target(qn); },
+          // A flow this one calls opens in its place, on its own drawing — reading
+          // a call chain is following arrows, not switching tabs each time.
+          open: function (qn) {
+            var t = target(qn);
+            if (!t) return;
+            peekObject(t.section, { name: t.item.name, qualifiedName: t.item.qualifiedName });
+            if (t.section !== 'entities' && t.section !== 'pages') { state.detail.flowTab = 'diagram'; render(); }
+          }
+        })
+      ]);
+    }
     var activeTab = state.detail.flowTab || TABS[0][0];
     if (!TABS.some(function (t) { return t[0] === activeTab; })) activeTab = TABS[0][0];
 

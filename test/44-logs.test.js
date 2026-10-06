@@ -39,6 +39,10 @@ module.exports = async function (t) {
   const count = (sel) => mx.evaluate(`document.querySelectorAll(${JSON.stringify(sel)}).length`);
 
   // Earlier tests leave a project open in this browser; the model-less entry is for when none is.
+  // The app reopens the last project on its own once storage answers; wait for that to have happened, or it
+  // can reopen it right after "All projects" and take the Tools entry away again.
+  await mx.waitFor(`!!document.querySelector('.tree-project, .tree-empty')`, 10000, 'projects listed');
+  await new Promise((r) => setTimeout(r, 800));
   await mx.evaluate(`(Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'All projects') || { click() {} }).click()`);
   await mx.waitFor(`!!Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Log analysis')`, 5000, 'tools entry');
   await click(/^Log analysis$/);

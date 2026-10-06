@@ -17,6 +17,67 @@ claim a version it is not.
 
 ## Unreleased
 
+### Documentation — the whole model, in one place and one encrypted file
+
+**Every project has a new Documentation section: everything the model says
+about itself, drawn as a documentation portal, and exportable as a single
+encrypted HTML file.** It is built from the model each time one is loaded —
+there is nothing to keep in step by hand — and it never leaves the browser
+except as the file you choose to export.
+
+- A rail of five views. **Start** is a hero and the project's numbers —
+  modules, microflows, nanoflows, pages, entities, roles, scheduled events,
+  published services. **Modules** is what each one holds, own modules before
+  Marketplace. **References** is every microflow, nanoflow and page, each on
+  its own page: what it takes and returns, who may run it, what it calls and
+  what calls it, and — for a flow — its **workflow drawn top to bottom**, the
+  same cards the mendix-docs skill produces, a decision's branches side by
+  side, loops as frames, error handling as a side path. **Domain** is each
+  entity with its attributes and access, and the entities that point to it and
+  that it points to. **Quality** is where the model looks unfinished: what
+  nothing reaches, entities with no access rule, microflows that skip entity
+  access, disabled steps.
+- A step that calls another flow opens it. A flow's page has **Open in
+  MxScout**, which brings up that object's own window — with the Studio Pro
+  drawing — over the documentation.
+- **Export is one HTML file, encrypted.** It carries the documentation (under
+  a fresh access code, the same WebCrypto envelope as the review report), the
+  reader's own source, and its stylesheet — nothing else. It opens in any
+  browser, asks for the code, and shows exactly what the app showed. The
+  documentation names an application's weak spots, so it is never written in
+  the clear; the code travels separately from the file. It is built in your
+  browser and handed to the download — the server never sees it, and nothing
+  is sent anywhere.
+
+A model imported as JSON carries no drawings, so its flows are listed without a
+workflow; load the model from the Mendix project folder to see them.
+
+### Microflows and nanoflows, drawn
+
+**A flow's window has a new Diagram tab: the flow drawn the way Studio Pro
+draws it.** MxScout has been reading the drawing out of the project file for a
+while — where every activity sits, how big it is, which side each arrow leaves
+and enters by, how it curves — and only handing it to MxScaffold. Now it draws
+it itself, for microflows and nanoflows alike.
+
+- Nothing is laid out: the boxes are where their author put them, so the
+  picture is the one the developer already knows. There is no layout library
+  behind it, and nothing new to install.
+- A box holds as much of its text as fits, wrapped; **hovering it shows all of
+  it** — the action, the variable, the XPath or expression, what it returns,
+  its documentation, whether it is disabled — in a card, not a tooltip.
+- Activities are coloured by what they do: read data, change objects, call
+  something, talk to the user, call outside the app. Decisions carry their
+  branch values on the arrows, error handlers are dashed red, loops are
+  containers with their steps inside.
+- A step that calls another microflow or nanoflow is a link: click it and that
+  flow opens on its own drawing. A step that opens a page or touches an entity
+  opens that page or entity.
+- It opens readable — at its start, near full size — with Fit one click away;
+  drag to move, Ctrl + wheel to zoom.
+
+A model imported as JSON carries no drawings, so its flows have no Diagram tab.
+
 ### Log analysis — brought over from MxDevSwissTool
 
 **A new section in the sidebar, Log analysis: the log tools from
