@@ -2519,3 +2519,93 @@ button.ex-row:hover { background: var(--panel-2); }
 }
 .ex-chev.open { transform: rotate(90deg); }
 @media (prefers-reduced-motion: reduce) { .ex-chev { transition: none; } }
+
+/* ---------- the drawing of a flow (flowdraw.js) ----------
+ * Families are told apart by hue, and only on the stripe and the kicker: the
+ * box itself stays the panel colour so the text on it is always the same
+ * contrast. The amber accent is not one of the families — here, as
+ * everywhere, it means "you can act on this" (a box that opens a flow). */
+.fd-pane { padding-top: var(--space-2); }
+.fd-frame { --fd-data: #5b9bd5; --fd-object: #5fbf8f; --fd-call: #a98be8; --fd-client: #45b8b2;
+  --fd-integration: #d97aa5; --fd-variable: #8f96a0; --fd-log: #767c85; --fd-other: #8f96a0;
+  display: flex; flex-direction: column; gap: var(--space-2); height: 62vh; min-height: 320px; }
+.fd-tools { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.fd-zoom-label { min-width: 46px; text-align: center; font-size: var(--text-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+.fd-tools-hint { font-size: var(--text-xs); margin-left: auto; }
+.fd-stage { position: relative; flex: 1; min-height: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; cursor: grab;
+  background-color: var(--bg);
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--muted) 22%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px; touch-action: none; }
+.fd-stage.is-panning { cursor: grabbing; }
+.fd-svg { display: block; width: 100%; height: 100%; user-select: none; }
+.fd-empty { padding: var(--space-4); border: 1px dashed var(--border); border-radius: 10px; text-align: center; }
+
+.fd-t { fill: var(--text); }
+.fd-t-kicker { fill: var(--muted); font: 600 10px system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: .02em; }
+.fd-t-title { font: 600 12px system-ui, -apple-system, "Segoe UI", sans-serif; }
+.fd-t-meta { fill: var(--muted); font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; }
+.fd-t-note { fill: #e9dfb8; font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; }
+
+.fd-box { fill: var(--panel-2); stroke: var(--border); stroke-width: 1.2; }
+.fd-stripe { fill: var(--fd-other); }
+.fd-fam-data .fd-stripe { fill: var(--fd-data); } .fd-fam-data .fd-t-kicker { fill: var(--fd-data); }
+.fd-fam-object .fd-stripe { fill: var(--fd-object); } .fd-fam-object .fd-t-kicker { fill: var(--fd-object); }
+.fd-fam-call .fd-stripe { fill: var(--fd-call); } .fd-fam-call .fd-t-kicker { fill: var(--fd-call); }
+.fd-fam-client .fd-stripe { fill: var(--fd-client); } .fd-fam-client .fd-t-kicker { fill: var(--fd-client); }
+.fd-fam-integration .fd-stripe { fill: var(--fd-integration); } .fd-fam-integration .fd-t-kicker { fill: var(--fd-integration); }
+.fd-fam-variable .fd-stripe, .fd-fam-other .fd-stripe { fill: var(--fd-variable); }
+.fd-fam-log .fd-stripe { fill: var(--fd-log); }
+
+.fd-event { stroke-width: 2; }
+.fd-start .fd-event { fill: color-mix(in srgb, #5fbf8f 35%, var(--panel)); stroke: #5fbf8f; }
+.fd-end .fd-event { fill: color-mix(in srgb, var(--alarm) 30%, var(--panel)); stroke: var(--alarm); }
+.fd-errorEvent .fd-event { fill: var(--alarm); stroke: var(--alarm); }
+.fd-break .fd-event, .fd-continue .fd-event { fill: var(--panel-2); stroke: var(--muted); }
+.fd-glyph { fill: var(--text); font: 700 11px system-ui, sans-serif; }
+.fd-diamond { fill: var(--panel-2); stroke: #d9b24a; stroke-width: 1.4; }
+.fd-merge .fd-diamond { stroke: var(--muted); }
+.fd-loopbox { fill: color-mix(in srgb, var(--panel) 70%, transparent); stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 6 4; }
+.fd-note { fill: #2d2a1d; stroke: #6f6439; stroke-width: 1; }
+.fd-param { fill: #2d2a1d; stroke: #d9b24a; stroke-width: 1.2; }
+.fd-below .fd-t-meta, .fd-below .fd-t-title { fill: var(--text); }
+
+.fd-node.is-disabled { opacity: .45; }
+.fd-node.is-disabled .fd-box { stroke-dasharray: 4 3; }
+.fd-node:hover .fd-box, .fd-node:hover .fd-diamond, .fd-node:hover .fd-note { stroke: var(--text); }
+.fd-node.is-link { cursor: pointer; }
+.fd-node.is-link .fd-box { stroke: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.fd-node.is-link:hover .fd-box, .fd-node.is-link:focus .fd-box { stroke: var(--accent); stroke-width: 2; }
+.fd-node.is-link .fd-t-title { fill: var(--accent); }
+.fd-node:focus { outline: none; }
+.fd-node[data-more] .fd-box { stroke-dasharray: none; }
+.fd-node.is-highlight .fd-box, .fd-node.is-highlight .fd-diamond { stroke: var(--alarm); stroke-width: 3; }
+
+.fd-edge { fill: none; stroke: color-mix(in srgb, var(--muted) 85%, var(--text)); stroke-width: 1.5; }
+.fd-edge-error { stroke: var(--alarm); stroke-dasharray: 6 4; }
+.fd-edge-annotation { stroke: #6f6439; stroke-dasharray: 2 4; stroke-width: 1.2; }
+.fd-arrowhead { fill: color-mix(in srgb, var(--muted) 85%, var(--text)); }
+.fd-arrowhead-err { fill: var(--alarm); }
+.fd-branch rect { fill: var(--panel); stroke: var(--border); }
+.fd-branch text { fill: var(--text); font: 600 11px system-ui, sans-serif; }
+.fd-branch-err rect { stroke: var(--alarm); }
+.fd-branch-err text { fill: var(--alarm); }
+
+.fd-card { position: absolute; z-index: 2; max-width: 380px; min-width: 220px; pointer-events: none;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 28px rgba(0, 0, 0, .5); padding: 10px 12px; }
+.fd-card-kicker { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.fd-card-title { font-size: var(--text-sm); font-weight: 600; margin-top: 2px; white-space: pre-wrap; word-break: break-word; }
+.fd-card-flag { margin-top: 6px; font-size: var(--text-xs); color: var(--alarm); }
+.fd-card-rows { margin-top: 8px; display: grid; gap: 4px; }
+.fd-card-row { display: grid; grid-template-columns: 78px 1fr; gap: 8px; font-size: var(--text-xs); }
+.fd-card-k { color: var(--muted); }
+.fd-card-v { word-break: break-word; white-space: pre-wrap; }
+.fd-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.fd-card-doc { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: var(--text-xs); white-space: pre-wrap; color: var(--text); }
+.fd-card-hint { margin-top: 8px; font-size: var(--text-xs); color: var(--accent); }
+
+.fd-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: var(--text-xs); color: var(--muted); }
+.fd-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.fd-swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.fd-swatch-data { background: var(--fd-data); } .fd-swatch-object { background: var(--fd-object); }
+.fd-swatch-call { background: var(--fd-call); } .fd-swatch-client { background: var(--fd-client); }
+.fd-swatch-integration { background: var(--fd-integration); } .fd-swatch-variable { background: var(--fd-variable); }

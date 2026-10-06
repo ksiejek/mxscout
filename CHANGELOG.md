@@ -17,6 +17,32 @@ claim a version it is not.
 
 ## Unreleased
 
+### Microflows and nanoflows, drawn
+
+**A flow's window has a new Diagram tab: the flow drawn the way Studio Pro
+draws it.** MxScout has been reading the drawing out of the project file for a
+while — where every activity sits, how big it is, which side each arrow leaves
+and enters by, how it curves — and only handing it to MxScaffold. Now it draws
+it itself, for microflows and nanoflows alike.
+
+- Nothing is laid out: the boxes are where their author put them, so the
+  picture is the one the developer already knows. There is no layout library
+  behind it, and nothing new to install.
+- A box holds as much of its text as fits, wrapped; **hovering it shows all of
+  it** — the action, the variable, the XPath or expression, what it returns,
+  its documentation, whether it is disabled — in a card, not a tooltip.
+- Activities are coloured by what they do: read data, change objects, call
+  something, talk to the user, call outside the app. Decisions carry their
+  branch values on the arrows, error handlers are dashed red, loops are
+  containers with their steps inside.
+- A step that calls another microflow or nanoflow is a link: click it and that
+  flow opens on its own drawing. A step that opens a page or touches an entity
+  opens that page or entity.
+- It opens readable — at its start, near full size — with Fit one click away;
+  drag to move, Ctrl + wheel to zoom.
+
+A model imported as JSON carries no drawings; the tab says so.
+
 ### Log analysis — brought over from MxDevSwissTool
 
 **A new section in the sidebar, Log analysis: the log tools from

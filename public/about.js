@@ -39,7 +39,7 @@
           ['Licence', 'GPL-3.0-or-later — the complete source is readable, unminified, with no build step between it and what runs'],
           ['Runtime', 'Node.js, standard library only (http, fs, path, crypto, url)'],
           ['Third-party dependencies', 'None. package.json declares no dependencies; there is no node_modules, no lockfile and no npm install step. One body of third-party SOURCE is in the repository, and is read like the rest: the log analysis in public/logs/ (see “Log analysis” below), written by Mikołaj (RealMecowhy) as MxDevSwissTool, MIT licence, credited in THIRD-PARTY-NOTICES.md'],
-          ['Size', 'About 34,700 lines across 59 files — small enough to read end to end. The test suite ships alongside it in test/, another 61 files and about 11,600 lines that never run as part of the app'],
+          ['Size', 'About 35,700 lines across 60 files — small enough to read end to end. The test suite ships alongside it in test/, another 62 files and about 11,500 lines that never run as part of the app'],
           ['Install footprint', 'A folder. No installer, no administrator rights, no system service, no scheduled task, no registry or autostart entry, no PATH change'],
           ['Starting it', 'A script in that folder: start.sh, or MxScout.cmd / MxScout.command for a double-click. It runs Node.js on the files already there and opens the browser on 127.0.0.1. On a machine with no Node.js installed, and only after the person typing yes to the question, the launcher downloads the official Node build from nodejs.org into ./runtime — one folder, deleted like any other, no installer and no administrator rights. That is the only thing MxScout ever writes outside the browser, it happens in the launcher and never in the server process, and it never happens without being asked. Answering no, or having no network, leaves the folder untouched'],
           ['Runs as', 'The user who starts it, with that user’s permissions. Nothing is elevated'],
@@ -240,7 +240,7 @@
       ] },
 
       { id: 'source', title: 'Reading the source', blocks: [
-        { p: '37 entries below, 59 files, no build step. What runs is what you read. The largest is under 2,500 lines. Two directories in the repository are not in this list because none of what is in them runs as part of the app: test/, which is there to be read and run yourself, and skills/, a folder of Markdown and one dependency-free script for a coding agent, which the app never loads and never calls.' },
+        { p: '38 entries below, 60 files, no build step. What runs is what you read. The largest is under 2,500 lines. Two directories in the repository are not in this list because none of what is in them runs as part of the app: test/, which is there to be read and run yourself, and skills/, a folder of Markdown and one dependency-free script for a coding agent, which the app never loads and never calls.' },
         { kv: [
           ['server/index.js', 'The whole HTTP server: loopback bind, security headers, the same-origin gate, the route table, static files.'],
           ['server/routes/session.js', 'Every endpoint listed above, with its validation.'],
@@ -266,6 +266,7 @@
           ['public/exchange.js', 'The flow-drawing handover file for MxScaffold: the translation from Mendix’s own names into that tool’s vocabulary, and the compaction. A pure transform — no network, no storage, no dependencies.'],
           ['public/comments.js', 'Comments: writing them, filtering them, the history that records when one was marked fixed, the whitelist that decides what leaves in a package, and the rule by which two copies of one comment reconcile.'],
           ['public/report.js', 'The two report outputs — the clipboard copy for Word, and the standalone encrypted HTML file. Also the one place in the codebase that assigns markup, named in Hardening above.'],
+          ['public/flowdraw.js', 'The Diagram tab of a microflow or nanoflow: the flow drawn the way Studio Pro drew it, from the positions, sizes and curves the model already holds — nothing is laid out here, and there is no layout library. Text from the model is set as SVG text only; hovering a step shows all of it in a card built the same way. It reads the flow it is handed and nothing else, and writes nothing.'],
           ['public/timeline.js', 'The performance Timeline: one time axis, the tracks drawn on it, and the panel for whatever is picked. It reads no samples of its own — every number it draws is handed to it by perf.js.'],
           ['public/version.js', 'Which version is running, what is in it, and the reasoning for not checking whether a newer one exists.'],
           ['public/about.js', 'This page. It is data — a list of sections and blocks — rendered by one function that only ever sets text.'],

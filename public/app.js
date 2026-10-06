@@ -2574,6 +2574,8 @@
   // Reading a row-level rule is its own topic, and two screens ask about it:
   // the access matrix and the Security section.
   window.MxAccessRule.init({ el: el, state: state, findEntity: findEntity });
+  // The drawing of a flow — read, never laid out — for the flow window's Diagram tab.
+  window.MxFlowDraw.init({ el: el });
   window.MxObjects.init({
     el: el, state: state, render: render, setMessage: setMessage,
     withMod: withMod, moduleRoleSetFor: moduleRoleSetFor,

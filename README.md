@@ -416,6 +416,7 @@ so has no object on the page at all. Nothing here is over 2,500 lines:
 | `public/exchange.js` | the flow-drawing handover file for MxScaffold — translation into that tool's vocabulary, and compaction |
 | `public/store.js` | every persistent read and write, and nothing else does storage |
 | `public/perf.js` | performance recordings: the admin port, saving and importing one, and every aggregation over its samples |
+| `public/flowdraw.js` | the Diagram tab: a microflow or nanoflow drawn from Studio Pro's own layout in the model — no layout library — with the whole text of a step on hover |
 | `public/timeline.js` | the Timeline view: one time axis, the tracks on it, and the panel for whatever is picked |
 | `public/palette.js` | the command palette |
 | `public/about.js` | the About & security page — data, rendered by one function that only sets text |
@@ -498,6 +499,8 @@ calls `t.ok(condition, message)`. What it covers today:
 - the log analysis: the original author's own assertions run against the
   ported engine, and the screen is driven in a real browser — one file loaded,
   handed to every tool, nothing thrown, nothing requested beyond this server;
+- the flow drawing: every node at its place, loops as containers, branch values on
+  the arrows, the whole text of a step on hover, and a call that opens the called flow;
 - the log analysis as a section of a project: a log read against the model — chips on
   errors that name a microflow or entity, Open, and Report into a real comment;
 - the production guard, including a check that its two copies still agree;
