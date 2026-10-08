@@ -16,16 +16,24 @@
   'use strict';
 
   var app = null; // { el, state, render, peekObject, findProject, downloadText }
-  var kept = null; // { model, host, data, view } — the mounted documentation, kept across redraws
-  var dialog = null; // { busy, code, fileName, error }
+  var kept = null; // { model, project, host, data, view, sig } — the mounted documentation, kept across redraws
+  var dialog = null; // { busy, code, fileName, error, modules }
 
   function init(api) { app = api; }
 
   var SECTION = { microflow: 'microflows', nanoflow: 'nanoflows', page: 'pages' };
 
+  // The findings that matter to the view, as a cheap string: rebuild the
+  // documentation when one is added, resolved or re-rated, not on every redraw.
+  function findingsSig(list) {
+    return (list || []).map(function (f) { return f.id + ':' + f.severity + ':' + f.status; }).join('|');
+  }
+
   function render(model, project) {
-    if (kept && kept.model === model) return kept.host;
-    var data = window.MxDocsData.build(model, project);
+    var findings = app.state.findings || [];
+    var sig = findingsSig(findings);
+    if (kept && kept.model === model && kept.sig === sig) return kept.host;
+    var data = window.MxDocsData.build(model, project, { comments: findings });
     var host = app.el('div', { class: 'dx-host' });
     var exportBtn = app.el('button', { class: 'dx-btn primary', type: 'button', text: '🔒 Export', title: 'One encrypted HTML file with this documentation — it opens in any browser with an access code', onclick: function () { openExport(); } });
     var view = window.MxDocsView.mount(data, host, {
@@ -37,7 +45,7 @@
         if (section) app.peekObject(section, { name: qn.split('.').pop(), qualifiedName: qn });
       }
     });
-    kept = { model: model, host: host, data: data, view: view };
+    kept = { model: model, project: project, host: host, data: data, view: view, sig: sig };
     return host;
   }
 
@@ -122,8 +130,12 @@
   }
 
   function doExport() {
-    var data = current();
-    if (!data) return;
+    if (!kept || !kept.model) return;
+    var chosen = Object.keys(dialog.modules).filter(function (n) { return dialog.modules[n]; });
+    if (!chosen.length) { dialog.error = 'Choose at least one module to export.'; app.render(); return; }
+    // Rebuilt for the export: only the chosen modules, and the findings as they
+    // stand right now — the in-app view keeps showing everything.
+    var data = window.MxDocsData.build(kept.model, kept.project, { modules: chosen, comments: app.state.findings || [] });
     var code = window.MxCrypto.generateCode();
     dialog.busy = true; dialog.error = null; app.render();
     // The stylesheet is this app's own file, read from this same server.
@@ -139,22 +151,64 @@
       .catch(function (err) { dialog.busy = false; dialog.error = (err && err.message) || 'Could not build the file.'; app.render(); });
   }
 
-  function openExport() { dialog = { busy: false, code: null, fileName: null, error: null, note: null }; app.render(); }
+  function openExport() {
+    // Default to the own modules: the Marketplace ones are rarely what a
+    // reader of this documentation is after, but they are there to tick.
+    var data = current();
+    var modules = {};
+    ((data && data.modules) || []).forEach(function (m) { if (!m.marketplace) modules[m.name] = true; });
+    dialog = { busy: false, code: null, fileName: null, error: null, note: null, modules: modules };
+    app.render();
+  }
 
   function renderExportModal() {
     if (!dialog) return null;
     var el = app.el;
     var close = function () { if (dialog.busy) return; dialog = null; app.render(); };
-    var data = current() || { kpi: {} };
+    var data = current() || { kpi: {}, modules: [], comments: [] };
+    var allMods = data.modules || [];
+    var own = allMods.filter(function (m) { return !m.marketplace; });
+    var market = allMods.filter(function (m) { return m.marketplace; });
+    var chosen = Object.keys(dialog.modules).filter(function (n) { return dialog.modules[n]; });
+    var findings = (data.comments || []).length;
+
+    function setMods(fn) { allMods.forEach(function (m) { dialog.modules[m.name] = fn(m); }); app.render(); }
+    function moduleBox(m) {
+      var n = m.microflows.length + m.nanoflows.length + m.pages.length + m.entities.length;
+      return el('label', { class: 'docs-mod' + (dialog.modules[m.name] ? ' on' : '') }, [
+        el('input', { type: 'checkbox', checked: dialog.modules[m.name] ? 'checked' : null, disabled: dialog.busy ? 'disabled' : null,
+          onchange: function (e) { dialog.modules[m.name] = e.target.checked; app.render(); } }),
+        el('span', { class: 'docs-mod-badge' + (m.marketplace ? ' mk' : ''), text: m.marketplace ? 'MP' : 'MOD' }),
+        el('span', { class: 'docs-mod-t' }, [el('b', { text: m.name }), el('small', { text: n + ' document' + (n === 1 ? '' : 's') })])
+      ]);
+    }
+    function group(title, mods) {
+      if (!mods.length) return null;
+      return el('div', { class: 'docs-mod-group' }, [el('div', { class: 'docs-mod-group-h', text: title })].concat(mods.map(moduleBox)));
+    }
+
     var kids = [
       el('h3', { text: 'Export the documentation' }),
-      el('p', { class: 'muted', text: 'One HTML file with everything in this section — ' + (data.kpi.microflows || 0) + ' microflows, ' + (data.kpi.nanoflows || 0) + ' nanoflows, ' + (data.kpi.pages || 0) + ' pages, ' + (data.kpi.entities || 0) + ' entities, every workflow — encrypted. It opens in any browser and asks for an access code; nothing is sent anywhere.' }),
+      el('p', { class: 'muted', text: 'One encrypted HTML file, for the modules you choose below. It opens in any browser and asks for an access code; nothing is sent anywhere.' }),
+      el('div', { class: 'docs-export-mods' }, [
+        el('div', { class: 'docs-mod-head' }, [
+          el('strong', { text: 'Modules to export' }),
+          el('span', { class: 'docs-mod-count', text: chosen.length + ' of ' + allMods.length + ' selected' }),
+          el('span', { class: 'docs-mod-acts' }, [
+            el('button', { class: 'btn btn-xs', text: 'Own only', onclick: function () { setMods(function (m) { return !m.marketplace; }); } }),
+            el('button', { class: 'btn btn-xs', text: 'All', onclick: function () { setMods(function () { return true; }); } }),
+            el('button', { class: 'btn btn-xs', text: 'None', onclick: function () { setMods(function () { return false; }); } })
+          ])
+        ]),
+        group('Own modules', own),
+        group('Marketplace', market)
+      ]),
       el('div', { class: 'report-option' }, [
         el('div', { class: 'report-option-head' }, [
           el('strong', { text: 'Encrypted HTML file' }),
-          el('button', { class: 'btn btn-sm btn-primary', text: dialog.busy ? 'Working…' : 'Build file', disabled: dialog.busy ? 'disabled' : null, onclick: doExport })
+          el('button', { class: 'btn btn-sm btn-primary', text: dialog.busy ? 'Working…' : 'Build file', disabled: (dialog.busy || !chosen.length) ? 'disabled' : null, onclick: doExport })
         ]),
-        el('p', { class: 'muted', text: 'The documentation describes the application’s structure and its weak spots, so it is never written unencrypted. Send the code by a different channel than the file.' })
+        el('p', { class: 'muted', text: 'Carries the chosen modules and, always, the findings recorded against them — with their severity and whether they are fixed. The documentation describes the application’s structure and its weak spots, so it is never written unencrypted. Send the code by a different channel than the file.' + (findings ? '' : ' (No findings are recorded yet.)') })
       ])
     ];
     if (dialog.code) {

@@ -40,14 +40,21 @@ except as the file you choose to export.
 - A step that calls another flow opens it. A flow's page has **Open in
   MxScout**, which brings up that object's own window — with the Studio Pro
   drawing — over the documentation.
-- **Export is one HTML file, encrypted.** It carries the documentation (under
-  a fresh access code, the same WebCrypto envelope as the review report), the
-  reader's own source, and its stylesheet — nothing else. It opens in any
-  browser, asks for the code, and shows exactly what the app showed. The
-  documentation names an application's weak spots, so it is never written in
-  the clear; the code travels separately from the file. It is built in your
-  browser and handed to the download — the server never sees it, and nothing
-  is sent anywhere.
+- **The findings you have recorded are part of it.** A new **Findings** view,
+  and a Findings tab on each object, show the comments from MxScout coloured by
+  severity (critical / high / medium / low) and marked open, fixed or
+  won't-fix — the same findings the object popups carry. They always travel
+  with the export.
+- **Export is one HTML file, encrypted — for the modules you choose.** The
+  dialog lists the application's modules (own modules ticked by default,
+  Marketplace ones there to add); the file carries only those, and always the
+  findings recorded against them. It carries the documentation (under a fresh
+  access code, the same WebCrypto envelope as the review report), the reader's
+  own source, and its stylesheet — nothing else. It opens in any browser, asks
+  for the code, and shows exactly what the app showed. The documentation names
+  an application's weak spots, so it is never written in the clear; the code
+  travels separately from the file. It is built in your browser and handed to
+  the download — the server never sees it, and nothing is sent anywhere.
 
 A model imported as JSON carries no drawings, so its flows are listed without a
 workflow; load the model from the Mendix project folder to see them.

@@ -238,6 +238,40 @@
 .dx .wfx-pop .go { margin-top:10px; font-size:12.5px; font-weight:700; color:var(--brand-strong); }
 .dx .wfx-pop .go.dim { color:var(--muted); font-weight:500; }
 
+/* findings (comments) — severity as hue, status as its own badge */
+.dx .dx-sev { display:inline-flex; align-items:center; font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; padding:2px 8px; border-radius:999px; border:1px solid transparent; }
+.dx .dx-sev-critical { background:var(--danger-soft); color:var(--danger-ink); border-color:var(--danger); }
+.dx .dx-sev-high { background:var(--warn-soft); color:var(--warn-ink); border-color:var(--warn); }
+.dx .dx-sev-medium { background:var(--brand-soft); color:var(--brand-ink); border-color:var(--brand); }
+.dx .dx-sev-low { background:var(--neutral-soft); color:var(--muted); border-color:var(--line-strong); }
+.dx .dx-st { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; border:1px solid var(--line-strong); color:var(--muted); background:var(--surface-2); }
+.dx .dx-st-open { color:var(--brand-ink); border-color:var(--brand); background:var(--brand-soft); }
+.dx .dx-st-open::before { content:"●"; font-size:9px; }
+.dx .dx-st-fixed { color:var(--ok-ink); border-color:var(--ok); background:var(--ok-soft); }
+.dx .dx-st-fixed::before { content:"✔"; font-size:10px; }
+.dx .dx-st-wontfix { color:var(--muted); }
+.dx .dx-st-wontfix::before { content:"⊘"; font-size:10px; }
+.dx .dx-finds { display:flex; flex-direction:column; gap:10px; }
+.dx .dx-find { border:1px solid var(--line); border-left:4px solid var(--line-strong); border-radius:12px; background:var(--surface); padding:12px 14px; box-shadow:var(--shadow-1); }
+.dx .dx-find-critical { border-left-color:var(--danger); }
+.dx .dx-find-high { border-left-color:var(--warn); }
+.dx .dx-find-medium { border-left-color:var(--brand); }
+.dx .dx-find-low { border-left-color:var(--line-control); }
+.dx .dx-find.done { opacity:.72; }
+.dx .dx-find-h { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.dx .dx-find-tg { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line-strong); background:var(--surface-2); border-radius:999px; padding:1px 10px 1px 4px; cursor:pointer; color:var(--ink); }
+.dx .dx-find-tg:hover { border-color:var(--brand); color:var(--brand-strong); }
+.dx .dx-find-tg .mono { font-size:12px; }
+.dx .dx-find-tg small { color:var(--muted); }
+.dx .dx-find-role { color:var(--muted); margin-left:auto; }
+.dx .dx-find-p { margin-top:8px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.dx .dx-find-c { margin-top:6px; font-size:13px; color:var(--ink-2); white-space:pre-wrap; overflow-wrap:anywhere; }
+.dx .dx-find-c b { color:var(--ink); }
+.dx .dx-find-a { margin-top:6px; font-size:12px; color:var(--muted); }
+.dx .dx-find-sec { display:flex; align-items:center; gap:8px; }
+.dx .dx-find-sec span { color:var(--muted); font-weight:600; }
+.dx .dx-find-card { margin-top:16px; }
+
 @media (max-width: 1100px) {
   .dx-body { grid-template-columns:72px 260px minmax(0,1fr); }
   .dx-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
