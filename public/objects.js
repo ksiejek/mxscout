@@ -830,7 +830,11 @@
       if (isObject) {
         var chosenText = describePick(p);
         var pickEntity = findEntity(model, p.entityQualifiedName);
-        if (!pickEntity) {
+        if (!pickEntity && findEntity(state.detail.rawModel, p.entityQualifiedName)) {
+          // There, in a Marketplace module this project hides — which used to
+          // read as "not in this model", a claim about the model that was false.
+          control = el('span', { class: 'muted', text: 'in a hidden Marketplace module — show Marketplace modules to choose one' });
+        } else if (!pickEntity) {
           control = el('span', { class: 'warn-text', text: 'not in this model' });
         } else if (!connected) {
           control = el('span', { class: 'muted', text: 'connect the app tab first' });

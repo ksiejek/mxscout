@@ -1551,6 +1551,22 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
   margin-bottom: 12px;
   font-size: 13px;
 }
+/* Same shape as the orphan banner, without the alarm: a hidden Marketplace
+   module is a view setting, not something wrong with the model. */
+.hidden-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
 
 .history-block { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 12px; }
 .history-toggle {

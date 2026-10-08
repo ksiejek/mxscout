@@ -209,6 +209,23 @@ rest. "MxScout was updated" shows the new version as headings only, as a
 summary of what moved. The note on why MxScout never checks for updates is
 still there, beside the list rather than above it.
 
+### Hidden is not gone
+
+**A comment on something in a hidden Marketplace module is no longer reported
+as orphaned.** MxScout hides Marketplace modules by default, and the check
+behind "points at an object that is no longer in this model" was run against
+that filtered view — so a comment on, say, `Administration.Account` was
+counted with the ones whose object had really been renamed or deleted, and
+following it said the object "may have been renamed or removed". Nothing had
+changed. Such a comment is now marked "in a hidden Marketplace module", is
+announced on its own line with a button that shows those modules, and
+following it offers to show them and then opens the object. A comment whose
+object really is gone is still reported exactly as before.
+
+The same fault showed in one more place: a flow input whose type is an entity
+of a hidden module said "not in this model". It now says the module is
+hidden.
+
 ## 1.5.0
 
 ### The About page said the outbound connection only happens while recording. It does not

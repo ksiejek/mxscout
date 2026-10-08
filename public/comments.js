@@ -73,7 +73,14 @@
   }
 
   function isOrphan(finding) {
-    return !app.objectExists(finding.target.qualifiedName);
+    return app.objectState(finding.target.qualifiedName) === 'missing';
+  }
+
+  // In the project, in a Marketplace module this project hides. Not an
+  // orphan: nothing was renamed or removed, and showing the module brings it
+  // straight back.
+  function isHidden(finding) {
+    return app.objectState(finding.target.qualifiedName) === 'hidden';
   }
 
   function withinRange(finding, key) {
@@ -600,6 +607,13 @@
         title: 'This object was renamed or removed from the model after the comment was written.'
       }));
     }
+    if (isHidden(finding)) {
+      marks.push(app.el('span', {
+        class: 'comment-mark',
+        text: 'in a hidden Marketplace module',
+        title: 'This object is still in the model. It is in a Marketplace module, and this project hides those — show Marketplace modules to open it.'
+      }));
+    }
 
     return app.withMod(app.el('div', { class: 'comment-row status-' + finding.status }, [
       app.el('div', { class: 'comment-row-head' }, [
@@ -658,6 +672,21 @@
         ])
       : null;
 
+    // Said apart from the orphans, and calmly: a hidden module is a view
+    // setting, not something that happened to the model.
+    var hidden = all.filter(isHidden);
+    var hiddenBanner = hidden.length
+      ? app.el('div', { class: 'hidden-banner' }, [
+          app.el('span', { text: hidden.length === 1
+            ? 'One comment is on an object in a Marketplace module, which this project hides.'
+            : hidden.length + ' comments are on objects in Marketplace modules, which this project hides.' }),
+          app.el('button', {
+            class: 'btn btn-sm', text: 'Show Marketplace modules',
+            onclick: function () { app.showMarketplaceModules(); }
+          })
+        ])
+      : null;
+
     var orphanNotice = filters.orphansOnly
       ? app.el('div', { class: 'orphan-banner' }, [
           app.el('span', { text: 'Showing only comments whose object is missing from the current model.' }),
@@ -685,6 +714,7 @@
     return app.el('div', {}, [
       renderFilters(model, shown.length, all.length),
       orphanBanner,
+      hiddenBanner,
       orphanNotice,
       body,
       renderDeliveryHistory()

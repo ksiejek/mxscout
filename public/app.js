@@ -2373,28 +2373,46 @@
       : t.kind === 'microflow' ? 'microflows'
       : t.kind === 'nanoflow' ? 'nanoflows' : 'pages';
     var item = { name: t.name, qualifiedName: t.qualifiedName };
-    // An object renamed out of the model since the comment was written has
-    // nowhere to jump to; say so instead of landing on an empty list.
-    var exists = objectsOfSection(state.detail.model, section).some(function (o) {
-      return o.qualifiedName === t.qualifiedName;
-    });
-    if (!exists) {
-      setMessage('“' + t.qualifiedName + '” is not in the current model — it may have been renamed or removed since this comment was written.', 'error');
+    function isIn(model) {
+      return objectsOfSection(model, section).some(function (o) { return o.qualifiedName === t.qualifiedName; });
+    }
+    if (isIn(state.detail.model)) { jumpToObject(section, item); return; }
+    // Still in the project, in a Marketplace module this project hides. That
+    // is a view setting, not a change to the model, so the way there is to
+    // show the module — offered, not done behind the reader's back, because
+    // it is a project setting that outlives this click.
+    if (isIn(state.detail.rawModel)) {
+      setMessage('“' + t.qualifiedName + '” is in a Marketplace module, and this project hides those.', 'error', {
+        label: 'Show Marketplace modules',
+        onclick: function () {
+          setMessage(null);
+          setShowMarketplaceModules(findProject(state.activeId), true).then(function () { jumpToFinding(finding); });
+        }
+      });
       render();
       return;
     }
-    jumpToObject(section, item);
+    // An object renamed out of the model since the comment was written has
+    // nowhere to jump to; say so instead of landing on an empty list.
+    setMessage('“' + t.qualifiedName + '” is not in the current model — it may have been renamed or removed since this comment was written.', 'error');
+    render();
   }
 
-  // A comment written months ago can point at an entity that has since been
-  // renamed or deleted. Answering that here keeps comments.js from needing to
-  // know how a model is shaped.
-  function objectExists(qualifiedName) {
-    if (!state.detail) return true;
-    var model = state.detail.model;
-    return ['entities', 'microflows', 'nanoflows', 'pages'].some(function (key) {
-      return (model[key] || []).some(function (o) { return o.qualifiedName === qualifiedName; });
-    });
+  // Where a comment's object stands: 'shown', 'hidden' (still in the project,
+  // in a Marketplace module this project hides) or 'missing' (renamed or
+  // deleted since the comment was written). Hidden used to count as missing,
+  // so a comment on a CommunityCommons entity was reported as orphaned in a
+  // project where nothing had changed. Answering here keeps comments.js from
+  // needing to know how a model is shaped.
+  function objectState(qualifiedName) {
+    if (!state.detail) return 'shown';
+    function isIn(model) {
+      return ['entities', 'microflows', 'nanoflows', 'pages'].some(function (key) {
+        return (model[key] || []).some(function (o) { return o.qualifiedName === qualifiedName; });
+      });
+    }
+    if (isIn(state.detail.model)) return 'shown';
+    return isIn(state.detail.rawModel) ? 'hidden' : 'missing';
   }
 
   function attributesOf(qualifiedName) {
@@ -2416,7 +2434,10 @@
     reportWriteFailure: reportWriteFailure,
     jumpToFinding: jumpToFinding,
     attributesOf: attributesOf,
-    objectExists: objectExists,
+    objectState: objectState,
+    showMarketplaceModules: function () {
+      return setShowMarketplaceModules(findProject(state.activeId), true);
+    },
     // Comments can be started from the comments view itself, where no object
     // is open — the palette does the choosing.
     pickObject: function (prompt, onPick) {

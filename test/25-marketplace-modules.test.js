@@ -25,7 +25,10 @@ const MODEL = {
   ],
   associations: [],
   microflows: [
-    { qualifiedName: 'Sales.CancelOrder', name: 'CancelOrder', module: 'Sales', allowedModuleRoles: [], parameters: [] },
+    // Takes an object of a Marketplace module's entity — the ordinary case of
+    // a project flow that logs through CommunityCommons.
+    { qualifiedName: 'Sales.CancelOrder', name: 'CancelOrder', module: 'Sales', allowedModuleRoles: [],
+      parameters: [{ name: 'Log', entityQualifiedName: 'CommunityCommons.LogMessage', isList: false }] },
     { qualifiedName: 'CommunityCommons.StringUtils', name: 'StringUtils', module: 'CommunityCommons', allowedModuleRoles: [], parameters: [] }
   ],
   nanoflows: [], pages: [],
@@ -129,6 +132,69 @@ module.exports = async function (t) {
   await mx.evaluate(`Array.from(document.querySelectorAll('button,a')).filter(n => /^Entities/i.test(n.textContent.trim()))[0].click()`);
   t.ok(await mx.waitFor(`/CommunityCommons/.test(document.body.textContent)`, 8000, 'still shown after reload'),
     'the choice survives a reload — it is a project setting, not view-session state');
+
+  // ---- hidden is not gone ----
+  // Something in a hidden Marketplace module is still in the model. Telling a
+  // reader it was "renamed or removed" sent them looking for a change nobody
+  // made: a comment on it was flagged as orphaned, and a flow taking one of
+  // its entities said the type was "not in this model".
+  await mx.evaluate(`(async () => {
+    const now = new Date().toISOString();
+    const base = { projectId: 'p1', role: null, severity: 'medium', change: '', status: 'open', author: 'Karol', history: [], createdAt: now, updatedAt: now };
+    await MxStore.put('findings', Object.assign({ id: 'mk-hidden', problem: 'On a hidden entity',
+      target: { kind: 'entity', qualifiedName: 'CommunityCommons.LogMessage', module: 'CommunityCommons', name: 'LogMessage', attributes: [] } }, base));
+    await MxStore.put('findings', Object.assign({ id: 'mk-gone', problem: 'On a removed entity',
+      target: { kind: 'entity', qualifiedName: 'Sales.Invoice', module: 'Sales', name: 'Invoice', attributes: [] } }, base));
+    return true;
+  })()`);
+  await mx.evaluate(`Array.from(document.querySelectorAll('button,a')).filter(n => n.textContent.trim() === 'Settings')[0].click()`);
+  await mx.waitFor(`/Marketplace modules/.test(document.body.textContent)`, 8000, 'settings again');
+  await mx.evaluate(`(function(){ var card = Array.from(document.querySelectorAll('.card')).find(c => /Marketplace modules/.test(c.textContent)); var cb = card.querySelector('input[type=checkbox]'); cb.checked = false; cb.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+  // Reopened so the comments are read from storage, not from before they were written.
+  await mx.navigate(t.MX);
+  await mx.waitFor(`!!Array.from(document.querySelectorAll('button,a')).find(n => n.textContent.trim() === 'Demo')`, 10000, 'reloaded for comments');
+  await mx.evaluate(`(function(){ var e = Array.from(document.querySelectorAll('button,a')).filter(n => n.textContent.trim() === 'Demo'); e[e.length-1].click(); return true; })()`);
+  await mx.waitFor(`!!Array.from(document.querySelectorAll('button,a')).find(n => /^Comments/.test(n.textContent.trim()))`, 8000, 'project reopened');
+  await mx.evaluate(`Array.from(document.querySelectorAll('button,a')).filter(n => /^Comments/.test(n.textContent.trim()))[0].click()`);
+  await mx.waitFor(`document.querySelectorAll('.comment-row').length === 2`, 8000, 'both comments listed');
+
+  const rowMarks = await mx.evaluate(`JSON.stringify(Array.from(document.querySelectorAll('.comment-row')).map(function (r) {
+    return r.querySelector('.comment-target').textContent + ': ' + Array.from(r.querySelectorAll('.comment-mark')).map(function (m) { return m.textContent; }).join(',');
+  }))`);
+  t.ok(/"CommunityCommons\.LogMessage: [^"]*hidden Marketplace module/.test(rowMarks) && !/"CommunityCommons\.LogMessage: [^"]*not in this model/.test(rowMarks),
+    'a comment on a hidden module’s object says it is hidden, not that it is gone: ' + rowMarks);
+  t.ok(/"Sales\.Invoice: [^"]*not in this model/.test(rowMarks),
+    'while a comment on something really removed is still marked as missing');
+  const banners = await mx.evaluate(`Array.from(document.querySelectorAll('.orphan-banner, .hidden-banner')).map(b => b.textContent).join(' | ')`);
+  t.ok(/One comment points at an object that is no longer in this model/.test(banners),
+    'the orphan count is only the one that is really gone: ' + banners);
+  t.ok(/One comment is on an object in a Marketplace module, which this project hides/.test(banners),
+    'and the hidden one is announced on its own line: ' + banners);
+
+  // Its target is still a way to the object, by showing what was hidden.
+  await mx.evaluate(`Array.from(document.querySelectorAll('.comment-target')).find(b => b.textContent === 'CommunityCommons.LogMessage').click()`);
+  const jumpMsg = await mx.waitFor(`document.querySelector('.msg') && document.querySelector('.msg').textContent`, 5000, 'jump message');
+  t.ok(/Marketplace module/.test(jumpMsg) && !/renamed or removed/.test(jumpMsg),
+    'following it explains the module is hidden rather than claiming a rename: ' + jumpMsg);
+  t.ok(await mx.evaluate(`!!Array.from(document.querySelectorAll('.msg-action')).find(b => /Show Marketplace modules/.test(b.textContent))`),
+    'and offers to show Marketplace modules on the spot');
+
+  await mx.evaluate(`Array.from(document.querySelectorAll('.hidden-banner button')).find(b => /Show Marketplace modules/.test(b.textContent)).click()`);
+  await mx.waitFor(`!document.querySelector('.hidden-banner')`, 5000, 'banner gone once shown');
+  t.ok(await mx.evaluate(`!/hidden Marketplace module/.test(document.body.textContent)`),
+    'the banner’s button shows them, and the comment is no longer marked hidden');
+
+  // ---- a flow input of a hidden module's entity ----
+  await mx.evaluate(`Array.from(document.querySelectorAll('button,a')).filter(n => n.textContent.trim() === 'Settings')[0].click()`);
+  await mx.waitFor(`/Marketplace modules/.test(document.body.textContent)`, 8000, 'settings a third time');
+  await mx.evaluate(`(function(){ var card = Array.from(document.querySelectorAll('.card')).find(c => /Marketplace modules/.test(c.textContent)); var cb = card.querySelector('input[type=checkbox]'); cb.checked = false; cb.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+  await new Promise((r) => setTimeout(r, 300));
+  await mx.evaluate(`Array.from(document.querySelectorAll('button,a')).filter(n => /^Microflows/i.test(n.textContent.trim()))[0].click()`);
+  await mx.waitFor(`!!document.querySelector('.flow-card')`, 8000, 'flow list');
+  await mx.evaluate(`Array.from(document.querySelectorAll('.flow-card')).find(n => /CancelOrder/.test(n.textContent)).click()`);
+  const paramText = await mx.waitFor(`document.querySelector('.param-row') && document.querySelector('.param-row').textContent`, 8000, 'param row');
+  t.ok(/hidden Marketplace module/.test(paramText) && !/not in this model/.test(paramText),
+    'a flow input whose entity is in a hidden module says so, instead of "not in this model": ' + paramText);
 
   await mx.close();
 };
