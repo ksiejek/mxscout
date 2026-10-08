@@ -33,7 +33,7 @@ module.exports = async function (t) {
   await mx.evaluate(`Array.from(document.querySelectorAll('button')).find(n => n.textContent.trim() === 'DocDemo').click()`);
   await mx.waitFor(`!!Array.from(document.querySelectorAll('.tree-section')).find(n => /^Documentation/.test(n.textContent))`, 8000, 'sections');
   await mx.evaluate(`Array.from(document.querySelectorAll('.tree-section')).find(n => /^Documentation/.test(n.textContent)).click()`);
-  await mx.waitFor(`!!document.querySelector('.dx-rail')`, 8000, 'reader mounts');
+  await mx.waitFor(`!!document.querySelector('.docs-landing')`, 8000, 'section opens');
 
   // ---- the data behind it, read straight out of the model ----
   const built = await mx.evaluate(`(function () {
@@ -53,39 +53,21 @@ module.exports = async function (t) {
   t.ok(/Sales\.SweepOrders/.test(built.createCalls), 'and the calls it makes are read out of the model: ' + built.createCalls);
   t.ok(built.hasOrder, 'the domain model is there too, every entity by qualified name');
 
-  const rail = await mx.evaluate(`Array.from(document.querySelectorAll('.dx-rail button')).map(function (b) { return b.textContent.replace(/[^A-Za-z]/g, ''); }).join('|')`);
-  t.ok(rail === 'Start|Modules|References|Domain|Quality', 'the rail has the five sections of the mendix-docs portal: ' + rail);
-  t.ok(await mx.evaluate(`!!document.querySelector('.dx-hero') && document.querySelectorAll('.dx-kpi').length === 8`),
-    'Start opens on a hero and eight KPI tiles');
-
-  // References → open a flow → its workflow, top to bottom.
-  await mx.evaluate(`Array.from(document.querySelectorAll('.dx-rail button')).find(function (b) { return /References/.test(b.textContent); }).click()`);
-  await mx.waitFor(`!!document.querySelector('.dx-list button')`, 5000, 'flow list');
-  await mx.evaluate(`(function () { var b = Array.from(document.querySelectorAll('.dx-list button')).find(function (x) { return /CreateOrder/.test(x.textContent); }); (b || document.querySelector('.dx-list button')).click(); })()`);
-  await mx.waitFor(`!!document.querySelector('.dx-crumbs') && document.querySelectorAll('[class^="wfx"], [class*=" wfx"]').length > 0`, 5000, 'focus page');
-  t.ok(await mx.evaluate(`!!Array.from(document.querySelectorAll('.dx-tab, .dx-tabs button, button')).find(function (b) { return b.textContent.trim() === 'Workflow'; })`),
-    'a flow opens on its focus page, Workflow first');
-  t.ok(await mx.evaluate(`document.querySelectorAll('[class^="wfx"], [class*=" wfx"]').length >= 3`),
-    'and its workflow is drawn as a column of cards: ' + await mx.evaluate(`document.querySelectorAll('[class^="wfx"], [class*=" wfx"]').length`) + ' nodes');
-
-  // The focus page opens the real object in MxScout, over the documentation.
-  await mx.evaluate(`Array.from(document.querySelectorAll('.dx-main button')).find(function (b) { return b.textContent.trim() === 'Open in MxScout'; }).click()`);
-  t.ok(await mx.waitFor(`!!document.querySelector('.popup-tabs')`, 5000, 'flow popup'),
-    '“Open in MxScout” opens that flow’s own window over the section');
-  await mx.evaluate(`(function () { var b = Array.from(document.querySelectorAll('.modal-backdrop button')).find(function (x) { return x.textContent === 'Close'; }); if (b) b.click(); })()`);
-
-  // Domain and Quality each render their own view.
-  await mx.evaluate(`Array.from(document.querySelectorAll('.dx-rail button')).find(function (b) { return /Domain/.test(b.textContent); }).click()`);
-  t.ok(await mx.waitFor(`document.querySelectorAll('.dx-list button').length >= 5`, 5000, 'entity list'),
-    'Domain lists the entities');
-  await mx.evaluate(`Array.from(document.querySelectorAll('.dx-rail button')).find(function (b) { return /Quality/.test(b.textContent); }).click()`);
-  t.ok(await mx.waitFor(`/without access rules/.test(document.querySelector('.dx-main').textContent)`, 5000, 'quality'),
-    'Quality reports where the model looks unfinished');
+  // ---- the section: what the file holds, a look at it, the export ----
+  // The documentation is read in one place, the exported file. The section
+  // says what is in it, shows the file's own reader drawn small, and builds it.
+  const landing = await mx.evaluate(`document.querySelector('.docs-landing').textContent`);
+  t.ok(/What is in it/.test(landing) && /Microflows & pages/.test(landing) && /Domain model/.test(landing),
+    'the section says what the documentation holds');
+  t.ok(await mx.evaluate(`!!Array.from(document.querySelectorAll('.docs-landing button')).find(b => /Export documentation/.test(b.textContent))`),
+    'and offers the export');
+  t.ok(await mx.evaluate(`document.querySelectorAll('.docs-shot .dx.preview').length >= 2`),
+    'its previews are the reader itself, drawn small from this project: ' + await mx.evaluate(`document.querySelectorAll('.docs-shot .dx.preview').length`));
+  t.ok(await mx.evaluate(`!document.querySelector('.docs-landing > .dx')`), 'and there is no second, full reader in the app to keep true');
 
   // ---- the encrypted export, round-tripped ----
   // Build the file exactly as the Export button does, then open it from a real
   // origin (127.0.0.1 is a secure context, so the browser allows decryption).
-  await mx.evaluate(`Array.from(document.querySelectorAll('.dx-rail button')).find(function (b) { return /Start/.test(b.textContent); }).click()`);
   await mx.waitFor(`!!window.MxDocs.current()`, 5000, 'data kept');
   const bundle = await mx.evaluate(`(async function () {
     var data = window.MxDocs.current();
@@ -122,11 +104,38 @@ module.exports = async function (t) {
       'the gate steps aside and the reader marks itself encrypted');
     t.ok(await ex.evaluate(`!Array.from(document.querySelectorAll('.dx button')).some(function (b) { return b.textContent.trim() === 'Export'; })`),
       'the exported copy carries no Export button — it is a leaf, not another source');
-    // The workflow renders in the exported file too.
-    await ex.evaluate(`Array.from(document.querySelectorAll('.dx-rail button')).find(function (b) { return /References/.test(b.textContent); }).click()`);
-    await ex.evaluate(`(function () { var b = document.querySelector('.dx-list button'); if (b) b.click(); })()`);
-    t.ok(await ex.waitFor(`document.querySelectorAll('[class^="wfx"], [class*=" wfx"]').length > 0`, 5000, 'export workflow'),
-      'and a workflow draws inside it, from the decrypted data alone');
+    t.ok(await ex.evaluate(`!!document.querySelector('.dx-brand') && /MxScout/.test(document.querySelector('.dx-brand').textContent)`),
+      'it carries MxScout’s mark, so a reader can see what made it');
+
+    // The reader, in the file.
+    const nav = await ex.evaluate(`Array.from(document.querySelectorAll('.dx-nav-item')).map(function (b) { return b.firstChild.textContent; }).join('|')`);
+    t.ok(nav === 'Overview|Modules|Microflows & pages|Domain model|Model quality', 'five sections: ' + nav);
+    t.ok(await ex.evaluate(`!!document.querySelector('.dx-hero') && document.querySelectorAll('.dx-kpi').length === 8`),
+      'it opens on an overview and eight figures');
+    t.ok(await ex.evaluate(`['light','dark'].indexOf(document.querySelector('.dx').getAttribute('data-theme')) !== -1 && document.querySelectorAll('.dx-theme button').length === 3`),
+      'in a dark or a light theme, the reader’s choice or the system’s');
+
+    // A flow: what it takes, where it ends, its workflow, and a step's data on a click.
+    await ex.evaluate(`Array.from(document.querySelectorAll('.dx-nav-item')).find(function (b) { return /Microflows/.test(b.textContent); }).click()`);
+    await ex.waitFor(`!!document.querySelector('.dx-list .dx-item')`, 5000, 'flow list');
+    await ex.evaluate(`Array.from(document.querySelectorAll('.dx-list .dx-item')).find(function (x) { return /CreateOrder/.test(x.textContent); }).click()`);
+    await ex.waitFor(`document.querySelectorAll('.wfx-step').length >= 2`, 5000, 'export workflow');
+    t.ok(await ex.evaluate(`!!document.querySelector('.dx-ends .dx-end.in') && !!document.querySelector('.dx-ends .dx-end.out')`),
+      'a flow states its entry and its exits before its first step');
+    await ex.evaluate(`Array.from(document.querySelectorAll('.wfx-step')).find(function (s) { return /Create object/i.test(s.textContent); }).click()`);
+    const step = await ex.waitFor(`(function(){ var d = document.querySelector('.wfx-detail'); return d && !d.hidden && d.textContent; })()`, 3000, 'pinned');
+    t.ok(/Created with/.test(step) && /Number/.test(step), 'a click on a step pins it, with the data it sets — from the decrypted data alone');
+
+    // The domain model: a map around one entity.
+    await ex.evaluate(`Array.from(document.querySelectorAll('.dx-nav-item')).find(function (b) { return /Domain/.test(b.textContent); }).click()`);
+    await ex.evaluate(`Array.from(document.querySelectorAll('.dx-list .dx-item')).find(function (x) { return x.querySelector('b').textContent === 'Order'; }).click()`);
+    t.ok(await ex.waitFor(`!!document.querySelector('.dm-map .dm-c') && document.querySelectorAll('.dm-map .dm-col').length === 2`, 5000, 'map'),
+      'the domain model is a map: the entity in the middle, a column on each side');
+    const around = await ex.evaluate(`document.querySelectorAll('.dm-map .dm-n').length`);
+    t.ok(around >= 1, 'with the entities it is associated with around it: ' + around);
+    await ex.evaluate(`Array.from(document.querySelectorAll('.dx-nav-item')).find(function (b) { return /quality/i.test(b.textContent); }).click()`);
+    t.ok(await ex.waitFor(`/without access rules/.test(document.querySelector('.dx-main').textContent)`, 5000, 'quality'),
+      'and Model quality reports where the model looks unfinished');
     await ex.close();
   } finally {
     exportServer.close();

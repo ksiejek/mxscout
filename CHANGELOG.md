@@ -345,6 +345,35 @@ The same fault showed in one more place: a flow input whose type is an entity
 of a hidden module said "not in this model". It now says the module is
 hidden.
 
+### The documentation looks like MxScout, and says what each step does with data
+
+**A click on a step now shows the data it works with: every member a create
+or change sets and the value it gets, every argument a call passes.** MxScout
+had only kept which members a step touched; it now reads the values too, from
+the same place in the project file. On a real project that is 581 create and
+1,513 change actions, and 1,440 microflow calls, that can now answer "how was
+this object made, and from what".
+
+- **The documentation file looks like MxScout** — its mark, its amber, its
+  sidebar — in a dark theme and a light one designed for reading it outside
+  MxScout; the reader picks, or it follows the system.
+- **Every flow starts with its entry and its exits:** what it takes, what
+  starts it (roles, pages, other flows), what it returns and every way it
+  can end — before the first step.
+- **A step's details are pinned by a click**, beside the workflow, instead of
+  a card that came and went with the mouse.
+- **The domain model is a map:** the entity in the middle, the entities that
+  point to it on the left and the ones it points to on the right, joined by
+  arrows. A click moves another entity to the middle.
+- **The Documentation section is where the file is made:** what it holds,
+  previews that are the file's own pages drawn small from your project, and
+  the export. The documentation itself is read in the file.
+- **A flow's Diagram tab in MxScout draws the same workflow, with the same
+  code.** Studio Pro's own layout is one click away on the same tab.
+
+Re-import a project (Replace model…) to get the values on its steps — they
+are read at import time.
+
 ## 1.5.0
 
 ### The About page said the outbound connection only happens while recording. It does not

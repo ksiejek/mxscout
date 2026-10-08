@@ -1,6 +1,7 @@
-/* The drawing of a flow — the Diagram tab of the flow window (public/flowdraw.js).
+/* The drawing of a flow — the Diagram tab of the flow window: the documentation's workflow
+ * (public/docs-view.js) by default, and Studio Pro's own layout (public/flowdraw.js) one click away.
  *
- * What it has to get right: it draws the flow Studio Pro drew, from the model and nothing else — every node
+ * What the Studio Pro layout has to get right: it draws the flow Studio Pro drew, from the model and nothing else — every node
  * in the graph, at its place, children of a loop inside the loop; branch values on the arrows out of a
  * decision; the whole text of a step available on hover however little of it fits the box; a step that calls
  * another flow opens that flow (on its own drawing); and a model with no drawings says so instead of showing
@@ -31,13 +32,33 @@ module.exports = async function (t) {
   await mx.evaluate(`Array.from(document.querySelectorAll('.tree-section')).find(n => /^Microflows/.test(n.textContent)).click()`);
   // Every role, so both flows are listed whatever role the project opened as.
   await mx.evaluate(`(function(){ var sel = Array.from(document.querySelectorAll('select')).find(x => Array.from(x.options).some(o => o.value === 'all')); if (sel) { sel.value = 'all'; sel.dispatchEvent(new Event('change', { bubbles: true })); } })()`);
-  const openFlow = async (name) => {
+  const openDiagram = async (name) => {
     await mx.waitFor(`!!Array.from(document.querySelectorAll('.flow-card')).find(n => n.querySelector('.flow-card-name').textContent === ${JSON.stringify(name)})`, 5000, name);
     await mx.evaluate(`Array.from(document.querySelectorAll('.flow-card')).find(n => n.querySelector('.flow-card-name').textContent === ${JSON.stringify(name)}).click()`);
     await mx.waitFor(`!!Array.from(document.querySelectorAll('.popup-tab')).find(b => b.textContent === 'Diagram')`, 5000, 'Diagram tab');
     await mx.evaluate(`Array.from(document.querySelectorAll('.popup-tab')).find(b => b.textContent === 'Diagram').click()`);
+  };
+  const openFlow = async (name) => {
+    await openDiagram(name);
+    await mx.evaluate(`(function(){ var b = Array.from(document.querySelectorAll('.fd-mode-btn')).find(x => x.textContent === 'Studio Pro layout'); if (!b.classList.contains('on')) b.click(); })()`);
     await mx.waitFor(`!!document.querySelector('.fd-svg')`, 5000, 'drawing');
   };
+
+  // ---- the Diagram opens on the documentation's own workflow ----
+  // The flow window and the exported documentation draw a flow with the SAME
+  // code from the same entry (docs-view.js flow, docs-data.js flowEntry), so
+  // the two cannot disagree about what a flow does.
+  await openDiagram('CreateOrder');
+  await mx.waitFor(`!!document.querySelector('.modal .dx-embed .wfx-step')`, 5000, 'workflow');
+  t.ok(await mx.evaluate(`Array.from(document.querySelectorAll('.fd-mode-btn.on')).map(b => b.textContent).join() === 'Workflow'`),
+    'the Diagram tab opens on the workflow, with Studio Pro’s layout one click away');
+  t.ok(await mx.evaluate(`!!document.querySelector('.modal .dx-ends .dx-end.in') && !!document.querySelector('.modal .dx-ends .dx-end.out')`),
+    'it says what the flow takes and where it can end before the first step');
+  await mx.evaluate(`Array.from(document.querySelectorAll('.modal .wfx-step')).find(s => /Create object/i.test(s.textContent)).click()`);
+  const created = await mx.waitFor(`(function(){ var d = document.querySelector('.modal .wfx-detail'); return d && !d.hidden && d.textContent; })()`, 3000, 'detail');
+  t.ok(/Created with/.test(created) && /Number/.test(created) && /'X'/.test(created),
+    'clicking a create step pins it, with each member and the value it gets: ' + created.slice(0, 160));
+  await mx.evaluate(`Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Close').click()`);
 
   await openFlow('SweepOrders');
   const drawn = await mx.evaluate(`({

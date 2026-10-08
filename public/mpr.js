@@ -816,6 +816,52 @@
     return names.length ? names.join(', ') : null;
   }
 
+  // WHAT DATA an activity works with, row by row: the members a create or
+  // change sets and the value each one gets, or the arguments a call passes.
+  // The card's `meta` can only say which members; a reader asking "how was
+  // this object made" needs the values too, and they are one field away.
+  // Measured shapes: a member is a Microflows$ChangeActionItem with Attribute
+  // OR Association (the other empty), Type Set/Add/Remove and Value; a call's
+  // argument is a ...ParameterMapping with Parameter (qualified, ending in the
+  // parameter's name) and Argument — except a Java action's, which keeps it
+  // one level down in Value.Argument.
+  function memberRows(items) {
+    var rows = [];
+    payload(items).forEach(function (item) {
+      if (!item || typeof item !== 'object') return;
+      var member = str(item, 'Attribute') || str(item, 'Association');
+      if (!member) return;
+      rows.push({
+        name: shortName(member),
+        value: oneLine(item.Value) || '',
+        op: str(item, 'Type') || 'Set',
+        association: !str(item, 'Attribute')
+      });
+    });
+    return rows.length ? rows : null;
+  }
+  function argumentRows(mappings) {
+    var rows = [];
+    payload(mappings).forEach(function (m) {
+      if (!m || typeof m !== 'object') return;
+      var param = str(m, 'Parameter');
+      if (!param) return;
+      var value = typeof m.Argument === 'string' ? m.Argument
+        : (m.Value && typeof m.Value === 'object' && typeof m.Value.Argument === 'string' ? m.Value.Argument : '');
+      rows.push({ name: shortName(param), value: oneLine(value) || '' });
+    });
+    return rows.length ? rows : null;
+  }
+  function activityFields(action) {
+    var type = String(action['$Type'] || '').replace(/^.*\$/, '');
+    if (type === 'CreateChangeAction' || type === 'ChangeAction') return memberRows(action.Items);
+    if (type === 'MicroflowCallAction') return argumentRows((action.MicroflowCall || {}).ParameterMappings);
+    if (type === 'NanoflowCallAction') return argumentRows((action.NanoflowCall || {}).ParameterMappings);
+    if (type === 'JavaActionCallAction' || type === 'JavaScriptActionCallAction') return argumentRows(action.ParameterMappings);
+    if (type === 'ShowFormAction') return argumentRows((action.FormSettings || {}).ParameterMappings);
+    return null;
+  }
+
   // Everything an activity's three slots need, per action type. Returns
   // { title, meta, ref }; the kicker is activityKicker's job.
   function activityLabel(action) {
@@ -1078,6 +1124,8 @@
           title: label.title,
           meta: label.meta,
           ref: label.ref,
+          // [{ name, value, op?, association? }] — see activityFields.
+          fields: action ? activityFields(action) : null,
           documentation: str(obj, 'Documentation'),
           at: point(obj.RelativeMiddlePoint),
           size: sizeFrom(obj.Size),

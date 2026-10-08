@@ -59,7 +59,12 @@
       off: !!n.disabled,
       err: !!ctx.errorFrom[n.id],
       doc: n.documentation || null,
-      rows: rows
+      rows: rows,
+      // The data the step works with — members set, or arguments passed —
+      // straight from the model (mpr.js activityFields). Null when the step
+      // has none, or when the model came from a reader that did not keep it.
+      fields: Array.isArray(n.fields) && n.fields.length ? n.fields : null,
+      creates: n.action === 'CreateChangeAction' || n.action === 'CreateListAction'
     };
   }
 
@@ -184,6 +189,49 @@
     return { steps: no, tree: tree };
   }
 
+
+  // ---------- one microflow, nanoflow or page ----------
+  // The same entry is drawn by the documentation and, on its own, by the flow
+  // window in MxScout (objects.js) — one entry, one reader, so the two views
+  // of a flow cannot drift apart.
+  function flowEntry(f, kind) {
+    var wf = workflow(f);
+    var calls = [], exits = [];
+    ((f.graph && f.graph.nodes) || []).forEach(function (n) {
+      if (n.kind === 'end' || n.kind === 'errorEvent') {
+        var value = n.kind === 'end' && n.returnValue ? String(n.returnValue).replace(/\s+/g, ' ').trim() : null;
+        var label = n.kind === 'errorEvent' ? 'error' : (value || 'end');
+        var known = exits.filter(function (x) { return x.label === label; })[0];
+        if (known) known.count++; else exits.push({ label: label, error: n.kind === 'errorEvent', returns: value, count: 1 });
+        return;
+      }
+      if (n.kind !== 'activity' || !n.ref) return;
+      var k = n.action === 'MicroflowCallAction' ? 'microflow' : n.action === 'NanoflowCallAction' ? 'nanoflow'
+        : (n.action === 'ShowFormAction' || n.action === 'ShowPageAction') ? 'page'
+          : (n.action === 'JavaActionCallAction' || n.action === 'JavaScriptActionCallAction') ? 'action' : null;
+      if (k && !calls.some(function (c) { return c.qn === n.ref && c.kind === k; })) calls.push({ kind: k, qn: n.ref });
+    });
+    var a = f.activity || {};
+    return {
+      key: kind + ':' + f.qualifiedName, kind: kind, module: f.module, name: f.name, qn: f.qualifiedName, path: f.path || [],
+      roles: f.allowedModuleRoles || [], params: (f.parameters || []).map(function (p) {
+        return { name: p.name, type: p.entityQualifiedName ? p.entityQualifiedName + (p.isList ? ' (list)' : '') : (p.type || 'value') };
+      }),
+      returns: f.returnType || null, doc: f.documentation || null,
+      entityAccess: kind === 'microflow' ? f.applyEntityAccess !== false : true,
+      reads: a.reads || [], writes: (a.creates || []).concat(a.changes || [], a.commits || [], a.deletes || []).filter(function (v, i, all) { return all.indexOf(v) === i; }),
+      calls: calls, calledBy: (f.calledBy || []).map(function (c) { return { kind: c.kind, qn: c.name }; }),
+      // Where it can end, and with what: one row per distinct ending.
+      exits: exits,
+      workflow: wf ? wf.tree : null, steps: wf ? wf.steps : 0, drawn: !!wf
+    };
+  }
+  function pageEntry(p) {
+    return { key: 'page:' + p.qualifiedName, kind: 'page', module: p.module, name: p.name, qn: p.qualifiedName, path: p.path || [],
+      roles: p.allowedModuleRoles || [], params: (p.parameters || []).map(function (x) { return { name: x.name, type: x.entityQualifiedName || x.type || 'value' }; }),
+      calledBy: (p.calledBy || []).map(function (c) { return { kind: c.kind, qn: c.name }; }), doc: p.documentation || null };
+  }
+
   // ---------- the whole documentation ----------
   function build(model, project) {
     model = model || {};
@@ -196,44 +244,16 @@
     function mod(name) { return modules[name] || (modules[name] = { name: name, marketplace: false, microflows: [], nanoflows: [], pages: [], entities: [] }); }
 
     var flows = {};
-    function flowEntry(f, kind) {
-      var wf = workflow(f);
-      var calls = [];
-      ((f.graph && f.graph.nodes) || []).forEach(function (n) {
-        if (n.kind !== 'activity' || !n.ref) return;
-        var k = n.action === 'MicroflowCallAction' ? 'microflow' : n.action === 'NanoflowCallAction' ? 'nanoflow'
-          : (n.action === 'ShowFormAction' || n.action === 'ShowPageAction') ? 'page'
-            : (n.action === 'JavaActionCallAction' || n.action === 'JavaScriptActionCallAction') ? 'action' : null;
-        if (k && !calls.some(function (c) { return c.qn === n.ref && c.kind === k; })) calls.push({ kind: k, qn: n.ref });
-      });
-      var a = f.activity || {};
-      return {
-        key: kind + ':' + f.qualifiedName, kind: kind, module: f.module, name: f.name, qn: f.qualifiedName, path: f.path || [],
-        roles: f.allowedModuleRoles || [], params: (f.parameters || []).map(function (p) {
-          return { name: p.name, type: p.entityQualifiedName ? p.entityQualifiedName + (p.isList ? ' (list)' : '') : (p.type || 'value') };
-        }),
-        returns: f.returnType || null, doc: f.documentation || null,
-        entityAccess: kind === 'microflow' ? f.applyEntityAccess !== false : true,
-        reads: a.reads || [], writes: (a.creates || []).concat(a.changes || [], a.commits || [], a.deletes || []).filter(function (v, i, all) { return all.indexOf(v) === i; }),
-        calls: calls, calledBy: (f.calledBy || []).map(function (c) { return { kind: c.kind, qn: c.name }; }),
-        workflow: wf ? wf.tree : null, steps: wf ? wf.steps : 0, drawn: !!wf
-      };
-    }
     (model.microflows || []).forEach(function (f) { var e = flowEntry(f, 'microflow'); flows[e.key] = e; mod(f.module).microflows.push(e.key); });
     (model.nanoflows || []).forEach(function (f) { var e = flowEntry(f, 'nanoflow'); flows[e.key] = e; mod(f.module).nanoflows.push(e.key); });
-    (model.pages || []).forEach(function (p) {
-      var e = { key: 'page:' + p.qualifiedName, kind: 'page', module: p.module, name: p.name, qn: p.qualifiedName, path: p.path || [],
-        roles: p.allowedModuleRoles || [], params: (p.parameters || []).map(function (x) { return { name: x.name, type: x.entityQualifiedName || x.type || 'value' }; }),
-        calledBy: (p.calledBy || []).map(function (c) { return { kind: c.kind, qn: c.name }; }) };
-      flows[e.key] = e; mod(p.module).pages.push(e.key);
-    });
+    (model.pages || []).forEach(function (p) { var e = pageEntry(p); flows[e.key] = e; mod(p.module).pages.push(e.key); });
 
     var entities = {};
     (model.entities || []).forEach(function (en) {
       var rules = en.accessRules || [];
       entities[en.qualifiedName] = {
         qn: en.qualifiedName, module: en.module, name: en.name, persistable: en.persistable !== false,
-        generalization: en.generalization || null, view: !!en.viewEntity,
+        generalization: en.generalization || null, view: !!en.viewEntity, doc: en.documentation || null,
         attributes: (en.attributes || []).map(function (a) { return { name: a.name, type: a.enumerationQualifiedName ? 'Enumeration ' + a.enumerationQualifiedName : a.type + (a.length ? '(' + a.length + ')' : '') }; }),
         roles: rules.map(function (r) { return r.moduleRole; }).filter(function (v, i, all) { return v && all.indexOf(v) === i; }),
         rules: rules.length
@@ -288,5 +308,5 @@
     };
   }
 
-  window.MxDocsData = { build: build, workflow: workflow };
+  window.MxDocsData = { build: build, workflow: workflow, flowEntry: flowEntry };
 })();

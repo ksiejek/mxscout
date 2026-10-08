@@ -2274,8 +2274,8 @@
       !state.about && !state.guide && !state.newProject.open && !state.storageError);
   }
 
-  // The Documentation section carries its own chrome (a top bar, a rail), so it
-  // renders full-bleed like the logs, outside the usual detail head.
+  // The Documentation section is where the documentation file is made: what
+  // it holds, a look at it, and the export. Wide, for the previews.
   function docsInProject() {
     return !!(state.detail && state.activeId && state.detail.view === 'docs' &&
       !state.about && !state.guide && !state.newProject.open && !state.storageError);
@@ -2328,7 +2328,7 @@
     );
     // Log analysis takes the whole width AND the whole height: a log is wide,
     // and its lists scroll inside the screen rather than the page.
-    var wrap = el('div', { class: 'content-wrap' + ((fullBleed || showingLogs || showingDocs) ? ' wide' : '') + (showingLogs ? ' lg-wrap' : '') + (showingDocs ? ' dx-wrap' : '') }, [body]);
+    var wrap = el('div', { class: 'content-wrap' + ((fullBleed || showingLogs || showingDocs) ? ' wide' : '') + (showingLogs ? ' lg-wrap' : '') }, [body]);
     if (state.message) {
       var msgNode = el('div', { class: 'msg ' + state.message.kind, text: state.message.text });
       if (state.message.action) {

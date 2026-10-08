@@ -1048,20 +1048,39 @@
         if (!found && findEntity(model, qn)) found = { section: 'entities', item: findEntity(model, qn) };
         return found;
       }
-      return el('div', { class: 'popup-section fd-pane' }, [
-        window.MxFlowDraw.renderKept(sel.kind + ':' + flow.qualifiedName, flow, {
-          height: '62vh',
-          canOpen: function (qn) { return !!target(qn); },
-          // A flow this one calls opens in its place, on its own drawing — reading
-          // a call chain is following arrows, not switching tabs each time.
-          open: function (qn) {
-            var t = target(qn);
-            if (!t) return;
-            peekObject(t.section, { name: t.item.name, qualifiedName: t.item.qualifiedName });
-            if (t.section !== 'entities' && t.section !== 'pages') { state.detail.flowTab = 'diagram'; render(); }
-          }
-        })
-      ]);
+      // A flow this one calls opens in its place, on its own drawing — reading
+      // a call chain is following arrows, not switching tabs each time.
+      function openQn(qn) {
+        var t = target(qn);
+        if (!t) return;
+        peekObject(t.section, { name: t.item.name, qualifiedName: t.item.qualifiedName });
+        if (t.section !== 'entities' && t.section !== 'pages') { state.detail.flowTab = 'diagram'; render(); }
+      }
+      // Two drawings of the same flow. The workflow — top to bottom, what it
+      // takes and where it ends, a click on a step for the data it sets — is
+      // the documentation's own (docs-view.js), drawn by the same code from the
+      // same entry, so this window and the exported documentation cannot
+      // disagree. Studio Pro's layout stays one click away for whoever wants
+      // the shape a developer sees in the modeller.
+      var studio = state.detail.diagramMode === 'studio';
+      var modeRow = el('div', { class: 'fd-mode' }, [['workflow', 'Workflow'], ['studio', 'Studio Pro layout']].map(function (m) {
+        return el('button', {
+          class: 'fd-mode-btn' + ((m[0] === 'studio') === studio ? ' on' : ''), text: m[1],
+          onclick: function () { state.detail.diagramMode = m[0]; render(); }
+        });
+      }));
+      var body = studio
+        ? window.MxFlowDraw.renderKept(sel.kind + ':' + flow.qualifiedName, flow, {
+            height: '62vh',
+            canOpen: function (qn) { return !!target(qn); },
+            open: openQn
+          })
+        : window.MxDocsView.flow(window.MxDocsData.flowEntry(flow, sel.kind), {
+            theme: 'dark',
+            known: function (key) { return !!target(key.slice(key.indexOf(':') + 1)); },
+            open: function (key) { openQn(key.slice(key.indexOf(':') + 1)); }
+          });
+      return el('div', { class: 'popup-section fd-pane' }, [modeRow, body]);
     }
     var activeTab = state.detail.flowTab || TABS[0][0];
     if (!TABS.some(function (t) { return t[0] === activeTab; })) activeTab = TABS[0][0];

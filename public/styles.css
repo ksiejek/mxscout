@@ -379,13 +379,28 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
    stayed cramped; the grids' own auto-fill minmax already keeps a card from
    stretching absurdly. */
 .content-wrap.wide { max-width: none; }
-/* Documentation fills the column the way the log viewer does: full width, and
-   full height so the reader's rail and page scroll inside the screen rather
-   than the page. The reader itself (.dx) is height:100% and lives in docs.css,
-   which is also what the exported file carries; .dx-host is only ever here. */
-.content-wrap.dx-wrap { max-width: none; padding: 14px 18px 18px; }
-.dx-host { height: calc(100vh - 32px); min-height: 540px; }
-@media (max-width: 720px) { .content-wrap.dx-wrap { padding: 0; } .dx-host { height: auto; min-height: 0; } }
+/* The Documentation section: what the file holds, a look at it, the export.
+   The previews are the file's own reader (docs.css, .dx), laid out at desktop
+   size and scaled into a frame — a screenshot that cannot go out of date. */
+.docs-landing { max-width: 1280px; }
+.docs-intro { display: flex; gap: var(--space-4); align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.docs-intro-text { flex: 1 1 420px; min-width: 0; }
+.docs-intro h2 { margin: 0 0 var(--space-2); font-size: var(--text-xl); }
+.docs-lead { font-size: var(--text-base); color: var(--text); margin: 0 0 var(--space-2); max-width: 760px; }
+.docs-intro-act { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); }
+.docs-h { margin: var(--space-5) 0 var(--space-3); font-size: var(--text-base); }
+.docs-inside { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-3); }
+.docs-inside-item strong { display: block; margin-bottom: var(--space-1); }
+.docs-inside-item p { margin: 0; font-size: var(--text-sm); }
+.docs-shots-note { margin: calc(-1 * var(--space-2)) 0 var(--space-3); }
+.docs-shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: var(--space-3); }
+.docs-shot { margin: 0; }
+.docs-shot-frame { position: relative; width: 100%; aspect-ratio: 16 / 10; overflow: hidden; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); }
+.docs-shot-host { position: absolute; top: 0; left: 0; width: 1280px; height: 800px; transform-origin: 0 0; transform: scale(0.3); }
+.docs-shot figcaption { display: flex; flex-direction: column; margin-top: var(--space-2); font-size: var(--text-sm); }
+.docs-shot figcaption strong { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--text-xs); }
+.docs-shot figcaption span { color: var(--muted); font-size: var(--text-xs); }
+@media (max-width: 720px) { .docs-intro-act { align-items: stretch; width: 100%; } .docs-shots { grid-template-columns: 1fr; } }
 .detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
 .detail-title h2 { margin: 0 0 2px; font-size: 18px; }
 .detail-title p { margin: 0; }
@@ -2677,6 +2692,11 @@ button.ex-row:hover { background: var(--panel-2); }
  * contrast. The amber accent is not one of the families — here, as
  * everywhere, it means "you can act on this" (a box that opens a flow). */
 .fd-pane { padding-top: var(--space-2); }
+/* Workflow or Studio Pro layout: one flow, two drawings, a segmented switch. */
+.fd-mode { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; padding: 2px; margin-bottom: var(--space-3); background: var(--panel-2); }
+.fd-mode-btn { border: 0; background: none; color: var(--muted); font: inherit; font-size: var(--text-xs); font-weight: 600; padding: var(--space-1) var(--space-3); border-radius: 6px; cursor: pointer; }
+.fd-mode-btn:hover { color: var(--text); }
+.fd-mode-btn.on { background: var(--accent); color: #1a1206; }
 .fd-frame { --fd-data: #5b9bd5; --fd-object: #5fbf8f; --fd-call: #a98be8; --fd-client: #45b8b2;
   --fd-integration: #d97aa5; --fd-variable: #8f96a0; --fd-log: #767c85; --fd-other: #8f96a0;
   display: flex; flex-direction: column; gap: var(--space-2); height: 62vh; min-height: 320px; }
