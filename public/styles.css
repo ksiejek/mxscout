@@ -386,6 +386,23 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 .content-wrap.dx-wrap { max-width: none; padding: 14px 18px 18px; }
 .dx-host { height: calc(100vh - 32px); min-height: 540px; }
 @media (max-width: 720px) { .content-wrap.dx-wrap { padding: 0; } .dx-host { height: auto; min-height: 0; } }
+/* The documentation export dialog: which modules travel in the file. */
+.btn-xs { padding: 3px 8px; font-size: 11px; }
+.docs-export-mods { border: 1px solid var(--border, #e3e6ec); border-radius: 12px; padding: 12px 14px; margin: 14px 0; }
+.docs-mod-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.docs-mod-count { color: var(--muted, #626a78); font-size: 12px; }
+.docs-mod-acts { margin-left: auto; display: flex; gap: 6px; }
+.docs-mod-group { margin-top: 10px; }
+.docs-mod-group-h { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted, #626a78); margin-bottom: 6px; }
+.docs-mod { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 1px solid var(--border, #e3e6ec); border-radius: 9px; margin-bottom: 6px; cursor: pointer; }
+.docs-mod:hover { border-color: var(--accent, #2f8fd1); }
+.docs-mod.on { background: var(--accent-soft, #eef7fd); border-color: var(--accent, #2f8fd1); }
+.docs-mod input { width: 16px; height: 16px; flex: none; }
+.docs-mod-badge { font-size: 10px; font-weight: 800; letter-spacing: .04em; padding: 2px 6px; border-radius: 6px; background: var(--chip-bg, #eef1f5); color: var(--muted, #626a78); flex: none; }
+.docs-mod-badge.mk { background: #f1e9fb; color: #6a2bb0; }
+.docs-mod-t { display: flex; flex-direction: column; min-width: 0; }
+.docs-mod-t small { color: var(--muted, #626a78); font-size: 11px; }
+.docs-export-mods .docs-mod-group:last-child .docs-mod:last-child { margin-bottom: 0; }
 .detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
 .detail-title h2 { margin: 0 0 2px; font-size: 18px; }
 .detail-title p { margin: 0; }

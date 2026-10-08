@@ -87,6 +87,8 @@
         opts.actions ? h('div', { class: 'dx-actions' }, opts.actions) : null
       ]);
       var RAIL = [['start', '⌂', 'Start'], ['modules', '▦', 'Modules'], ['refs', '❐', 'References'], ['domain', '⬡', 'Domain'], ['quality', '✓', 'Quality']];
+      // Findings is its own view only when there is something to show; the export always carries them.
+      if ((data.comments || []).length) RAIL.push(['findings', '⚑', 'Findings']);
       var railBtns = {};
       var rail = h('nav', { class: 'dx-rail', 'aria-label': 'Sections' }, RAIL.map(function (r) {
         railBtns[r[0]] = h('button', { type: 'button', onclick: function () { go({ view: r[0] }); } }, [h('i', { text: r[1] }), r[2]]);
@@ -166,8 +168,8 @@
       function draw() {
         Object.keys(railBtns).forEach(function (k) { railBtns[k].classList.toggle('on', k === st.view); });
         clear(list); clear(main);
-        root.classList.toggle('no-list', st.view === 'start' || st.view === 'quality');
-        var V = { start: drawStart, modules: drawModules, refs: drawRefs, domain: drawDomain, quality: drawQuality }[st.view] || drawStart;
+        root.classList.toggle('no-list', st.view === 'start' || st.view === 'quality' || st.view === 'findings');
+        var V = { start: drawStart, modules: drawModules, refs: drawRefs, domain: drawDomain, quality: drawQuality, findings: drawFindings }[st.view] || drawStart;
         V();
       }
       function setTitle(t, sub) { titleEl.textContent = t; subEl.textContent = sub; }
@@ -178,6 +180,30 @@
         }));
       }
       function tile(n, label, sub) { return h('div', { class: 'dx-card dx-kpi' }, [h('b', { text: String(n) }), h('span', { text: label }), sub ? h('small', { text: sub }) : null]); }
+
+      // ---------- findings (comments) ----------
+      var STATUS_LABEL = { open: 'Open', fixed: 'Fixed', wontfix: 'Won’t fix' };
+      function allComments() { return data.comments || []; }
+      function sevChip(sev) { return h('span', { class: 'dx-sev dx-sev-' + sev, text: sev }); }
+      function statusBadge(status) { return h('span', { class: 'dx-st dx-st-' + status, text: STATUS_LABEL[status] || status }); }
+      function targetChip(c) {
+        if (!c.qn) return h('span', { class: 'dx-badge', text: (c.kind || '?').slice(0, 2).toUpperCase() });
+        var isEntity = c.kind === 'entity';
+        return h('button', { type: 'button', class: 'dx-find-tg', title: 'Open ' + c.qn, onclick: function () { isEntity ? go({ view: 'domain', entity: c.qn }) : openKey(c.kind + ':' + c.qn); } }, [
+          h('span', { class: 'dx-badge' + (c.kind === 'nanoflow' ? ' nf' : c.kind === 'page' ? ' pg' : '') + (isEntity ? '' : ''), text: c.kind === 'entity' ? 'E' : c.kind === 'page' ? 'PG' : c.kind === 'nanoflow' ? 'NF' : 'MF' }),
+          h('b', { class: 'mono', text: c.qn }), h('small', { text: '↗' })]);
+      }
+      function commentRow(c, o) {
+        o = o || {};
+        return h('div', { class: 'dx-find dx-find-' + c.severity + (c.status !== 'open' ? ' done' : '') }, [
+          h('div', { class: 'dx-find-h' }, [sevChip(c.severity), statusBadge(c.status), o.noTarget ? null : targetChip(c),
+            c.role ? h('small', { class: 'dx-find-role', text: 'as ' + shortName(c.role) }) : null]),
+          c.problem ? h('div', { class: 'dx-find-p', text: c.problem }) : null,
+          c.change ? h('div', { class: 'dx-find-c' }, [h('b', { text: 'Suggested change — ' }), h('span', { text: c.change })]) : null,
+          c.attributes && c.attributes.length ? h('div', { class: 'dx-find-a', text: 'Attributes: ' + c.attributes.join(', ') }) : null
+        ]);
+      }
+      function findingsList(rows, o) { return h('div', { class: 'dx-finds' }, rows.map(function (c) { return commentRow(c, o); })); }
 
       function drawStart() {
         var k = data.kpi;
@@ -202,6 +228,9 @@
           ['✓', 'Model quality', plural(q.unreached.length, 'element nothing reaches', 'elements nothing reaches') + ' · ' + plural(q.noAccess.length, 'entity without access rules', 'entities without access rules') + '.', function () { go({ view: 'quality' }); }],
           ['▦', 'Modules', 'What each module holds, own modules first, Marketplace modules after.', function () { go({ view: 'modules' }); }]
         ];
+        if (allComments().length) {
+          cards.push(['⚑', 'Findings', plural(allComments().length, 'finding', 'findings') + ' · ' + (k.findingsOpen || 0) + ' still open, by severity and whether they are fixed.', function () { go({ view: 'findings' }); }]);
+        }
         main.appendChild(h('h3', { class: 'dx-h', text: 'Where to start' }));
         main.appendChild(h('div', { class: 'dx-cards' }, cards.map(function (c) {
           return h('button', { type: 'button', class: 'dx-card dx-start', onclick: c[3] }, [h('i', { text: c[0] }), h('b', { text: c[1] }), h('span', { text: c[2] })]);
@@ -314,6 +343,7 @@
         var TABS = f.kind === 'page'
           ? [['details', 'Details'], ['by', 'Opened from', f.calledBy.length]]
           : [['wf', 'Workflow'], ['calls', 'Calls', f.calls.length], ['by', 'Called by', f.calledBy.length], ['details', 'Details']];
+        if (f.comments && f.comments.length) TABS.push(['find', 'Findings', f.comments.length]);
         var cur = TABS[0][0];
         var tabBtns = {};
         var tabs = h('div', { class: 'dx-tabs', role: 'tablist' }, TABS.map(function (t) {
@@ -325,11 +355,12 @@
           cur = k;
           Object.keys(tabBtns).forEach(function (x) { tabBtns[x].classList.toggle('on', x === k); tabBtns[x].setAttribute('aria-selected', x === k ? 'true' : 'false'); });
           clear(panel);
-          if (k !== 'by' && k !== 'calls') panel.appendChild(paramsRow(f));
+          if (k !== 'by' && k !== 'calls' && k !== 'find') panel.appendChild(paramsRow(f));
           if (k === 'wf') panel.appendChild(workflowView(f));
           if (k === 'calls') panel.appendChild(refList(f.calls, 'This ' + f.kind + ' calls nothing else and opens no page.'));
           if (k === 'by') panel.appendChild(refList(f.calledBy, f.kind === 'page' ? 'Nothing in the model opens this page.' : 'Nothing in the model calls this ' + f.kind + '.' + (f.roles.length ? ' Its roles can still run it from the app.' : '')));
           if (k === 'details') panel.appendChild(details(f));
+          if (k === 'find') panel.appendChild(findingsList(f.comments, { noTarget: true }));
         }
         show(cur);
       }
@@ -517,6 +548,9 @@
           specials.length ? h('div', { class: 'dm-gen' }, ['Specialized by ', specials.map(function (k, i) { return [i ? ', ' : '', h('button', { type: 'button', class: 'dx-link mono', text: shortName(k), onclick: function () { go({ entity: k }); } })]; })]) : null
         ]);
         main.appendChild(h('div', { class: 'dm' }, [side(inn, 'Point to it', 'Nothing points to it.'), center, side(out, 'It points to', 'It points to nothing.')]));
+        if (e.comments && e.comments.length) {
+          main.appendChild(h('div', { class: 'dx-card dx-find-card' }, [h('h3', { class: 'dx-h', text: 'Findings (' + e.comments.length + ')' }), findingsList(e.comments, { noTarget: true })]));
+        }
       }
 
       // ---------- model quality ----------
@@ -541,6 +575,29 @@
           return h('button', { type: 'button', class: 'dx-xl-row link', onclick: function () { go({ view: 'domain', entity: q }); } }, [h('span', { class: 'dx-badge', text: 'E' }), h('b', { class: 'mono', text: q }), h('small', { text: 'entity ↗' })]);
         });
         table('Microflows that skip entity access', 'Callable by roles, but read and write past the access rules — whatever role starts them. Usually deliberate; worth knowing.', Q.pastAccess, flowRow);
+      }
+
+      // ---------- findings ----------
+      function drawFindings() {
+        var all = allComments();
+        setTitle('Findings', data.project + ' · ' + plural(all.length, 'finding', 'findings'));
+        main.appendChild(crumbs([['Start', function () { go({ view: 'start' }); }], ['Findings']]));
+        var bySev = { critical: 0, high: 0, medium: 0, low: 0 };
+        all.forEach(function (c) { if (bySev[c.severity] !== undefined) bySev[c.severity]++; });
+        var open = all.filter(function (c) { return c.status === 'open'; }).length;
+        var fixed = all.filter(function (c) { return c.status === 'fixed'; }).length;
+        main.appendChild(h('div', { class: 'dx-kpis four' }, [
+          tile(all.length, 'findings', open + ' open · ' + fixed + ' fixed'),
+          tile(bySev.critical, 'critical'), tile(bySev.high, 'high'), tile(bySev.medium + bySev.low, 'medium / low')
+        ]));
+        main.appendChild(h('p', { class: 'dx-p', text: 'Findings recorded in MxScout against this application, carried into the documentation with their severity and whether they are fixed. They always travel with the export.' }));
+        if (!all.length) { main.appendChild(h('div', { class: 'dx-note ok', text: 'No findings recorded.' })); return; }
+        ['critical', 'high', 'medium', 'low'].forEach(function (sev) {
+          var rows = all.filter(function (c) { return c.severity === sev; });
+          if (!rows.length) return;
+          main.appendChild(h('h3', { class: 'dx-h dx-find-sec' }, [sevChip(sev), h('span', { text: String(rows.length) })]));
+          main.appendChild(findingsList(rows));
+        });
       }
 
       draw();

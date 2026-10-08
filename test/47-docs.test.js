@@ -25,6 +25,16 @@ module.exports = async function (t) {
     var model = await window.MxMpr.buildModel({ mprBytes: bytes, appName: 'Sales', readContentsFile: function () { throw new Error('v1'); } });
     await MxStore.saveProjectWithModel({ id: 'pdocs', name: 'DocDemo', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       source: { kind: 'test' }, bytes: 1, summary: null, appUrl: null }, model);
+    // Three findings, one per severity and status, two kinds of target, so the
+    // documentation has something coloured to carry into the export.
+    var now = new Date().toISOString();
+    function F(id, kind, qn, mod, name, sev, status, problem) {
+      return { id: id, projectId: 'pdocs', status: status, author: 'tester', history: [], createdAt: now,
+        target: { kind: kind, qualifiedName: qn, module: mod, name: name, attributes: [] }, role: null, severity: sev, problem: problem, change: '' };
+    }
+    await MxStore.put('findings', F('f1', 'microflow', 'Sales.CreateOrder', 'Sales', 'CreateOrder', 'critical', 'open', 'No access check before creating the order.'));
+    await MxStore.put('findings', F('f2', 'entity', 'Sales.Order', 'Sales', 'Order', 'high', 'fixed', 'Order had no access rule.'));
+    await MxStore.put('findings', F('f3', 'microflow', 'Sales.SweepOrders', 'Sales', 'SweepOrders', 'medium', 'wontfix', 'Runs without entity access.'));
   })()`);
 
   // ---- the section on screen ----
@@ -54,9 +64,28 @@ module.exports = async function (t) {
   t.ok(built.hasOrder, 'the domain model is there too, every entity by qualified name');
 
   const rail = await mx.evaluate(`Array.from(document.querySelectorAll('.dx-rail button')).map(function (b) { return b.textContent.replace(/[^A-Za-z]/g, ''); }).join('|')`);
-  t.ok(rail === 'Start|Modules|References|Domain|Quality', 'the rail has the five sections of the mendix-docs portal: ' + rail);
+  t.ok(rail === 'Start|Modules|References|Domain|Quality|Findings', 'the rail has the portal sections and Findings, because there are findings: ' + rail);
   t.ok(await mx.evaluate(`!!document.querySelector('.dx-hero') && document.querySelectorAll('.dx-kpi').length === 8`),
     'Start opens on a hero and eight KPI tiles');
+
+  // ---- findings carried from MxScout, with severity and status ----
+  const cm = await mx.evaluate(`(function () {
+    var d = window.MxDocs.current();
+    return { total: d.comments.length, open: d.kpi.findingsOpen, kpi: d.kpi.findings,
+      onCreate: (d.flows['microflow:Sales.CreateOrder'].comments || []).length,
+      onOrder: (d.entities['Sales.Order'].comments || []).length,
+      sevs: d.comments.map(function (c) { return c.severity; }).join(','),
+      states: d.comments.map(function (c) { return c.status; }).join(',') };
+  })()`);
+  t.ok(cm.total === 3 && cm.kpi === 3 && cm.open === 1, 'the three findings are in the bundle, one still open: ' + JSON.stringify(cm));
+  t.ok(cm.onCreate === 1 && cm.onOrder === 1, 'each finding is attached to its object — a flow and an entity alike');
+  t.ok(/critical/.test(cm.sevs) && /high/.test(cm.sevs) && /medium/.test(cm.sevs) && /fixed/.test(cm.states),
+    'they carry their severity and whether they are fixed: ' + cm.sevs + ' / ' + cm.states);
+
+  await mx.evaluate(`Array.from(document.querySelectorAll('.dx-rail button')).find(function (b) { return /Findings/.test(b.textContent); }).click()`);
+  await mx.waitFor(`document.querySelectorAll('.dx-find').length === 3`, 5000, 'findings view');
+  t.ok(await mx.evaluate(`document.querySelectorAll('.dx-find .dx-sev-critical').length === 1 && document.querySelectorAll('.dx-find .dx-st-fixed').length === 1`),
+    'the Findings view colours by severity and marks what is fixed');
 
   // References → open a flow → its workflow, top to bottom.
   await mx.evaluate(`Array.from(document.querySelectorAll('.dx-rail button')).find(function (b) { return /References/.test(b.textContent); }).click()`);
@@ -131,6 +160,29 @@ module.exports = async function (t) {
   } finally {
     exportServer.close();
   }
+
+  // ---- choosing which modules the export carries ----
+  // Capture what the Build button hands to the encryption, so the module
+  // filter and the always-on findings can be checked without a second file.
+  await mx.evaluate(`Array.from(document.querySelectorAll('.dx-rail button')).find(function (b) { return /Start/.test(b.textContent); }).click()`);
+  await mx.evaluate(`window.__packed = null; var rp = window.MxCrypto.pack; window.MxCrypto.pack = function (d, c) { window.__packed = d; return rp.apply(this, arguments); };`);
+  await mx.evaluate(`Array.from(document.querySelectorAll('.dx-actions button, .dx-btn')).find(function (b) { return /Export/.test(b.textContent); }).click()`);
+  await mx.waitFor(`document.querySelectorAll('.docs-mod input').length >= 2`, 5000, 'module picker');
+  t.ok(await mx.evaluate(`Array.from(document.querySelectorAll('.docs-mod input')).every(function (i) { return i.checked; })`),
+    'the export dialog offers the modules, own ones ticked by default');
+  await mx.evaluate(`(function () { var lab = Array.from(document.querySelectorAll('.docs-mod')).find(function (l) { return /System/.test(l.textContent); }); if (lab) { var i = lab.querySelector('input'); if (i.checked) i.click(); } })()`);
+  await mx.evaluate(`Array.from(document.querySelectorAll('.report-option-head button')).find(function (b) { return /Build file/.test(b.textContent); }).click()`);
+  await mx.waitFor(`!!window.__packed`, 6000, 'built the file');
+  const packed = await mx.evaluate(`(function () { var d = window.__packed; return {
+    mods: (d.modules || []).map(function (m) { return m.name; }).join(','),
+    hasSystemEntity: Object.keys(d.entities).some(function (q) { return q.indexOf('System.') === 0; }),
+    comments: (d.comments || []).length, partial: !!d.partial }; })()`);
+  t.ok(packed.mods === 'Sales' && !packed.hasSystemEntity,
+    'unticking a module leaves it out of the export entirely: modules = ' + packed.mods);
+  t.ok(packed.comments === 3 && packed.partial === true,
+    'the findings always travel, and a filtered file marks itself partial');
+  t.ok(await mx.evaluate(`!!document.querySelector('.code-value')`),
+    'and the dialog shows the access code for the file it built');
 
   await mx.close();
 };

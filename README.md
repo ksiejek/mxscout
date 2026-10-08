@@ -158,14 +158,18 @@ the stored model (no server, no live app needed):
   each time one is loaded: a Start page of the project's numbers, the Modules
   and what each holds, References (every microflow, nanoflow and page — what it
   takes and returns, who runs it, what it calls and calls it, and a flow's
-  **workflow drawn top to bottom**), the Domain model, and a Quality view of
-  where the model looks unfinished. A call in a workflow opens that flow;
-  **Open in MxScout** brings up any object's own window over the page. It
-  exports as **one encrypted HTML file** — the documentation under a fresh
-  access code (the same WebCrypto envelope as the review report), the reader's
-  own source and its stylesheet, nothing else — that opens in any browser, asks
-  for the code, and shows exactly what the app showed. Built in your browser,
-  handed to the download; the server never sees it and nothing is sent anywhere.
+  **workflow drawn top to bottom**), the Domain model, a Quality view of where
+  the model looks unfinished, and a **Findings** view of the comments you have
+  recorded — coloured by severity (critical / high / medium / low) and marked
+  as open, fixed or won't-fix, the same findings the object popups carry. A
+  call in a workflow opens that flow; **Open in MxScout** brings up any object's
+  own window over the page. It exports as **one encrypted HTML file** — for the
+  **modules you choose** when exporting (own modules ticked by default), with
+  the findings always included — the documentation under a fresh access code
+  (the same WebCrypto envelope as the review report), the reader's own source
+  and its stylesheet, nothing else. It opens in any browser, asks for the code,
+  and shows exactly what the app showed. Built in your browser, handed to the
+  download; the server never sees it and nothing is sent anywhere.
 
 Two things MxScout works out for itself from the model, rather than showing
 you a list to work out yourself:

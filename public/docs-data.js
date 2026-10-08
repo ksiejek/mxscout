@@ -185,12 +185,22 @@
   }
 
   // ---------- the whole documentation ----------
-  function build(model, project) {
+  // opts.modules — when given, only these module names go in (the export always
+  // names which modules to carry; the app passes nothing and shows them all).
+  // opts.comments — the project's findings (comments.js), carried into the
+  // documentation with their severity and whether they are fixed; they always
+  // travel with the export.
+  function build(model, project, opts) {
     model = model || {};
-    var own = (model.modules || []).filter(function (m) { return !m.fromAppStore; }).map(function (m) { return m.name; });
-    var marketplace = (model.modules || []).filter(function (m) { return m.fromAppStore; }).map(function (m) { return m.name; });
+    opts = opts || {};
+    var modSet = null;
+    if (opts.modules) { modSet = {}; opts.modules.forEach(function (n) { modSet[n] = true; }); }
+    function inc(name) { return !modSet || !!modSet[name]; }
+    var own = (model.modules || []).filter(function (m) { return !m.fromAppStore && inc(m.name); }).map(function (m) { return m.name; });
+    var marketplace = (model.modules || []).filter(function (m) { return m.fromAppStore && inc(m.name); }).map(function (m) { return m.name; });
     var modules = {};
     (model.modules || []).forEach(function (m) {
+      if (!inc(m.name)) return;
       modules[m.name] = { name: m.name, marketplace: !!m.fromAppStore, microflows: [], nanoflows: [], pages: [], entities: [] };
     });
     function mod(name) { return modules[name] || (modules[name] = { name: name, marketplace: false, microflows: [], nanoflows: [], pages: [], entities: [] }); }
@@ -216,32 +226,62 @@
         entityAccess: kind === 'microflow' ? f.applyEntityAccess !== false : true,
         reads: a.reads || [], writes: (a.creates || []).concat(a.changes || [], a.commits || [], a.deletes || []).filter(function (v, i, all) { return all.indexOf(v) === i; }),
         calls: calls, calledBy: (f.calledBy || []).map(function (c) { return { kind: c.kind, qn: c.name }; }),
-        workflow: wf ? wf.tree : null, steps: wf ? wf.steps : 0, drawn: !!wf
+        workflow: wf ? wf.tree : null, steps: wf ? wf.steps : 0, drawn: !!wf, comments: []
       };
     }
-    (model.microflows || []).forEach(function (f) { var e = flowEntry(f, 'microflow'); flows[e.key] = e; mod(f.module).microflows.push(e.key); });
-    (model.nanoflows || []).forEach(function (f) { var e = flowEntry(f, 'nanoflow'); flows[e.key] = e; mod(f.module).nanoflows.push(e.key); });
+    (model.microflows || []).forEach(function (f) { if (!inc(f.module)) return; var e = flowEntry(f, 'microflow'); flows[e.key] = e; mod(f.module).microflows.push(e.key); });
+    (model.nanoflows || []).forEach(function (f) { if (!inc(f.module)) return; var e = flowEntry(f, 'nanoflow'); flows[e.key] = e; mod(f.module).nanoflows.push(e.key); });
     (model.pages || []).forEach(function (p) {
+      if (!inc(p.module)) return;
       var e = { key: 'page:' + p.qualifiedName, kind: 'page', module: p.module, name: p.name, qn: p.qualifiedName, path: p.path || [],
         roles: p.allowedModuleRoles || [], params: (p.parameters || []).map(function (x) { return { name: x.name, type: x.entityQualifiedName || x.type || 'value' }; }),
-        calledBy: (p.calledBy || []).map(function (c) { return { kind: c.kind, qn: c.name }; }) };
+        calledBy: (p.calledBy || []).map(function (c) { return { kind: c.kind, qn: c.name }; }), comments: [] };
       flows[e.key] = e; mod(p.module).pages.push(e.key);
     });
 
     var entities = {};
     (model.entities || []).forEach(function (en) {
+      if (!inc(en.module)) return;
       var rules = en.accessRules || [];
       entities[en.qualifiedName] = {
         qn: en.qualifiedName, module: en.module, name: en.name, persistable: en.persistable !== false,
         generalization: en.generalization || null, view: !!en.viewEntity,
         attributes: (en.attributes || []).map(function (a) { return { name: a.name, type: a.enumerationQualifiedName ? 'Enumeration ' + a.enumerationQualifiedName : a.type + (a.length ? '(' + a.length + ')' : '') }; }),
         roles: rules.map(function (r) { return r.moduleRole; }).filter(function (v, i, all) { return v && all.indexOf(v) === i; }),
-        rules: rules.length
+        rules: rules.length, comments: []
       };
       mod(en.module).entities.push(en.qualifiedName);
     });
-    var associations = (model.associations || []).map(function (a) {
+    var associations = (model.associations || []).filter(function (a) { return inc(a.module); }).map(function (a) {
       return { name: a.name, module: a.module, from: a.owner, to: a.other, many: a.type === 'ReferenceSet' };
+    });
+
+    // ---------- findings (comments.js), carried with their colour and state ----------
+    var SEVRANK = { critical: 0, high: 1, medium: 2, low: 3 };
+    var STRANK = { open: 0, wontfix: 1, fixed: 2 };
+    var comments = [];
+    (opts.comments || []).forEach(function (f) {
+      if (!f || !f.target) return;
+      var t = f.target;
+      var cmod = t.module || (t.qualifiedName ? t.qualifiedName.split('.')[0] : null);
+      if (!inc(cmod)) return;
+      comments.push({
+        severity: SEVRANK[f.severity] !== undefined ? f.severity : 'medium',
+        status: STRANK[f.status] !== undefined ? f.status : 'open',
+        kind: t.kind || null, module: cmod, qn: t.qualifiedName || null,
+        name: t.name || (t.qualifiedName ? shortName(t.qualifiedName) : null),
+        problem: f.problem || '', change: f.change || null, role: f.role || null,
+        author: f.author || null, createdAt: f.createdAt || null,
+        attributes: (t.attributes || []).slice()
+      });
+    });
+    comments.sort(function (a, b) {
+      return (STRANK[a.status] - STRANK[b.status]) || (SEVRANK[a.severity] - SEVRANK[b.severity]) || String(a.qn).localeCompare(String(b.qn));
+    });
+    comments.forEach(function (c) {
+      if (!c.qn) return;
+      if (c.kind === 'entity') { if (entities[c.qn]) entities[c.qn].comments.push(c); }
+      else { var key = (c.kind || '') + ':' + c.qn; if (flows[key]) flows[key].comments.push(c); }
     });
 
     // ---------- where the model looks unfinished ----------
@@ -262,20 +302,27 @@
     function countOff(list) { (list || []).forEach(function (b) { if (b.card && b.card.off) disabled++; ['body', 'error'].forEach(function (k) { countOff(b[k]); }); (b.branches || []).forEach(function (x) { countOff(x.body); }); }); }
     Object.keys(flows).forEach(function (k) { countOff(flows[k].workflow); });
 
-    var automation = (model.automation || []).filter(function (a) { return a.kind === 'scheduled event'; });
+    var moduleOf = function (qn) { return qn ? String(qn).split('.')[0] : null; };
+    var automation = (model.automation || []).filter(function (a) { return a.kind === 'scheduled event' && inc(moduleOf(a.microflow || a.qualifiedName)); });
+    var services = (model.publishedServices || []).filter(function (s) { return inc(moduleOf(s.qualifiedName || s.name)); });
+    // Counts are of what actually went in, so a filtered export reports itself, not the whole app.
+    var nMF = 0, nNF = 0, nPG = 0;
+    Object.keys(flows).forEach(function (k) { var kind = flows[k].kind; if (kind === 'microflow') nMF++; else if (kind === 'nanoflow') nNF++; else if (kind === 'page') nPG++; });
     return {
       v: 1,
       project: project ? project.name : (model.meta && model.meta.appName) || 'Mendix application',
       app: (model.meta && model.meta.appName) || null,
       mendix: (model.meta && model.meta.mendixVersion) || null,
       generatedAt: new Date().toISOString(),
+      partial: !!modSet,
       drawings: Object.keys(flows).some(function (k) { return flows[k].drawn; }),
       kpi: {
         modules: own.length, marketplace: marketplace.length,
-        microflows: (model.microflows || []).length, nanoflows: (model.nanoflows || []).length, pages: (model.pages || []).length,
-        entities: (model.entities || []).length, roles: (model.userRoles || []).length,
+        microflows: nMF, nanoflows: nNF, pages: nPG,
+        entities: Object.keys(entities).length, roles: (model.userRoles || []).length,
         scheduled: automation.length, scheduledOn: automation.filter(function (a) { return a.enabled; }).length,
-        services: (model.publishedServices || []).length
+        services: services.length,
+        findings: comments.length, findingsOpen: comments.filter(function (c) { return c.status === 'open'; }).length
       },
       modules: Object.keys(modules).sort(function (a, b) {
         return (modules[a].marketplace - modules[b].marketplace) || a.localeCompare(b);
@@ -283,7 +330,8 @@
       flows: flows, entities: entities, associations: associations,
       roles: (model.userRoles || []).map(function (r) { return { name: r.name, moduleRoles: r.moduleRoles || [] }; }),
       scheduled: automation.map(function (a) { return { name: a.qualifiedName, microflow: a.microflow, schedule: a.schedule || null, enabled: !!a.enabled }; }),
-      services: (model.publishedServices || []).map(function (s) { return { name: s.qualifiedName || s.name, kind: s.kind || null }; }),
+      services: services.map(function (s) { return { name: s.qualifiedName || s.name, kind: s.kind || null }; }),
+      comments: comments,
       quality: { unreached: unreached, noAccess: noAccess, pastAccess: pastAccess, disabled: disabled }
     };
   }
