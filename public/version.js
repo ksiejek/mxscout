@@ -38,7 +38,8 @@
     loading: false,
     error: null,
     open: false,        // the panel is showing
-    whatsNew: null      // the version we just moved ONTO, if we noticed a change
+    whatsNew: null,     // the version we just moved ONTO, if we noticed a change
+    expanded: {}        // "version#index" -> true for an entry somebody opened
   };
 
   function init(api) {
@@ -171,36 +172,138 @@
     });
   }
 
-  function renderBlocks(blocks, limitToVersion) {
-    var out = [];
-    // Everything before the first version heading is the file's preamble —
-    // its title, and an explanation of why MxScout does not check for updates.
-    // That is for whoever opens CHANGELOG.md in the repository. In here the
-    // panel has already said it, one paragraph up, so repeating it reads as
-    // nobody having edited the page.
-    var started = false;
-    var skipping = false;
+  // The file is read as versions holding entries, because that is how it is
+  // written: every `## version` is a release, every `### heading` under it is
+  // one change, and nearly every change opens with a **bold sentence** saying
+  // it in one line. Drawn as one long document, all three were lost — 645
+  // lines in a single scroll with nothing to steer by. Grouped, a release
+  // reads as a list of headlines first, with the detail one click away.
+  //
+  // Everything before the first version heading is the file's preamble — its
+  // title, and why MxScout does not check for updates. That is for whoever
+  // opens CHANGELOG.md in the repository; the panel says it in its own words
+  // beside the list, so it is dropped here.
+  function group(blocks) {
+    var versions = [];
+    var version = null;
+    var entry = null;
     blocks.forEach(function (b) {
-      // "Only this version" stops at the next top-level version heading.
       if (b.type === 'h' && b.level === 2) {
-        started = true;
-        var name = b.spans.map(function (s) { return s.text; }).join('');
-        skipping = !!limitToVersion && name.trim() !== limitToVersion;
-      }
-      if (!started || skipping) return;
-      if (b.type === 'h') {
-        out.push(app.el('h' + Math.min(4, b.level + 1), { class: 'changelog-h changelog-h' + b.level }, renderSpans(b.spans)));
+        version = { name: spanText(b.spans).trim(), spans: b.spans, intro: [], entries: [] };
+        versions.push(version);
+        entry = null;
         return;
       }
-      if (b.type === 'ul') {
-        out.push(app.el('ul', { class: 'changelog-list' }, b.items.map(function (item) {
-          return app.el('li', {}, renderSpans(item));
-        })));
+      if (!version) return;
+      if (b.type === 'h' && b.level === 3) {
+        entry = { spans: b.spans, blocks: [] };
+        version.entries.push(entry);
         return;
       }
-      out.push(app.el('p', {}, renderSpans(b.spans)));
+      (entry ? entry.blocks : version.intro).push(b);
     });
-    return out;
+    return versions;
+  }
+
+  function spanText(spans) { return spans.map(function (s) { return s.text; }).join(''); }
+
+  // The headline under a heading: the bold run an entry's first paragraph
+  // opens with. An entry written without one has no headline — its heading
+  // is still a usable summary, so nothing is made up in its place.
+  function lead(entry) {
+    var first = entry.blocks[0];
+    if (!first || first.type !== 'p' || !first.spans.length || first.spans[0].kind !== 'strong') return null;
+    return first.spans[0].text;
+  }
+
+  function renderBlock(b) {
+    if (b.type === 'h') return app.el('h' + Math.min(6, b.level + 1), { class: 'changelog-h changelog-h' + b.level }, renderSpans(b.spans));
+    if (b.type === 'ul') {
+      return app.el('ul', { class: 'changelog-list' }, b.items.map(function (item) {
+        return app.el('li', {}, renderSpans(item));
+      }));
+    }
+    return app.el('p', {}, renderSpans(b.spans));
+  }
+
+  // One change, closed by default — except, in the full changelog, in the
+  // version that is running, which is the one whose detail a person most often
+  // came for. "MxScout was updated" shows only that version and keeps it as
+  // headlines: there it is a summary of what moved, not the place to read it.
+  // A closed <details> still holds all of its text — closed is a matter of
+  // what is drawn, not of what was left out — so find-in-page still reaches
+  // inside an entry nobody has opened. Once somebody opens or closes an entry,
+  // that choice wins over the default until the page is reloaded.
+  function renderEntry(versionName, entry, index, openCurrent) {
+    var key = versionName + '#' + index;
+    var headline = lead(entry);
+    var node = app.el('details', {
+      class: 'changelog-entry',
+      ontoggle: function () { state.expanded[key] = node.open; }
+    }, [
+      app.el('summary', { class: 'changelog-entry-head' }, [
+        app.el('span', { class: 'changelog-entry-title' }, renderSpans(entry.spans)),
+        headline ? app.el('span', { class: 'changelog-entry-lead', text: headline }) : null
+      ]),
+      app.el('div', { class: 'changelog-entry-body' }, entry.blocks.map(renderBlock))
+    ]);
+    if (key in state.expanded ? state.expanded[key] : openCurrent && versionName === state.version) node.open = true;
+    return node;
+  }
+
+  function changeCount(v) {
+    return v.entries.length === 1 ? '1 change' : v.entries.length + ' changes';
+  }
+
+  function versionTag(v) {
+    if (v.name === state.version) return 'this copy';
+    if (/^unreleased$/i.test(v.name)) return 'not released yet';
+    return null;
+  }
+
+  function renderVersion(v, openCurrent) {
+    var tag = versionTag(v);
+    return app.el('section', { class: 'changelog-version', 'data-version': v.name }, [
+      app.el('div', { class: 'changelog-version-head' }, [
+        app.el('h3', { class: 'changelog-h changelog-h2' }, renderSpans(v.spans)),
+        tag ? app.el('span', { class: 'changelog-tag' + (v.name === state.version ? ' is-current' : ''), text: tag }) : null,
+        app.el('span', { class: 'changelog-count', text: changeCount(v) })
+      ]),
+      v.intro.length ? app.el('div', { class: 'changelog-intro' }, v.intro.map(renderBlock)) : null
+    ].concat(v.entries.map(function (e, i) { return renderEntry(v.name, e, i, openCurrent); })));
+  }
+
+  function renderVersions(blocks, limitToVersion, openCurrent) {
+    return group(blocks).filter(function (v) {
+      return !limitToVersion || v.name === limitToVersion;
+    }).map(function (v) { return renderVersion(v, openCurrent); });
+  }
+
+  // Opening or closing every entry of the list on screen. Done on the
+  // elements themselves rather than through a re-render, which would throw
+  // away where the list was scrolled to.
+  function setAllOpen(root, open) {
+    Array.prototype.forEach.call(root.querySelectorAll('details.changelog-entry'), function (d) { d.open = open; });
+  }
+
+  // The left column: every version, how many changes it holds, and a jump to
+  // it. scrollIntoView rather than setting scrollTop, because on a phone the
+  // list is no longer its own scroller — the whole window is.
+  function renderNav(list) {
+    if (!state.changelog) return null;
+    return app.el('nav', { class: 'changelog-nav', 'aria-label': 'Versions' }, group(state.changelog).map(function (v) {
+      return app.el('button', {
+        class: 'changelog-nav-item' + (v.name === state.version ? ' is-current' : ''),
+        title: versionTag(v) || null,
+        onclick: function () {
+          var target = list.querySelector('[data-version="' + v.name.replace(/"/g, '') + '"]');
+          if (target) target.scrollIntoView({ block: 'start' });
+        }
+      }, [
+        app.el('span', { class: 'changelog-nav-name', text: v.name }),
+        app.el('span', { class: 'changelog-nav-meta', text: changeCount(v) })
+      ]);
+    }));
   }
 
   // ---------- the panel ----------
@@ -214,43 +317,50 @@
   function isOpen() { return state.open; }
   function version() { return state.version; }
 
-  function body(limitToVersion) {
+  function body(limitToVersion, openCurrent) {
     if (state.loading) return [app.el('div', { class: 'changelog-wait' }, [app.el('span', { class: 'spinner' }), app.el('span', { text: ' Reading the changelog…' })])];
     if (state.error) return [app.el('p', { class: 'warn-text', text: state.error })];
     if (!state.changelog) return [app.el('p', { class: 'muted', text: 'No changelog is available in this copy.' })];
-    var blocks = renderBlocks(state.changelog, limitToVersion || null);
+    var blocks = renderVersions(state.changelog, limitToVersion || null, !!openCurrent);
     if (!blocks.length) return [app.el('p', { class: 'muted', text: 'This version has no changelog entry yet.' })];
     return blocks;
   }
 
   function renderPanel() {
     if (!state.open) return null;
+    var list = app.el('div', { class: 'changelog-scroll' }, body(null, true));
     var backdrop = app.el('div', {
       class: 'modal-backdrop',
       onclick: function (e) { if (e.target === backdrop) close(); }
     }, [
-      app.el('div', { class: 'modal modal-wide' }, [
+      app.el('div', { class: 'modal modal-changelog' }, [
         app.el('div', { class: 'popup-head' }, [
           app.el('div', {}, [
             app.el('h3', { text: 'MxScout ' + (state.version || 'unknown version') }),
             app.el('p', { class: 'muted', text: 'Read from the running server, so it cannot claim a version it is not.' })
           ]),
           app.el('div', { class: 'popup-head-actions' }, [
+            state.changelog ? app.el('button', { class: 'btn btn-sm btn-ghost changelog-bulk', text: 'Expand all', onclick: function () { setAllOpen(list, true); } }) : null,
+            state.changelog ? app.el('button', { class: 'btn btn-sm btn-ghost changelog-bulk', text: 'Collapse all', onclick: function () { setAllOpen(list, false); } }) : null,
             app.el('button', { class: 'btn btn-sm', text: 'Close', onclick: close })
           ])
         ]),
-        app.el('div', { class: 'popup-section update-how' }, [
-          app.el('h4', { text: 'Is there a newer one?' }),
-          app.el('p', { class: 'muted', text: 'MxScout does not know, and does not ask. It opens no connection to find out — that promise is worth more than the convenience, and in a corporate network the check would usually fail anyway.' }),
-          app.el('p', {}, [
-            document.createTextNode('To find out, look at the repository yourself. To move to a newer version, run this in the MxScout directory:')
+        app.el('div', { class: 'changelog-layout' }, [
+          app.el('aside', { class: 'changelog-side' }, [
+            renderNav(list),
+            // Kept, and kept on screen, but no longer the first thing read: it
+            // answers "is there a newer one?", which is not the question most
+            // people opening a list of changes came with.
+            app.el('div', { class: 'update-how' }, [
+              app.el('h4', { text: 'Is there a newer one?' }),
+              app.el('p', { class: 'muted', text: 'MxScout does not know, and does not ask. It opens no connection to find out — that promise is worth more than the convenience, and in a corporate network the check would usually fail anyway.' }),
+              app.el('p', { class: 'muted', text: 'To find out, look at the repository yourself. To move to a newer version, run this in the MxScout directory:' }),
+              app.el('code', { class: 'update-command', text: 'git pull' }),
+              app.el('p', { class: 'hint', text: 'MxScout never rewrites its own files. It has no write access to its own directory, and should not have any.' })
+            ])
           ]),
-          app.el('code', { class: 'update-command', text: 'git pull' }),
-          app.el('p', { class: 'hint', text: 'MxScout never rewrites its own files. It has no write access to its own directory, and should not have any.' })
-        ]),
-        app.el('div', { class: 'popup-section' }, [
-          app.el('h4', { text: 'What is in this copy' })
-        ].concat(body(null)))
+          list
+        ])
       ])
     ]);
     return backdrop;

@@ -120,6 +120,33 @@ module.exports = async function (t) {
   t.ok(await mx.evaluate(`document.querySelectorAll('.changelog-h2').length >= 1`),
     'and it starts at the version headings');
 
+  // The panel reads the file as releases holding changes, not as one long
+  // document: a section and a jump per version, a card per change with its
+  // bold first sentence as the headline, and only the running version open.
+  const changelogSrc = fs.readFileSync(path.join(__dirname, '..', 'CHANGELOG.md'), 'utf8');
+  const versionCount = (changelogSrc.match(/^## /gm) || []).length;
+  const shape = JSON.parse(await mx.evaluate(`JSON.stringify((function(){
+    var sections = Array.from(document.querySelectorAll('.changelog-version'));
+    var current = document.querySelector('.changelog-version[data-version="${pkg.version}"]');
+    var others = sections.filter(function (s) { return s !== current; });
+    return {
+      sections: sections.length,
+      jumps: document.querySelectorAll('.changelog-nav-item').length,
+      currentOpen: current ? current.querySelectorAll('details[open]').length : -1,
+      currentAll: current ? current.querySelectorAll('details').length : -1,
+      othersOpen: others.reduce(function (n, s) { return n + s.querySelectorAll('details[open]').length; }, 0),
+      leads: document.querySelectorAll('.changelog-entry-lead').length
+    };
+  })())`));
+  t.ok(shape.sections === versionCount && shape.jumps === versionCount,
+    'one section and one jump per version in the file: ' + JSON.stringify(shape) + ' against ' + versionCount);
+  t.ok(shape.currentAll > 0 && shape.currentOpen === shape.currentAll,
+    'every change in the running version is open: ' + shape.currentOpen + '/' + shape.currentAll);
+  t.ok(shape.othersOpen === 0, 'and every other version shows headlines only');
+  t.ok(shape.leads > 5, 'a change carries its bold first sentence as a headline: ' + shape.leads);
+  t.ok(/Runs entirely on your own machine/.test(await mx.evaluate(`document.querySelector('.changelog-version[data-version="1.0.0"]').textContent`)),
+    'and a closed change still holds its whole text, so find-in-page reaches it');
+
   const requests = await mx.evaluate(`JSON.stringify(window.__requests)`);
   const outside = JSON.parse(requests).filter((u) => /^https?:\/\//.test(u) && u.indexOf(t.MX) !== 0);
   t.ok(outside.length === 0,
@@ -149,6 +176,8 @@ module.exports = async function (t) {
   t.ok(headingRe.test(whatsNew), 'and shows what changed in the one you moved onto');
   t.ok(!/What changed in each version of MxScout/.test(whatsNew),
     'limited to that version’s entry, not the whole file’s preamble');
+  t.ok(await mx.evaluate(`(function(){ var m = document.querySelector('.modal'); return m.querySelectorAll('details').length > 0 && m.querySelectorAll('details[open]').length === 0; })()`),
+    'and kept to headlines there — a summary of what moved, not the place to read it');
 
   // Reloading WITHOUT confirming must show it again: it is a thing to
   // acknowledge, not a thing to have been ticked off on your behalf.

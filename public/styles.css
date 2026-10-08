@@ -1733,19 +1733,147 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
    newer one exists, so nothing here ever wears a badge or a dot. */
 .sidebar-version { font-variant-numeric: tabular-nums; }
 
-.changelog-h { margin: 18px 0 6px; }
-.changelog-h2 {
-  font-size: 15px;
-  color: var(--accent);
-  padding-bottom: 5px;
+/* The panel is a reader, so it is sized like one: wide enough for a list
+   beside the text, tall enough that the text is not read through a slot. The
+   list scrolls on its own and the head and the side column stay put. */
+.modal-changelog {
+  max-width: 980px;
+  height: 86vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal-changelog .popup-head { flex: none; margin-bottom: var(--space-3); }
+.changelog-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: var(--space-4);
+}
+.changelog-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  overflow-y: auto;
+  min-height: 0;
+}
+.changelog-nav { display: flex; flex-direction: column; gap: 2px; }
+.changelog-nav-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 6px var(--space-2);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+.changelog-nav-item:hover { background: var(--panel-2); }
+.changelog-nav-item.is-current { border-color: var(--border); background: var(--panel-2); }
+.changelog-nav-name { font-size: var(--text-sm); font-weight: 600; font-variant-numeric: tabular-nums; }
+.changelog-nav-meta { font-size: var(--text-xs); color: var(--muted); }
+
+.changelog-scroll {
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: var(--space-2);
+}
+.changelog-version + .changelog-version { margin-top: var(--space-5); }
+.changelog-version-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-2);
   border-bottom: 1px solid var(--border);
 }
-.changelog-h3 { font-size: 13px; color: var(--text); }
-.changelog-h4 { font-size: 13px; color: var(--muted); }
-.changelog-list { margin: 6px 0; padding-left: 20px; }
-.changelog-list li { margin: 3px 0; }
-.changelog-body { max-height: 46vh; overflow-y: auto; padding: 0 6px 8px 0; }
+.changelog-version-head .changelog-count { margin-left: auto; }
+.changelog-h { margin: var(--space-3) 0 var(--space-2); }
+.changelog-version-head .changelog-h { margin: 0; }
+.changelog-h2 {
+  font-size: var(--text-lg);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.changelog-h3 { font-size: var(--text-sm); color: var(--text); }
+.changelog-h4 { font-size: var(--text-sm); color: var(--muted); }
+.changelog-tag {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 var(--space-2);
+}
+.changelog-tag.is-current { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.changelog-count { font-size: var(--text-xs); color: var(--muted); }
+.changelog-intro p { font-size: var(--text-sm); }
+
+/* One change: its heading and its one-line headline, then the detail on
+   demand. The headline hides once the entry is open, because the opened
+   text starts with that same sentence. */
+.changelog-entry { border-bottom: 1px solid var(--border); }
+.changelog-entry-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  position: relative;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 6px;
+}
+.changelog-entry-head::-webkit-details-marker { display: none; }
+.changelog-entry-head::before {
+  content: '';
+  position: absolute;
+  left: var(--space-1);
+  top: 15px;
+  width: 6px; height: 6px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 120ms ease;
+}
+.changelog-entry[open] > .changelog-entry-head::before { transform: rotate(45deg); top: 13px; }
+.changelog-entry-head:hover { background: var(--panel-2); }
+.changelog-entry-title { font-size: var(--text-sm); font-weight: 600; color: var(--text); line-height: 1.4; }
+.changelog-entry-lead { font-size: var(--text-sm); color: var(--muted); line-height: 1.5; }
+.changelog-entry[open] .changelog-entry-lead { display: none; }
+.changelog-entry-body { padding: 0 var(--space-2) var(--space-3) var(--space-4); }
+.changelog-entry-body p,
+.changelog-entry-body li { font-size: var(--text-sm); line-height: 1.6; color: var(--text); }
+.changelog-entry-body p { margin: var(--space-2) 0; }
+.changelog-entry-body strong { color: var(--text); }
+.changelog-list { margin: var(--space-2) 0; padding-left: var(--space-4); }
+.changelog-list li { margin: var(--space-1) 0; }
+.changelog-body { max-height: 52vh; overflow-y: auto; padding: 0 var(--space-2) var(--space-2) 0; }
 .changelog-wait { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+
+.changelog-side .update-how {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+.changelog-side .update-how h4 { margin: 0 0 var(--space-2); font-size: var(--text-xs); color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.changelog-side .update-how p { font-size: var(--text-xs); line-height: 1.5; }
+
+/* On a phone the two columns stack and the whole window scrolls as one. */
+@media (max-width: 720px) {
+  .modal-changelog { height: auto; max-height: 92vh; overflow-y: auto; display: block; }
+  /* The side column dissolves so its two halves can sit apart: the version
+     jumps above the list, the update note under it. */
+  .changelog-layout { display: flex; flex-direction: column; gap: var(--space-4); }
+  .changelog-side { display: contents; }
+  .changelog-nav { order: 1; flex-direction: row; flex-wrap: wrap; }
+  .changelog-scroll { order: 2; overflow: visible; padding-right: 0; }
+  .changelog-side .update-how { order: 3; }
+  .changelog-nav-meta { display: none; }
+  .changelog-bulk { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .changelog-entry-head::before { transition: none; } }
 
 .inline-code {
   font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;

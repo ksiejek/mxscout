@@ -196,6 +196,19 @@ project MxScout has been tried on so far had a view entity in it, so this was
 built from the Mendix metamodel's own names — a project that has one will say
 whether the reading is right.
 
+### The changelog reads as a list of changes, not one long page
+
+**Each change is now a heading and one sentence, with the detail a click
+away.** The version panel used to be a 620-pixel window that opened with the
+`git pull` note and then ran every release into a single scroll. It is wider
+now, with the versions down the side — each with how many changes it holds,
+one click to jump to it — and each change folded to its heading and the bold
+sentence it opens with. The version you are running opens unfolded, since
+that is usually the one you came for; "Expand all" and "Collapse all" do the
+rest. "MxScout was updated" shows the new version as headings only, as a
+summary of what moved. The note on why MxScout never checks for updates is
+still there, beside the list rather than above it.
+
 ## 1.5.0
 
 ### The About page said the outbound connection only happens while recording. It does not
