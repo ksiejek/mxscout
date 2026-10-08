@@ -392,6 +392,13 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 .docs-inside { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-3); }
 .docs-inside-item strong { display: block; margin-bottom: var(--space-1); }
 .docs-inside-item p { margin: 0; font-size: var(--text-sm); }
+.docs-ai { display: flex; gap: var(--space-4); align-items: flex-start; justify-content: space-between; flex-wrap: wrap; margin-top: var(--space-3); }
+.docs-ai-text { flex: 1 1 420px; min-width: 0; }
+.docs-ai h3 { margin: 0 0 var(--space-2); font-size: var(--text-base); }
+.docs-ai-text p { margin: 0 0 var(--space-2); font-size: var(--text-sm); max-width: 760px; }
+.docs-ai-status .hint { display: block; }
+.docs-ai-act { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2); width: 220px; }
+.docs-ai-act .hint { margin: 0; }
 .docs-shots-note { margin: calc(-1 * var(--space-2)) 0 var(--space-3); }
 .docs-shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: var(--space-3); }
 .docs-shot { margin: 0; }

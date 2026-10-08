@@ -24,7 +24,7 @@
   'use strict';
 
   var DB_NAME = 'mxscout';
-  var DB_VERSION = 3;
+  var DB_VERSION = 4;
 
   // projects   — metadata only, so listing projects never parses a model
   // models     — one record per project, written at import and never again
@@ -36,6 +36,8 @@
   //              session captured through the admin-port bridge, with its own
   //              start time. A project can hold many, browsed and deleted
   //              individually — same shape as findings/exports.
+  // descriptions — one record per project: the descriptions an AI agent
+  //              wrote from the AI pack (describe.js), as imported. v4.
   // settings   — small key/value pairs: the author identity, UI preferences
   var STORES = {
     projects: { keyPath: 'id', indexes: [] },
@@ -43,6 +45,7 @@
     findings: { keyPath: 'id', indexes: [['byProject', 'projectId'], ['byUpdated', 'updatedAt']] },
     exports: { keyPath: 'id', indexes: [['byProject', 'projectId']] },
     recordings: { keyPath: 'id', indexes: [['byProject', 'projectId'], ['byStarted', 'started']] },
+    descriptions: { keyPath: 'projectId', indexes: [] },
     settings: { keyPath: 'key', indexes: [] }
   };
 
@@ -173,13 +176,14 @@
     }).then(function () { return project; });
   }
 
-  // Deleting a project takes its model, findings, export history and
-  // recordings with it, in one transaction. Orphaned findings pointing at a
+  // Deleting a project takes its model, findings, export history,
+  // recordings and imported descriptions with it, in one transaction. Orphaned findings pointing at a
   // project that no longer exists would be invisible and permanent.
   function deleteProjectDeep(projectId) {
-    return run(['projects', 'models', 'findings', 'exports', 'recordings'], 'readwrite', function (store) {
+    return run(['projects', 'models', 'findings', 'exports', 'recordings', 'descriptions'], 'readwrite', function (store) {
       store('projects').delete(projectId);
       store('models').delete(projectId);
+      store('descriptions').delete(projectId);
       ['findings', 'exports', 'recordings'].forEach(function (name) {
         var index = store(name).index('byProject');
         index.openKeyCursor(window.IDBKeyRange.only(projectId)).onsuccess = function (event) {

@@ -170,7 +170,10 @@ the stored model (no server, no live app needed):
   code. Built in your browser, handed to the download; the server never sees
   it and nothing is sent anywhere. A flow's **Diagram** tab in MxScout draws
   the same workflow with the same code, with Studio Pro's own layout one
-  click away.
+  click away. **Descriptions for the business** — what the app is for, its
+  main processes, a sentence per flow — come from an AI agent outside
+  MxScout: export the **AI pack**, run the `mendix-describe` skill on it,
+  import the file it writes. Every such sentence is marked ✦ AI.
 
 Two things MxScout works out for itself from the model, rather than showing
 you a list to work out yourself:
@@ -435,6 +438,7 @@ so has no object on the page at all. Nothing here is over 2,500 lines:
 | `public/perf.js` | performance recordings: the admin port, saving and importing one, and every aggregation over its samples |
 | `public/flowdraw.js` | the Studio Pro layout on a flow's Diagram tab: a microflow or nanoflow drawn from Studio Pro's own layout in the model — no layout library — with the whole text of a step on hover |
 | `public/docs-data.js` · `public/docs-view.js` · `public/docs.js` · `public/docs.css` | the Documentation section: the model read out of itself (`docs-data`), one self-contained reader the export carries and the app runs for its previews and every flow's Diagram tab (`docs-view`), the section that builds the encrypted one-file export (`docs`), and the `.dx`-scoped stylesheet, dark and light, that travels with it |
+| `public/describe.js` | the AI pack MxScout writes for an agent (the model as the documentation reads it, one section per module, a fingerprint per flow) and the descriptions file it imports back — checked, kept as text, shown marked ✦ AI; no model runs in MxScout and nothing is sent anywhere |
 | `public/timeline.js` | the Timeline view: one time axis, the tracks on it, and the panel for whatever is picked |
 | `public/palette.js` | the command palette |
 | `public/about.js` | the About & security page — data, rendered by one function that only sets text |
@@ -466,6 +470,24 @@ runs its checks over a document built by the real exporter, so the two cannot
 drift apart quietly.
 
 To use it, copy that folder into `~/.claude/skills/`.
+
+## The describe skill
+
+`skills/mendix-describe/` writes what MxScout cannot: prose. Give an agent
+the **AI pack** (Documentation → **Export AI pack**) and it writes, for a
+business reader, what the application is for, its main processes, and a
+sentence or two on each module, microflow and nanoflow — as a descriptions
+file you import back (Documentation → **Import descriptions…**).
+
+The pack is built to be cheap to read: Marketplace modules are left out, an
+index at the top gives each module's line range so the agent reads one module
+at a time (or hands modules to parallel subagents), and every flow carries a
+fingerprint — so the next run describes only what changed, and MxScout marks
+an old description out of date instead of passing it off as current.
+`check-descriptions.js` lists what is left to describe (`todo`), checks a file
+against the pack before you import it (`check`), and joins per-module parts
+(`merge`). `test/48-describe.test.js` runs it over a pack built by the real
+exporter. Copy the folder into `~/.claude/skills/` to use it.
 
 ## Versions and updates
 

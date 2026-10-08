@@ -25,7 +25,7 @@ module.exports = async function (t) {
       { id: 'scale-p', name: 'ScaleProj', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
         source: { kind: 'test' }, bytes: 100, summary: null, appUrl: null },
       ${JSON.stringify(MODEL)});
-    const db = await new Promise((res, rej) => { const q = indexedDB.open('mxscout', 3); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+    const db = await new Promise((res, rej) => { const q = indexedDB.open('mxscout'); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
     const rec = { id: 'scale-r', projectId: 'scale-p', tool: 'mxscout-perf-recording', version: 1, intervalMs: 50,
       adminUrl: 'http://127.0.0.1:1', started: new Date(Date.now() - 60000).toISOString(),
       stopped: new Date().toISOString(), samples: [{ at: 0, requests: {} }] };

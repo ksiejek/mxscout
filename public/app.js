@@ -2616,7 +2616,7 @@
   window.MxFlowDraw.init({ el: el });
   // The Documentation section, built from the model and exportable as one
   // encrypted HTML file.
-  window.MxDocs.init({ el: el, state: state, render: render, peekObject: peekObject, findProject: findProject, downloadText: downloadText });
+  window.MxDocs.init({ el: el, state: state, render: render, store: store, setMessage: setMessage, findProject: findProject, downloadText: downloadText });
   window.MxObjects.init({
     el: el, state: state, render: render, setMessage: setMessage,
     withMod: withMod, moduleRoleSetFor: moduleRoleSetFor,

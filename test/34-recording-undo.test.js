@@ -26,7 +26,7 @@ module.exports = async function (t) {
       { id: 'undo-p', name: 'UndoProj', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
         source: { kind: 'test' }, bytes: 100, summary: null, appUrl: null },
       ${JSON.stringify(MODEL)});
-    const db = await new Promise((res, rej) => { const q = indexedDB.open('mxscout', 3); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+    const db = await new Promise((res, rej) => { const q = indexedDB.open('mxscout'); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
     const rec = { id: 'undo-r', projectId: 'undo-p', tool: 'mxscout-perf-recording', version: 1, intervalMs: 50,
       adminUrl: 'http://127.0.0.1:1', started: new Date(Date.now() - 60000).toISOString(),
       stopped: new Date().toISOString(), samples: [{ at: 0, requests: {} }, { at: 50, requests: {} }] };
@@ -41,7 +41,7 @@ module.exports = async function (t) {
   await mx.waitFor(`!!document.querySelector('.rec-actions')`, 10000, 'the recording card is on screen');
 
   const inDb = `(async () => {
-    const db = await new Promise((res) => { const q = indexedDB.open('mxscout', 3); q.onsuccess = () => res(q.result); });
+    const db = await new Promise((res) => { const q = indexedDB.open('mxscout'); q.onsuccess = () => res(q.result); });
     return await new Promise((res) => { const g = db.transaction(['recordings'], 'readonly').objectStore('recordings').get('undo-r'); g.onsuccess = () => res(!!g.result); g.onerror = () => res(false); });
   })()`;
 

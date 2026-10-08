@@ -374,6 +374,28 @@ this object made, and from what".
 Re-import a project (Replace model…) to get the values on its steps — they
 are read at import time.
 
+### Descriptions for the business, written by an AI agent you run
+
+**The documentation can now say what the application is for, what its main
+processes are, and what each microflow does — in words a business reader
+uses.** MxScout still runs no language model and opens no connection for it.
+It writes an **AI pack** (Documentation → Export AI pack): the model as the
+documentation reads it, as plain text, one section per module, with an index
+of line ranges so an agent reads one module at a time, and a fingerprint per
+flow. The new **mendix-describe** skill, in `skills/`, tells an agent what to
+write and checks the result; you import the file it writes (Import
+descriptions…).
+
+- Every imported sentence is marked **✦ AI** in the documentation, and the
+  overview stops saying nothing in it was written by a machine.
+- The overview gets **About the application** and **Main processes**, each
+  process with its steps and links to the flows that carry it.
+- A description whose flow changed since it was written is marked **out of
+  date**, and the skill's `todo` lists only those and the new ones — so the
+  next run reads a fraction of the pack.
+- Marketplace modules are left out of the pack. On a real project it is ~1.7 MB
+  for 27 modules and 1,310 flows.
+
 ## 1.5.0
 
 ### The About page said the outbound connection only happens while recording. It does not

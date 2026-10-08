@@ -16,8 +16,11 @@
 (function () {
   'use strict';
 
-  var app = null; // { el, state, render, findProject, downloadText }
-  var kept = null; // { model, host, data } — the section, kept across redraws
+  var app = null; // { el, state, render, store, setMessage, findProject, downloadText }
+  var kept = null; // { model, desc, host, data } — the section, kept across redraws
+  // projectId -> the imported descriptions record ({ projectId, importedAt,
+  // fileName, value }), null when there is none, absent while loading.
+  var descs = {};
   var dialog = null; // { busy, code, fileName, error }
 
   function init(api) { app = api; }
@@ -68,10 +71,31 @@
     return el('figure', { class: 'docs-shot' }, [frame, el('figcaption', {}, [el('strong', { text: caption }), el('span', { text: note })])]);
   }
 
-  function render(model, project) {
-    if (kept && kept.model === model) return kept.host;
-    var el = app.el;
+  function loadDescriptions(projectId) {
+    if (Object.prototype.hasOwnProperty.call(descs, projectId)) return;
+    descs[projectId] = undefined;
+    app.store.get('descriptions', projectId).then(function (row) {
+      descs[projectId] = row || null; kept = null; app.render();
+    }, function () { descs[projectId] = null; });
+  }
+
+  // The documentation's data, with the AI's descriptions on it when there are
+  // any. Used for the previews AND the export, so the file says what the
+  // section showed.
+  function buildData(model, project) {
     var data = window.MxDocsData.build(model, project);
+    var rec = project ? descs[project.id] : null;
+    var status = window.MxDescribe.attach(data, rec ? rec.value : null);
+    return { data: data, status: status, rec: rec || null };
+  }
+
+  function render(model, project) {
+    if (project) loadDescriptions(project.id);
+    var rec = project ? descs[project.id] : null;
+    if (kept && kept.model === model && kept.desc === rec) return kept.host;
+    var el = app.el;
+    var built = buildData(model, project);
+    var data = built.data;
     var k = data.kpi;
     var flowKey = sampleFlow(data);
     var entity = sampleEntity(data);
@@ -105,12 +129,84 @@
       el('div', { class: 'docs-inside' }, inside.map(function (x) {
         return el('div', { class: 'card docs-inside-item' }, [el('strong', { text: x[0] }), el('p', { class: 'muted', text: x[1] })]);
       })),
+      aiCard(data, built, project),
       el('h3', { class: 'docs-h', text: 'What it looks like' }),
       el('p', { class: 'muted docs-shots-note', text: 'These are the file’s own pages, drawn small from this project. In the file they are dark or light — the reader picks, or it follows the system.' }),
       shots
     ]);
-    kept = { model: model, host: host, data: data };
+    kept = { model: model, desc: rec, host: host, data: data };
     return host;
+  }
+
+  // ---------- descriptions for the business, written by an AI agent ----------
+  function aiCard(data, built, project) {
+    var el = app.el;
+    var rec = built.rec, st = built.status;
+    var own = 0;
+    data.modules.forEach(function (m) { if (!m.marketplace) own += m.microflows.length + m.nanoflows.length; });
+    var status = rec
+      ? el('p', { class: 'docs-ai-status' }, [
+          el('strong', { text: st.described + ' of ' + own + ' flows described' }),
+          document.createTextNode(st.stale ? ' · ' + st.stale + ' out of date (the flow changed after it was described)' : ''),
+          document.createTextNode(rec.value.app ? ' · with an overview of the application' + (rec.value.app.processes.length ? ' and ' + rec.value.app.processes.length + ' main processes' : '') : ''),
+          el('span', { class: 'hint', text: 'Imported ' + String(rec.importedAt || '').slice(0, 10) + (rec.fileName ? ' from ' + rec.fileName : '') + (rec.value.by ? ' · written by ' + rec.value.by : '') })
+        ])
+      : el('p', { class: 'muted', text: 'None yet. The documentation is complete without them; they add the sentences a business reader looks for.' });
+    return el('div', { class: 'card docs-ai' }, [
+      el('div', { class: 'docs-ai-text' }, [
+        el('h3', { text: 'Descriptions for the business — written by AI' }),
+        el('p', { class: 'muted', text: 'MxScout reads the model; it does not write prose about it. An AI agent on your own machine can: what the application is for, its main processes, a sentence on each microflow. Export the AI pack, give it to the agent with the mendix-describe skill, import the file it writes. In the documentation every such sentence is marked as written by AI.' }),
+        status
+      ]),
+      el('div', { class: 'docs-ai-act' }, [
+        el('button', { class: 'btn', text: 'Export AI pack', title: 'A text file: the model as the documentation reads it, one section per module', onclick: function () { exportPack(); } }),
+        el('button', { class: 'btn', text: 'Import descriptions…', onclick: function () { importDescriptions(project); } }),
+        rec ? el('button', { class: 'btn btn-ghost btn-sm', text: 'Remove descriptions', onclick: function () { removeDescriptions(project); } }) : null,
+        el('span', { class: 'hint', text: 'The pack is not encrypted — it is meant for an agent on this machine. Keep it where you keep the project.' })
+      ])
+    ]);
+  }
+
+  function exportPack() {
+    var data = current();
+    if (!data) return;
+    var p = window.MxDescribe.pack(data);
+    var name = String(data.project).replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') + '.mxscout-ai-pack.md';
+    app.downloadText(p.text, name, 'text/markdown');
+    app.setMessage('AI pack downloaded: ' + name + ' — ' + p.modules + ' modules, ' + p.flows + ' flows. Hand it to an agent with the mendix-describe skill.', 'ok');
+    app.render();
+  }
+
+  function importDescriptions(project) {
+    if (!project) return;
+    var input = app.el('input', { type: 'file', accept: '.json,application/json' });
+    input.style.display = 'none';
+    input.addEventListener('change', function () {
+      var file = input.files && input.files[0];
+      document.body.removeChild(input);
+      if (!file) return;
+      file.text().then(function (text) {
+        var parsed = window.MxDescribe.parse(text);
+        if (parsed.error) { app.setMessage(parsed.error, 'error'); app.render(); return; }
+        var row = { projectId: project.id, importedAt: new Date().toISOString(), fileName: file.name, value: parsed.value };
+        return app.store.put('descriptions', row).then(function () {
+          descs[project.id] = row; kept = null;
+          app.setMessage('Descriptions imported from ' + file.name + '.', 'ok');
+          app.render();
+        });
+      }).catch(function (err) { app.setMessage('Could not import the descriptions: ' + ((err && err.message) || err), 'error'); app.render(); });
+    });
+    document.body.appendChild(input);
+    input.click();
+  }
+
+  function removeDescriptions(project) {
+    if (!project) return;
+    app.store.delete('descriptions', project.id).then(function () {
+      descs[project.id] = null; kept = null;
+      app.setMessage('Descriptions removed. The file you imported them from is untouched.', 'ok');
+      app.render();
+    });
   }
 
   function current() { return kept ? kept.data : null; }

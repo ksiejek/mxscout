@@ -156,6 +156,22 @@
 .dx-table td { padding:6px 12px; border-bottom:1px solid var(--line); overflow-wrap:anywhere; }
 .dx-table tr:last-child td { border-bottom:0; }
 
+/* what an AI agent wrote: always marked, never mistaken for what the model says */
+.dx-ai { display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.03em; color:var(--f-call); border:1px solid color-mix(in srgb,var(--f-call) 45%,var(--line)); background:color-mix(in srgb,var(--f-call) 10%,var(--surface)); border-radius:999px; padding:0 7px; vertical-align:1px; white-space:nowrap; }
+.dx-stale { display:inline-block; margin-left:8px; font-size:11px; color:var(--f-if); border:1px dashed var(--f-if); border-radius:999px; padding:0 7px; }
+.dx-note.ai { border-left:3px solid var(--f-call); }
+.dx-about { padding:14px 18px; }
+.dx-about p { margin:0 0 8px; max-width:880px; color:var(--ink-2); }
+.dx-about p:last-child { margin-bottom:0; }
+.dx-about-who { color:var(--muted) !important; font-size:13px; }
+.dx-procs { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:10px; }
+.dx-proc { padding:14px 16px; display:flex; flex-direction:column; gap:8px; }
+.dx-proc-h { display:flex; align-items:center; gap:10px; }
+.dx-proc-n { width:24px; height:24px; border-radius:50%; display:grid; place-items:center; font-size:12px; font-weight:700; background:color-mix(in srgb,var(--brand) 18%,var(--surface)); color:var(--brand-strong); flex:none; }
+.dx-proc p { margin:0; font-size:13px; color:var(--ink-2); }
+.dx-proc ol { margin:0; padding-left:20px; font-size:12.5px; color:var(--ink-2); display:flex; flex-direction:column; gap:2px; }
+.dx-chip.dim { cursor:default; color:var(--muted); padding:3px 10px; }
+
 /* entry and exit */
 .dx-ends { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px; }
 .dx-end { border:1px solid var(--line); border-radius:10px; padding:10px 14px; background:var(--surface-2); min-width:0; }
