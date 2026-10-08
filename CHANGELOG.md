@@ -17,6 +17,125 @@ claim a version it is not.
 
 ## Unreleased
 
+### Documentation — the whole model, in one place and one encrypted file
+
+**Every project has a new Documentation section: everything the model says
+about itself, drawn as a documentation portal, and exportable as a single
+encrypted HTML file.** It is built from the model each time one is loaded —
+there is nothing to keep in step by hand — and it never leaves the browser
+except as the file you choose to export.
+
+- A rail of five views. **Start** is a hero and the project's numbers —
+  modules, microflows, nanoflows, pages, entities, roles, scheduled events,
+  published services. **Modules** is what each one holds, own modules before
+  Marketplace. **References** is every microflow, nanoflow and page, each on
+  its own page: what it takes and returns, who may run it, what it calls and
+  what calls it, and — for a flow — its **workflow drawn top to bottom**, the
+  same cards the mendix-docs skill produces, a decision's branches side by
+  side, loops as frames, error handling as a side path. **Domain** is each
+  entity with its attributes and access, and the entities that point to it and
+  that it points to. **Quality** is where the model looks unfinished: what
+  nothing reaches, entities with no access rule, microflows that skip entity
+  access, disabled steps.
+- A step that calls another flow opens it. A flow's page has **Open in
+  MxScout**, which brings up that object's own window — with the Studio Pro
+  drawing — over the documentation.
+- **Export is one HTML file, encrypted.** It carries the documentation (under
+  a fresh access code, the same WebCrypto envelope as the review report), the
+  reader's own source, and its stylesheet — nothing else. It opens in any
+  browser, asks for the code, and shows exactly what the app showed. The
+  documentation names an application's weak spots, so it is never written in
+  the clear; the code travels separately from the file. It is built in your
+  browser and handed to the download — the server never sees it, and nothing
+  is sent anywhere.
+
+A model imported as JSON carries no drawings, so its flows are listed without a
+workflow; load the model from the Mendix project folder to see them.
+
+### Microflows and nanoflows, drawn
+
+**A flow's window has a new Diagram tab: the flow drawn the way Studio Pro
+draws it.** MxScout has been reading the drawing out of the project file for a
+while — where every activity sits, how big it is, which side each arrow leaves
+and enters by, how it curves — and only handing it to MxScaffold. Now it draws
+it itself, for microflows and nanoflows alike.
+
+- Nothing is laid out: the boxes are where their author put them, so the
+  picture is the one the developer already knows. There is no layout library
+  behind it, and nothing new to install.
+- A box holds as much of its text as fits, wrapped; **hovering it shows all of
+  it** — the action, the variable, the XPath or expression, what it returns,
+  its documentation, whether it is disabled — in a card, not a tooltip.
+- Activities are coloured by what they do: read data, change objects, call
+  something, talk to the user, call outside the app. Decisions carry their
+  branch values on the arrows, error handlers are dashed red, loops are
+  containers with their steps inside.
+- A step that calls another microflow or nanoflow is a link: click it and that
+  flow opens on its own drawing. A step that opens a page or touches an entity
+  opens that page or entity.
+- It opens readable — at its start, near full size — with Fit one click away;
+  drag to move, Ctrl + wheel to zoom.
+
+A model imported as JSON carries no drawings, so its flows have no Diagram tab.
+
+### Log analysis — brought over from MxDevSwissTool
+
+**A new section in the sidebar, Log analysis: the log tools from
+[MxDevSwissTool](https://github.com/RealMecowhy/MxDevSwissTool), written by
+Mikołaj ([RealMecowhy](https://github.com/RealMecowhy)) and used here under
+its MIT licence.** The analysis is theirs — every parser, rule and heuristic
+was carried over unchanged, so MxScout reads a log the way their tool does,
+and their own test assertions run against the ported code in `npm test` to keep
+it that way. The licence text and the list of what came from where are in
+`THIRD-PARTY-NOTICES.md`; every ported file carries a header naming the
+original. The screens are MxScout's own.
+
+It works on a log with no project open: it is not part of a model. Eight tools
+over **one loaded file** — the bar under the tabs says what is loaded and hands
+it to the next tool, so a 60 MB log is read once:
+
+- **Log Viewer** — Studio Pro CSV, Mendix Cloud live logs, on-premises logs and
+  Grafana exports; stream with level, node and text filters, a records-over-time
+  chart you can drag to narrow, bookmarks, merge and undo, Insights, a Levels
+  Matrix, Correlation Flow, Sequence Diagram, Gantt Chart, and error
+  aggregation by signature.
+- **Query Extractor** — SQL, OQL, XPath and query plans out of a TRACE log, runnable
+  SQL with its parameters filled in, duplicates (N+1), slow queries, compare.
+- **Microflow Tracer** — executions, call trees, N+1 patterns, background runs.
+- **REST & WS** — consumed and published calls, paired with their responses.
+- **Error Decoder** — explains the mechanism behind an error and what to check.
+- **Nginx** — router access and error logs, p95/p99, whose fault each 404 is,
+  and a Timeline Correlator that lines requests up with runtime activity.
+- **Anonymizer** — masks addresses, tokens, ids and more before a log leaves.
+- **Incident Report** — one self-contained HTML file from what the tools show.
+
+**It is a section of the project, and that is where it earns its keep.** Open a
+project and *Logs* is in its list, beside Comments. Read there, a log is read
+against that project's model:
+
+- A warning or error that names a microflow, nanoflow, page or entity of the
+  project — or a PostgreSQL table such as `sales$order`, which is resolved to
+  its entity — carries a chip under the line. Click the name and the object
+  opens over the log; close it and you are back on the same line.
+- **⚑ Report** starts a comment on that object with the log lines, the time and
+  a severity from the level already written in. Nothing is saved until you save
+  it, and then it is an ordinary comment — in the object's Comments tab, on the
+  Comments page, in a report.
+- A new tab, **In your model**, ranks the objects the errors point at, with
+  their error and warning counts, and narrows the stream to any of them. The
+  same chips appear on the Insights breakdown, Aggregate Errors signatures,
+  the Microflow Tracer's execution, the Query Extractor's statement and the
+  Error Decoder.
+
+With no project open the same tools work under *Tools → Log analysis*, without
+the links.
+
+Nothing you load leaves the tab. Two things from the original were left out
+because they contact the network or are not log analysis: the Nginx
+analyzer's geolocation lookup, and the rest of MxDevSwissTool's toolbox. Its
+charting libraries are replaced by charts drawn directly, so MxScout still has
+no third-party code beyond the licence notice above.
+
 ### "Reached from" was pointing at the wrong document, and sometimes at none
 
 **A microflow that said "nothing in this model reaches this" was often wrong.**

@@ -119,6 +119,7 @@
           close();
           app.state.about = null;
           app.state.guide = null;
+          app.state.logs = null;
           app.state.newProject.open = false;
           if (app.state.activeId === p.id && app.state.detail) { app.render(); return; }
           app.openProject(p.id).then(render);

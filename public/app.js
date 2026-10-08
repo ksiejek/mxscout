@@ -63,6 +63,13 @@
     // Same top-level-screen treatment as About: null when closed, truthy
     // while open, and mutually exclusive with it (see openGuide/openAbout).
     guide: null,
+    // Log analysis — the Log Viewer, Query Extractor, Microflow Tracer and the
+    // rest (see public/logs/). A top-level screen like About and Getting
+    // started: it needs no project, so opening it leaves the open project
+    // alone, and it is mutually exclusive with those two. The module keeps
+    // its own state (a loaded log is large and lives in memory only), so
+    // this is only the flag that says whether it is on screen.
+    logs: null,
     // Set by openProject() while a project is open, cleared by closeProject().
     // Holds the PARSED model (kept out of the project index so the list stays
     // cheap) plus everything the browsing views need — which view is active,
@@ -672,6 +679,13 @@
     { key: 'security', label: 'Security', countKey: null },
     { key: 'performance', label: 'Performance', countKey: null },
     { key: 'comments', label: 'Comments', countKey: null },
+    // Everything the model says about itself, drawn in the mendix-docs look and
+    // exportable as one encrypted HTML file. Rebuilt from the model, so no
+    // count: it is the whole project, not a pile of one kind of thing.
+    { key: 'docs', label: 'Documentation', countKey: null },
+    // The project's logs, read against its own model: a warning that names a microflow opens that
+    // microflow, and can be turned into a comment on it. Also reachable with no project open (Tools).
+    { key: 'logs', label: 'Logs', countKey: null },
     { key: 'live', label: 'Live app', countKey: null, apart: true },
     { key: 'settings', label: 'Settings', countKey: null, apart: true }
   ];
@@ -703,6 +717,7 @@
   function goToSection(key) {
     state.about = null;
     state.guide = null;
+    state.logs = null;
     state.newProject.open = false;
     state.detail.view = key;
     state.detail.selectedEntity = null;
@@ -721,6 +736,7 @@
           if (isActive) return;
           state.about = null;
           state.guide = null;
+          state.logs = null;
           state.newProject.open = false;
           openProject(project.id).then(render);
         }
@@ -771,6 +787,7 @@
       onclick: function () {
         state.about = null;
         state.guide = null;
+        state.logs = null;
         state.newProject.open = true;
         setMessage(null);
         render();
@@ -778,13 +795,27 @@
     });
 
     var allProjects = el('button', {
-      class: 'tree-all' + ((!state.detail && !state.about && !state.guide) ? ' active' : ''),
+      class: 'tree-all' + ((!state.detail && !state.about && !state.guide && !state.logs) ? ' active' : ''),
       text: 'All projects',
       onclick: function () {
         state.about = null;
         state.guide = null;
+        state.logs = null;
         state.newProject.open = false;
         closeProject();
+        render();
+      }
+    });
+
+    // Log analysis lives under its own heading rather than among the projects:
+    // a log is not part of a model, and the screen works with none open. Same
+    // toggle as About and Getting started — pressing it again leaves it.
+    var logsBtn = el('button', {
+      class: 'tree-all' + (state.logs ? ' active' : ''),
+      text: 'Log analysis',
+      title: 'Read a Mendix log: Log Viewer, Query Extractor, Microflow Tracer, REST & WS, Error Decoder, Nginx, Anonymizer, Incident Report',
+      onclick: function () {
+        if (state.logs) closeLogs(); else openLogs();
         render();
       }
     });
@@ -830,9 +861,13 @@
       newBtn,
       el('div', { class: 'sidebar-scroll' }, [
         allProjects,
+        // With a project open, logs are one of ITS sections (below) — this entry is for reading a log with no
+        // model, and two doors to the same screen would disagree about whether it knows the project.
+        (state.activeId && state.detail) ? null : el('div', { class: 'sidebar-label', text: 'Tools' }),
+        (state.activeId && state.detail) ? null : logsBtn,
         el('div', { class: 'sidebar-label', text: 'Projects' }),
         renderProjectTree()
-      ]),
+      ].filter(Boolean)),
       el('div', { class: 'sidebar-foot' }, [guide, about, versionBtn])
     ]);
   }
@@ -2137,6 +2172,7 @@
   function openAbout() {
     state.about = { health: null };
     state.guide = null;
+    state.logs = null;
     setMessage(null);
     // Version comes from the running server rather than a constant in this
     // file, so the page can never claim a version that isn't the one serving
@@ -2151,6 +2187,70 @@
     setMessage(null);
   }
 
+  // ---------- log analysis ----------
+  // The screens and the engines behind them live in public/logs/. All that
+  // belongs here is whether the section is showing: opening it leaves the
+  // open project exactly as it was, and the module keeps its own state — a
+  // loaded log is large, lives in memory only, and must survive this file
+  // redrawing the page around it.
+  function openLogs(toolId) {
+    state.logs = {};
+    state.about = null;
+    state.guide = null;
+    state.newProject.open = false;
+    setMessage(null);
+    window.MxLogs.open(toolId);
+  }
+
+  function closeLogs() {
+    state.logs = null;
+    setMessage(null);
+  }
+
+  // The open project's model, handed to the log screen: a PostgreSQL message names a table (`shop$order`)
+  // where a developer thinks in entities (`Shop.Order`), and a warning that says `Sales.ACT_Save` can open
+  // that microflow and be turned into a comment on it. Only the model of the OPEN project is ever offered,
+  // and it is withdrawn when none is. Rebuilt only when the model object itself changes, not on every redraw.
+  var lastLogModel;
+  var LOG_SECTIONS = [['entities', 'entity'], ['microflows', 'microflow'], ['nanoflows', 'nanoflow'], ['pages', 'page']];
+  function syncLogEntities() {
+    var model = state.detail ? state.detail.model : null;
+    if (model === lastLogModel) return;
+    lastLogModel = model;
+    if (!model) {
+      window.MxLogs.setTableMap(null);
+      window.MxLogs.setEntityResolver(null);
+      window.MxLogs.setModel(null);
+      return;
+    }
+    var index = {}, tables = {};
+    LOG_SECTIONS.forEach(function (pair) {
+      (model[pair[0]] || []).forEach(function (item) {
+        if (!item || !item.qualifiedName) return;
+        index[item.qualifiedName] = { kind: pair[1], section: pair[0], qualifiedName: item.qualifiedName, module: item.module, name: item.name };
+        if (pair[0] === 'entities') tables[item.qualifiedName.replace('.', '$').toLowerCase()] = item.qualifiedName;
+      });
+    });
+    window.MxLogs.setTableMap(tables);
+    window.MxLogs.setEntityResolver(function (table) { return tables[String(table).toLowerCase()] || null; });
+    var project = findProject(state.activeId);
+    window.MxLogs.setModel({
+      projectName: project ? project.name : 'This project',
+      index: index,
+      tables: tables,
+      // Open it as an ASIDE, over the log: closing it puts the reader back on the same line.
+      open: function (o) { peekObject(o.section, { name: o.name, qualifiedName: o.qualifiedName }); },
+      // Start a comment on it, with the log lines already written in. Nothing is saved until Save comment.
+      report: function (o, draft) {
+        var item = (model[o.section] || []).filter(function (x) { return x.qualifiedName === o.qualifiedName; })[0] || o;
+        window.MxComments.openEditor(commentTargetFor(o.section, item), null, draft);
+      },
+      findings: function (o) {
+        return window.MxComments.findingsFor(o.qualifiedName).filter(function (f) { return f.status === 'open'; }).length;
+      }
+    });
+  }
+
   // ---------- guide (the Getting started walkthrough) ----------
   // The document itself lives in guide.js, built the same way about.js is —
   // data rendered by one function. Nothing here needs a project or the
@@ -2158,12 +2258,27 @@
   function openGuide() {
     state.guide = {};
     state.about = null;
+    state.logs = null;
     setMessage(null);
   }
 
   function closeGuide() {
     state.guide = null;
+    state.logs = null;
     setMessage(null);
+  }
+
+  // The Logs section of the open project (as opposed to the model-less Tools entry, state.logs).
+  function logsInProject() {
+    return !!(state.detail && state.activeId && state.detail.view === 'logs' &&
+      !state.about && !state.guide && !state.newProject.open && !state.storageError);
+  }
+
+  // The Documentation section carries its own chrome (a top bar, a rail), so it
+  // renders full-bleed like the logs, outside the usual detail head.
+  function docsInProject() {
+    return !!(state.detail && state.activeId && state.detail.view === 'docs' &&
+      !state.about && !state.guide && !state.newProject.open && !state.storageError);
   }
 
   // ---------- render ----------
@@ -2178,6 +2293,11 @@
       body = window.MxAbout.render(state.about.health ? state.about.health.version : null);
     } else if (state.guide) {
       body = window.MxGuide.render();
+    } else if (state.logs || logsInProject()) {
+      syncLogEntities();
+      body = window.MxLogs.render();
+    } else if (docsInProject()) {
+      body = window.MxDocs.render(state.detail.model, findProject(state.activeId));
     } else if (state.storageError) {
       body = el('div', { class: 'empty' }, [
         el('h2', { text: 'This browser’s storage is unavailable' }),
@@ -2199,12 +2319,16 @@
     // reading width a real project's role table wrapped chips mid-name.
     // About stays at reading width — its tables and paragraphs both read
     // better narrow than stretched across a wide screen.
-    var d = (state.about || state.guide || state.newProject.open) ? null : state.detail;
+    var showingLogs = !!(state.logs || logsInProject());
+    var showingDocs = docsInProject();
+    var d = (state.about || state.guide || state.logs || state.newProject.open) ? null : state.detail;
     var fullBleed = d && (
       d.view === 'microflows' || d.view === 'nanoflows' || d.view === 'pages' || d.view === 'entities' ||
       d.view === 'comments' || d.view === 'performance' || d.view === 'security' || d.view === 'explorer'
     );
-    var wrap = el('div', { class: 'content-wrap' + (fullBleed ? ' wide' : '') }, [body]);
+    // Log analysis takes the whole width AND the whole height: a log is wide,
+    // and its lists scroll inside the screen rather than the page.
+    var wrap = el('div', { class: 'content-wrap' + ((fullBleed || showingLogs || showingDocs) ? ' wide' : '') + (showingLogs ? ' lg-wrap' : '') + (showingDocs ? ' dx-wrap' : '') }, [body]);
     if (state.message) {
       var msgNode = el('div', { class: 'msg ' + state.message.kind, text: state.message.text });
       if (state.message.action) {
@@ -2220,6 +2344,8 @@
       renderSidebar(),
       el('main', { class: 'main' }, [wrap])
     ]));
+    // Put back what a detach took: scroll positions inside the log screen.
+    if (showingLogs) window.MxLogs.afterAttach();
 
     // The package dialogs sit above everything else that is not the palette:
     // both are mid-transaction, and losing one to a stray click would lose an
@@ -2237,6 +2363,9 @@
     var reportModal = window.MxComments.renderReportModal();
     if (reportModal) { app.appendChild(reportModal); return; }
 
+    var docsExportModal = window.MxDocs.renderExportModal();
+    if (docsExportModal) { app.appendChild(docsExportModal); return; }
+
     var commentEditor = window.MxComments.renderEditor();
     if (commentEditor) app.appendChild(commentEditor);
 
@@ -2251,7 +2380,7 @@
 
     // Every modal belongs to a screen underneath it; none of them may float
     // over the About page or the guide.
-    if (state.about || state.guide) return;
+    if (state.about || state.guide || state.logs) return;
 
     if (state.confirmDelete) {
       var modal = renderConfirmDelete();
@@ -2483,6 +2612,11 @@
   // Reading a row-level rule is its own topic, and two screens ask about it:
   // the access matrix and the Security section.
   window.MxAccessRule.init({ el: el, state: state, findEntity: findEntity });
+  // The drawing of a flow — read, never laid out — for the flow window's Diagram tab.
+  window.MxFlowDraw.init({ el: el });
+  // The Documentation section, built from the model and exportable as one
+  // encrypted HTML file.
+  window.MxDocs.init({ el: el, state: state, render: render, peekObject: peekObject, findProject: findProject, downloadText: downloadText });
   window.MxObjects.init({
     el: el, state: state, render: render, setMessage: setMessage,
     withMod: withMod, moduleRoleSetFor: moduleRoleSetFor,
