@@ -104,6 +104,21 @@
     // documentation is read from the model and says so; these are not, and a
     // reader must be able to tell the two apart at a glance.
     function aiMark() { return h('span', { class: 'dx-ai', title: 'Written by an AI agent from this model, not read from it', text: '✦ AI' }); }
+
+    // The long layer of the business narrative (skills/mendix-describe/reference/business-narrative.md):
+    // under a summary that is always shown, folded, and opened by the reader. Paragraphs are split on a
+    // blank line and set as text — the file is somebody else's writing.
+    function story(text) {
+      if (!text) return null;
+      var paras = String(text).split(/\n\s*\n/).map(function (p) { return p.replace(/\s*\n\s*/g, ' ').trim(); }).filter(Boolean);
+      if (!paras.length) return null;
+      return h('details', { class: 'dx-more' }, [
+        h('summary', { text: 'Read the full description' }),
+        h('div', { class: 'dx-more-body' }, paras.map(function (p) { return h('p', { text: p }); }))
+      ]);
+    }
+    // A module's description used to be one string; a file imported before the two layers still is.
+    function layers(v) { return typeof v === 'string' ? { summary: v, story: null } : v || { summary: null, story: null }; }
     function kindClass(kind) { return kind === 'nanoflow' ? ' nf' : kind === 'page' ? ' pg' : kind === 'entity' ? ' en' : ''; }
 
     // MxScout's mark: a model is a graph, so the mark is one.
@@ -553,15 +568,22 @@
           tile(k.services, 'published services')
         ]));
         var app = data.ai && data.ai.app;
-        if (app && (app.summary || app.processes.length)) {
+        if (app && (app.summary || app.story || app.processes.length)) {
           main.appendChild(h('h3', { class: 'dx-h' }, ['About the application ', aiMark()]));
-          if (app.summary) main.appendChild(h('div', { class: 'dx-card dx-about' }, [h('p', { text: app.summary }), app.audience ? h('p', { class: 'dx-about-who', text: app.audience }) : null]));
+          if (app.summary || app.story) {
+            main.appendChild(h('div', { class: 'dx-card dx-about' }, [
+              app.summary ? h('p', { class: 'dx-lead', text: app.summary }) : null,
+              app.audience ? h('p', { class: 'dx-about-who', text: app.audience }) : null,
+              story(app.story)
+            ]));
+          }
           if (app.processes.length) {
             main.appendChild(h('h3', { class: 'dx-h' }, ['Main processes ', aiMark()]));
             main.appendChild(h('div', { class: 'dx-procs' }, app.processes.map(function (pr, i) {
               return h('div', { class: 'dx-card dx-proc' }, [
                 h('div', { class: 'dx-proc-h' }, [h('span', { class: 'dx-proc-n', text: String(i + 1) }), h('b', { text: pr.name })]),
-                pr.summary ? h('p', { text: pr.summary }) : null,
+                pr.summary ? h('p', { class: 'dx-lead', text: pr.summary }) : null,
+                story(pr.story),
                 pr.steps.length ? h('ol', null, pr.steps.map(function (x) { return h('li', { text: x }); })) : null,
                 pr.flows.length ? h('div', { class: 'dx-chips' }, pr.flows.map(function (qn) {
                   var key = ['microflow', 'nanoflow', 'page'].map(function (k) { return k + ':' + qn; }).filter(function (k) { return data.flows[k]; })[0];
@@ -606,7 +628,13 @@
         main.appendChild(crumbs([['Overview', function () { go({ view: 'start' }); }], ['Modules'], [m.name]]));
         main.appendChild(h('div', { class: 'dx-card dx-head' }, [h('span', { class: 'dx-badge big' + (m.marketplace ? ' mk' : ''), text: m.marketplace ? 'MP' : 'MOD' }),
           h('div', null, [h('h2', { class: 'mono', text: m.name }), h('p', { text: m.marketplace ? 'Marketplace module' : 'Own module' })])]));
-        if (data.ai && data.ai.modules[m.name]) main.appendChild(h('div', { class: 'dx-note ai' }, [aiMark(), ' ', data.ai.modules[m.name]]));
+        var md = data.ai && data.ai.modules[m.name] ? layers(data.ai.modules[m.name]) : null;
+        if (md && (md.summary || md.story)) {
+          main.appendChild(h('div', { class: 'dx-card dx-about dx-mod-about' }, [
+            h('p', { class: 'dx-lead' }, [aiMark(), ' ', md.summary || '']),
+            story(md.story)
+          ]));
+        }
         main.appendChild(h('div', { class: 'dx-kpis four' }, [tile(m.microflows.length, 'microflows'), tile(m.nanoflows.length, 'nanoflows'), tile(m.pages.length, 'pages'), tile(m.entities.length, 'entities')]));
         [['Microflows', m.microflows], ['Nanoflows', m.nanoflows], ['Pages', m.pages]].forEach(function (sec) {
           if (!sec[1].length) return;

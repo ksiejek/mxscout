@@ -180,7 +180,8 @@ the stored model (no server, no live app needed):
   it and nothing is sent anywhere. A flow's **Diagram** tab in MxScout draws
   the same workflow with the same code, with Studio Pro's own layout one
   click away. **Descriptions for the business** — what the app is for, its
-  main processes, a sentence per flow — come from an AI agent outside
+  main processes and its modules, each as a short summary with a long
+  description folded under it, and a sentence per flow — come from an AI agent outside
   MxScout: export the **AI pack**, run the `mendix-describe` skill on it,
   import the file it writes. Every such sentence is marked ✦ AI.
 
@@ -485,9 +486,13 @@ To use it, copy that folder into `~/.claude/skills/`.
 
 `skills/mendix-describe/` writes what MxScout cannot: prose. Give an agent
 the **AI pack** (Documentation → **Export AI pack**) and it writes, for a
-business reader, what the application is for, its main processes, and a
-sentence or two on each module, microflow and nanoflow — as a descriptions
-file you import back (Documentation → **Import descriptions…**).
+business reader, what the application is for, its main processes and its
+modules — each in two layers, a summary of a few sentences and a long
+description of several paragraphs — and a sentence or two on each microflow
+and nanoflow, as a descriptions file you import back (Documentation →
+**Import descriptions…**). The two layers are defined once, in
+[`reference/business-narrative.md`](skills/mendix-describe/reference/business-narrative.md),
+and the mendix-docs skill writes its business document by the same file.
 
 The pack is built to be cheap to read: Marketplace modules are left out, an
 index at the top gives each module's line range so the agent reads one module

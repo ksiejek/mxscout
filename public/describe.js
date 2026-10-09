@@ -26,6 +26,7 @@
   var PACK_FORMAT = 'mxscout-ai-pack';
   var DESC_FORMAT = 'mxscout-descriptions';
   var MAX_VALUE = 200;
+  var STORY_MAX = 16000;   // a long description: several paragraphs, ~1,200 words at the most the brief asks for
 
   // ---------- fingerprints ----------
   // FNV-1a over what a description is ABOUT: the flow's inputs, result and
@@ -176,12 +177,14 @@
       project: str(raw.project, 200), language: str(raw.language, 20), by: str(raw.by, 200), written: str(raw.written, 40),
       app: null, modules: {}, microflows: {}, nanoflows: {}, pages: {}, entities: {}
     };
+    // The application, its processes and its modules come in two layers (skills/mendix-describe/reference/
+    // business-narrative.md): a summary that is always shown and a story folded under it. Both are text.
     if (raw.app && typeof raw.app === 'object') {
       out.app = {
-        summary: str(raw.app.summary, 6000), audience: str(raw.app.audience, 1000),
+        summary: str(raw.app.summary, 6000), story: str(raw.app.story, STORY_MAX), audience: str(raw.app.audience, 1000),
         processes: (Array.isArray(raw.app.processes) ? raw.app.processes : []).slice(0, 40).map(function (p) {
           return p && typeof p === 'object' ? {
-            name: str(p.name, 200), summary: str(p.summary, 2000),
+            name: str(p.name, 200), summary: str(p.summary, 2000), story: str(p.story, STORY_MAX),
             steps: (Array.isArray(p.steps) ? p.steps : []).map(function (s) { return str(s, 600); }).filter(Boolean).slice(0, 30),
             flows: (Array.isArray(p.flows) ? p.flows : []).map(function (s) { return str(s, 300); }).filter(Boolean).slice(0, 60)
           } : null;
@@ -192,8 +195,8 @@
       if (!src || typeof src !== 'object') return;
       Object.keys(src).forEach(function (k) {
         var v = src[k];
-        var text = typeof v === 'string' ? str(v) : (v && typeof v === 'object' ? str(v.text) : null);
-        if (text) into[k] = { text: text, hash: v && typeof v === 'object' ? str(v.hash, 16) : null };
+        var text = typeof v === 'string' ? str(v) : (v && typeof v === 'object' ? str(v.text) || str(v.summary) : null);
+        if (text) into[k] = { text: text, hash: v && typeof v === 'object' ? str(v.hash, 16) : null, story: v && typeof v === 'object' ? str(v.story, STORY_MAX) : null };
       });
     }
     // One table per kind: a microflow and a page may share a qualified name.
@@ -224,7 +227,7 @@
     Object.keys(data.entities).forEach(function (q) { if (d.entities[q]) data.entities[q].desc = d.entities[q].text; });
     data.ai = {
       app: d.app, by: d.by, written: d.written, language: d.language,
-      modules: Object.keys(d.modules).reduce(function (o, k) { o[k] = d.modules[k].text; return o; }, {})
+      modules: Object.keys(d.modules).reduce(function (o, k) { o[k] = { summary: d.modules[k].text, story: d.modules[k].story || null }; return o; }, {})
     };
     return { described: described, stale: stale, missing: missing };
   }

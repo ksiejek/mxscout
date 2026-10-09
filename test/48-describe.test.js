@@ -62,16 +62,28 @@ module.exports = async function (t) {
   t.ok(before.flows === flowNames.length + Object.keys(pack.nanoflows).length && before.overview,
     'with nothing described, todo lists every flow and the missing overview: ' + before.flows);
 
+  // The application, its processes and its modules in the two layers of reference/business-narrative.md.
+  const STORY = 'Sales is where the shop keeps its orders, from the moment a clerk opens one until it is paid and shipped. Without it the shop would track orders on paper, and nobody would know which customer is waiting for what.\n\n' +
+    'A clerk opens a new order for a customer, adds what was bought, and saves it. The model does not show who approves large orders, if anyone does.';
   const desc = {
     format: 'mxscout-descriptions', version: 1, project: 'DescDemo', language: 'en', by: 'test agent',
-    app: { summary: 'Takes orders and keeps them tidy.', audience: 'Sales staff.',
-      processes: [{ name: 'Taking an order', summary: 'A clerk records an order.', steps: ['Open a new order', 'Save it'], flows: ['Sales.CreateOrder'] }] },
-    modules: { Sales: 'Orders and customers.' },
+    app: { summary: 'Takes orders and keeps them tidy.', story: STORY, audience: 'Sales staff.',
+      processes: [{ name: 'Taking an order', summary: 'A clerk records an order.', story: STORY, steps: ['Open a new order', 'Save it'], flows: ['Sales.CreateOrder'] }] },
+    modules: { Sales: { summary: 'Orders and customers.', story: STORY } },
     microflows: { 'Sales.CreateOrder': { hash: pack.microflows['Sales.CreateOrder'].hash, text: 'Opens a fresh order for a customer.' } }
   };
   const after = todo(pack, desc);
-  t.ok(after.flows === before.flows - 1 && !after.overview, 'a described flow drops off the list: ' + after.flows + ' left');
+  t.ok(after.flows === before.flows - 1 && !after.overview && !after.overviewStory && after.shortModules.length === 0, 'a described flow drops off the list: ' + after.flows + ' left');
   t.ok(check(pack, desc).filter((p) => p.level === 'error').length === 0, 'a correct file passes the check');
+  t.ok(check(pack, desc).filter((p) => /story/.test(p.text)).length === 0, 'and both layers are there for the application, its process and its module');
+  const short = JSON.parse(JSON.stringify(desc));
+  delete short.app.story; short.modules.Sales = 'Orders and customers.';
+  const shortWarn = check(pack, short).filter((p) => /no "story"/.test(p.text)).map((p) => p.text.split(':')[0]);
+  t.ok(shortWarn.indexOf('app') !== -1 && shortWarn.indexOf('modules Sales') !== -1 && todo(pack, short).shortModules[0] === 'Sales' && todo(pack, short).overviewStory,
+    'a summary without its long description is flagged, by check and by todo: ' + JSON.stringify(shortWarn));
+  const listy = JSON.parse(JSON.stringify(desc));
+  listy.app.story = '- orders\n- customers\n- **payments**';
+  t.ok(check(pack, listy).some((p) => /app: the story carries markup/.test(p.text)), 'and a story written as a list is flagged: it is shown as text');
   const stale = JSON.parse(JSON.stringify(desc));
   stale.microflows['Sales.CreateOrder'].hash = '00000000';
   t.ok(check(pack, stale).some((p) => p.level === 'warning' && /does not match/.test(p.text)) && todo(pack, stale).flows === before.flows,
@@ -107,6 +119,23 @@ module.exports = async function (t) {
     'the overview shows “About the application”, marked as AI');
   t.ok(await mx.evaluate(`/descriptions marked ✦ AI/.test(document.querySelector('.docs-shot .dx-hero').textContent)`),
     'and the overview no longer claims nothing in it was written by a machine');
+
+  // The two layers on screen: the summary shown, the story folded under it, one block under another.
+  const shown = JSON.parse(await mx.evaluate(`JSON.stringify((function () {
+    var about = document.querySelector('.docs-shot .dx-about'), more = about && about.querySelector('details.dx-more');
+    var procs = document.querySelector('.docs-shot .dx-procs');
+    return { lead: about && about.querySelector('.dx-lead').textContent, folded: !!more && !more.open, label: more && more.querySelector('summary').textContent,
+      paras: more ? more.querySelectorAll('.dx-more-body p').length : 0, procFold: !!(procs && procs.querySelector('.dx-proc details.dx-more')),
+      vertical: procs ? getComputedStyle(procs).flexDirection : null };
+  })())`));
+  t.ok(shown.lead === 'Takes orders and keeps them tidy.' && shown.folded && shown.label === 'Read the full description',
+    'the application’s summary is shown, and its description is folded under it: ' + JSON.stringify(shown));
+  const mod = JSON.parse(await mx.evaluate(`JSON.stringify(MxDocs.current().ai.modules.Sales)`));
+  t.ok(mod && mod.summary === 'Orders and customers.' && /paid and shipped/.test(mod.story), 'a module carries both layers into the documentation');
+  const old = await mx.evaluate(`(function () { var v = MxDescribe.parse(JSON.stringify({ format: 'mxscout-descriptions', version: 1, modules: { Sales: 'Orders and customers.' } })).value; return v && v.modules.Sales.text; })()`);
+  t.ok(old === 'Orders and customers.', 'and a file from before the two layers, a module as one string, is still read — as its summary');
+  t.ok(shown.paras === 2 && shown.procFold, 'the description keeps its paragraphs, and a process has its own fold');
+  t.ok(shown.vertical === 'column', 'the processes stand one under another, not as tiles side by side');
   t.ok(await mx.evaluate(`!!Array.from(document.querySelectorAll('.docs-ai button')).find(b => b.textContent === 'Export AI pack')`), 'the pack is one button away');
 
   // A flow that changed after it was described says so.

@@ -17,6 +17,23 @@ claim a version it is not.
 
 ## Unreleased
 
+### The business description: a summary on top, the long story under it
+
+- **The application, each main process and each module now come in two
+  layers**: a summary of two to four sentences, always shown, and a long
+  description of several paragraphs under it, folded behind *Read the full
+  description*. The main processes stand one under another instead of as
+  tiles side by side.
+- **One definition for both tools.** What a summary and a description are,
+  how long, and how they are shown is written once, in
+  `skills/mendix-describe/reference/business-narrative.md`; the mendix-describe
+  skill writes by it, and so will the mendix-docs skill's business document.
+- The descriptions file gains `story` next to `summary` for the application
+  and each process, and a module may be `{ "summary", "story" }`. A file
+  written before still imports: a module's single sentence is read as its
+  summary. `check-descriptions.js` flags a summary without its story, a
+  summary that runs long, and a story written as a list.
+
 ### Log analysis, cut to what a log is read for
 
 - **Log analysis is one viewer now: the stream, Insights and the slow

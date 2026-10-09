@@ -169,16 +169,29 @@
 /* what an AI agent wrote: always marked, never mistaken for what the model says */
 .dx-ai { display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.03em; color:var(--f-call); border:1px solid color-mix(in srgb,var(--f-call) 45%,var(--line)); background:color-mix(in srgb,var(--f-call) 10%,var(--surface)); border-radius:999px; padding:0 7px; vertical-align:1px; white-space:nowrap; }
 .dx-stale { display:inline-block; margin-left:8px; font-size:11px; color:var(--f-if); border:1px dashed var(--f-if); border-radius:999px; padding:0 7px; }
-.dx-note.ai { border-left:3px solid var(--f-call); }
 .dx-about { padding:14px 18px; }
 .dx-about p { margin:0 0 8px; max-width:880px; color:var(--ink-2); }
 .dx-about p:last-child { margin-bottom:0; }
 .dx-about-who { color:var(--muted) !important; font-size:13px; }
-.dx-procs { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:10px; }
-.dx-proc { padding:14px 16px; display:flex; flex-direction:column; gap:8px; }
+/* The business narrative: one block under another, full width — never tiles side by side
+   (skills/mendix-describe/reference/business-narrative.md). The summary leads; the story folds under it. */
+.dx-lead { font-size:14.5px; line-height:1.6; color:var(--ink) !important; max-width:820px; }
+.dx-mod-about { margin-bottom:14px; }
+.dx-more { margin-top:4px; max-width:820px; }
+.dx-more > summary { cursor:pointer; list-style:none; display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; color:var(--brand-strong); padding:4px 0; }
+.dx-more > summary::-webkit-details-marker { display:none; }
+.dx-more > summary::before { content:'▸'; font-size:11px; transition:transform .15s; }
+.dx-more[open] > summary::before { transform:rotate(90deg); }
+.dx-more > summary:hover { text-decoration:underline; }
+.dx-more-body { margin-top:6px; padding:4px 0 2px 14px; border-left:2px solid color-mix(in srgb,var(--brand) 35%,var(--line)); }
+.dx-more-body p { margin:0 0 10px !important; font-size:14px !important; line-height:1.7; color:var(--ink-2); }
+.dx-more-body p:last-child { margin-bottom:0 !important; }
+.dx-procs { display:flex; flex-direction:column; gap:10px; }
+.dx-proc { padding:14px 18px; display:flex; flex-direction:column; gap:8px; }
 .dx-proc-h { display:flex; align-items:center; gap:10px; }
 .dx-proc-n { width:24px; height:24px; border-radius:50%; display:grid; place-items:center; font-size:12px; font-weight:700; background:color-mix(in srgb,var(--brand) 18%,var(--surface)); color:var(--brand-strong); flex:none; }
 .dx-proc p { margin:0; font-size:13px; color:var(--ink-2); }
+.dx-proc p.dx-lead { font-size:14px; }
 .dx-proc ol { margin:0; padding-left:20px; font-size:12.5px; color:var(--ink-2); display:flex; flex-direction:column; gap:2px; }
 .dx-chip.dim { cursor:default; color:var(--muted); padding:3px 10px; }
 
