@@ -1,6 +1,6 @@
 ---
 name: mendix-describe
-description: Write business-readable documentation of a Mendix application from an MxScout AI pack — what the application is for, its main processes and its modules, each as a short summary and a long description, and one or two sentences on each microflow and nanoflow — as a descriptions file MxScout imports into its Documentation. Use when given a `.mxscout-ai-pack.md` file, or asked to describe or document a Mendix app for the business from MxScout's export.
+description: Write business-readable documentation of a Mendix application from an MxScout AI pack — what the application is for, its main processes and its modules, each as a short summary and a long description, and one or two sentences on each microflow and nanoflow, the risks in the model ranked P1–P3, and what a developer should know before changing it — as a descriptions file MxScout imports into its Documentation. Use when given a `.mxscout-ai-pack.md` file, or asked to describe or document a Mendix app for the business from MxScout's export.
 ---
 
 # Describing a Mendix application for the business
@@ -53,13 +53,18 @@ The pack is large (a real app is ~1.7 MB, ~470k tokens). Never read it whole.
    microflow and nanoflow, and of the module itself — its `story` first, then
    its `summary` from the story. Pages and entities are
    optional: describe the ones a business reader would look up (main screens,
-   main records), skip technical ones. Modules are independent — you may hand
-   them to parallel subagents, one module each, each writing its own part.
+   main records), skip technical ones. While you are in the module, also note
+   in the same part what you will not see again: its `risks`, ranked by
+   `reference/risk-levels.md`, and its `context` — where things are that
+   their names hide, the naming it follows, and what breaks easily. Modules
+   are independent — you may hand them to parallel subagents, one module each,
+   each writing its own part.
 4. **Then the application.** From the module descriptions you wrote — not by
    re-reading the pack — write `app`: its story and summary, who uses it, and
    the main processes (3–8), each with its own story and summary, a few steps a
-   person takes, and the flows that carry it. Put it in
-   `descriptions.app.json`.
+   person takes, and the flows that carry it. Add the risks that span modules,
+   and the conventions the whole application shares. Put it in
+   `descriptions.app.json`. Merging adds the parts' risks and context up.
 5. **Merge and check:**
 
    ```
@@ -102,10 +107,29 @@ entity.
   the flow changes.
 - **No secrets, no data.** The pack holds none, and you add none.
 
+### Risks and context
+
+- **Rank by `reference/risk-levels.md`,** the same definition mendix-docs
+  ranks by. The worst consequence the model shows decides the level. What
+  depends on something the model does not show is at most P2, and says what
+  must be confirmed. One risk per cause, with every place it is in.
+- **A risk is for someone who will fix it:** the title says what is wrong, the
+  `detail` why it matters, `where` the qualified names, the `fix` what to do in
+  one sentence.
+- **The context is for whoever changes the model next** — a developer or an
+  agent. Write what the names do not tell: where a rule really lives, which flow
+  must be used instead of a direct change, which convention the modules keep.
+  Do not restate what the documentation already shows (parameters, callers,
+  steps).
+- **No questions for the owner.** If something cannot be read from the model,
+  say so in the risk or the pitfall it belongs to.
+
 ## Files
 
 - `reference/pack-format.md` — how to read the pack, line by line.
 - `reference/descriptions-format.md` — the JSON you write, with an example.
 - `reference/business-narrative.md` — the two layers: what a summary and a
   description are, how long, how they are shown. Shared with mendix-docs.
+- `reference/risk-levels.md` — what P1, P2 and P3 mean and how to calibrate
+  them. Shared with mendix-docs.
 - `check-descriptions.js` — `todo`, `check`, `merge`. Node only, no install.

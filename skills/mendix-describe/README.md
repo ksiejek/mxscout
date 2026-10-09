@@ -3,7 +3,9 @@
 How to have an AI agent write the business descriptions for a project you
 have in MxScout: what the application is for, its main processes and its
 modules — each as a short summary and a long description of several
-paragraphs — and a sentence or two on each microflow and nanoflow. MxScout reads the
+paragraphs — a sentence or two on each microflow and nanoflow, the risks it
+sees ranked P1 to P3, and what a developer should know before changing the
+model. MxScout reads the
 model; it does not write prose about it. This skill does, on your machine,
 from a file MxScout exports — no MCP server, no Studio Pro, no connection to
 anything.
@@ -50,7 +52,8 @@ Work module by module, in parallel subagents: per module a
 descriptions.<Module>.json and a notes.<Module>.md. Then write the overview of
 the application and its main processes from the notes — for the application,
 each process and each module both layers of reference/business-narrative.md,
-a summary and a long description — merge everything into
+a summary and a long description. Also write the risks you find, ranked by
+reference/risk-levels.md, and the context for developers. Merge everything into
 descriptions.json and check it with check-descriptions.js. Read long flows in
 full, never from a truncated excerpt. At the end, tell me how many were
 described, what stayed unclear, and how many tokens it took.
@@ -66,7 +69,8 @@ Rób to moduł po module, równolegle subagentami: na każdy moduł
 descriptions.<Moduł>.json i notes.<Moduł>.md. Potem z notatek napisz
 opis aplikacji i główne procesy — dla aplikacji, każdego procesu i każdego
 modułu obie warstwy z reference/business-narrative.md, podsumowanie i długi
-opis — scal wszystko w descriptions.json
+opis. Dopisz ryzyka wg reference/risk-levels.md i kontekst dla developera.
+Scal wszystko w descriptions.json
 i sprawdź check-descriptions.js. Długie flowy czytaj w całości, nie
 z ucinanych fragmentów. Na koniec podaj, ile opisano, co zostało
 niejasne i ile tokenów to zużyło.

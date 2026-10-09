@@ -4,15 +4,17 @@
  *   node check-descriptions.js todo  <pack.md> [descriptions.json] [--list]
  *       What is left to describe, per module: new flows, flows that changed
  *       since they were described (their fingerprint moved), whether the
- *       application overview is there, and which modules have no long
- *       description yet. Run it first; describe only that.
+ *       application overview is there, which modules have no long
+ *       description yet, and whether risks and the developers' context are
+ *       written. Run it first; describe only that.
  *
  *   node check-descriptions.js check <pack.md> <descriptions.json>
  *       Whether MxScout will accept the file, and whether it says what it
  *       should: the format, every name exists in the pack, every fingerprint
  *       matches, no description is empty or overlong, and the application,
  *       its processes and its modules each have both layers of
- *       reference/business-narrative.md. Exit code 1 on errors.
+ *       reference/business-narrative.md; every risk has a level of
+ *       reference/risk-levels.md, its places and a fix. Exit code 1 on errors.
  *
  *   node check-descriptions.js merge <out.json> <part.json> [<part.json> …]
  *       One file from several, later parts winning per name — for describing
@@ -93,7 +95,9 @@ function todo(pack, desc) {
     overview: !(app && typeof app.summary === 'string' && app.summary.trim()),
     overviewStory: !!app && !storyOf(app),
     missingModules: missingModules,
-    shortModules: shortModules
+    shortModules: shortModules,
+    risks: !Array.isArray(desc.risks),
+    context: !(desc.context && typeof desc.context === 'object')
   };
 }
 
@@ -138,6 +142,33 @@ function check(pack, desc) {
       else if (hashOf(v) && hashOf(v) !== known.hash) warn(k + ' ' + name + ': hash ' + hashOf(v) + ' does not match the pack (' + known.hash + ') — the flow changed; describe it again.');
     });
   });
+  // Risks by reference/risk-levels.md; MxScout drops a risk without a level or a title.
+  const inPack = (qn) => !!(pack.microflows[qn] || pack.nanoflows[qn] || pack.pages[qn] || pack.entities[qn]);
+  if (desc.risks !== undefined) {
+    if (!Array.isArray(desc.risks)) err('"risks" must be a list.');
+    else desc.risks.forEach((r, i) => {
+      const what = 'risks[' + i + ']' + (r && typeof r.title === 'string' ? ' "' + r.title + '"' : '');
+      if (!r || typeof r !== 'object') { err(what + ' is not an object.'); return; }
+      if (!/^P[123]$/.test(r.level)) err(what + ': "level" must be "P1", "P2" or "P3" — MxScout drops it otherwise.');
+      if (typeof r.title !== 'string' || !r.title.trim()) err(what + ': no "title" — MxScout drops it.');
+      if (typeof r.fix !== 'string' || !r.fix.trim()) warn(what + ': no "fix" — every risk says what to do (reference/risk-levels.md).');
+      const where = Array.isArray(r.where) ? r.where : [];
+      if (!where.length) warn(what + ': no "where" — every risk names the flows, pages or entities it is in.');
+      where.forEach((qn) => { if (!inPack(qn)) warn(what + ' names ' + qn + ', which is not in the pack — it shows as plain text, not a link.'); });
+    });
+  }
+  if (desc.context !== undefined) {
+    const c = desc.context;
+    if (!c || typeof c !== 'object' || Array.isArray(c)) err('"context" must be an object with "where", "conventions" and "pitfalls".');
+    else {
+      [['where', 'topic', 'place'], ['conventions', 'pattern', 'meaning']].forEach(([k, a, b]) => {
+        if (c[k] === undefined) return;
+        if (!Array.isArray(c[k])) { err('context.' + k + ' must be a list.'); return; }
+        c[k].forEach((x, i) => { if (!x || typeof x[a] !== 'string' || typeof x[b] !== 'string') err('context.' + k + '[' + i + '] needs "' + a + '" and "' + b + '" — MxScout drops it otherwise.'); });
+      });
+      if (c.pitfalls !== undefined && (!Array.isArray(c.pitfalls) || c.pitfalls.some((p) => typeof p !== 'string'))) err('context.pitfalls must be a list of sentences.');
+    }
+  }
   if (desc.app !== undefined) {
     const a = desc.app;
     if (!a || typeof a !== 'object') err('"app" must be an object.');
@@ -166,6 +197,17 @@ function merge(parts) {
       if (!p[k] || typeof p[k] !== 'object') return;
       out[k] = Object.assign(out[k] || {}, p[k]);
     });
+    // Risks and context come from several parts (one per module, and the application's): they add up,
+    // and the same risk written twice — same level, same title — is kept once, the later part winning.
+    if (Array.isArray(p.risks)) {
+      out.risks = (out.risks || []).filter((r) => !p.risks.some((x) => x && r && x.level === r.level && x.title === r.title)).concat(p.risks);
+    }
+    if (p.context && typeof p.context === 'object') {
+      out.context = out.context || {};
+      ['where', 'conventions', 'pitfalls'].forEach((k) => {
+        if (Array.isArray(p.context[k])) out.context[k] = (out.context[k] || []).concat(p.context[k].filter((x) => !(out.context[k] || []).some((y) => JSON.stringify(y) === JSON.stringify(x))));
+      });
+    }
   });
   return out;
 }
@@ -181,7 +223,8 @@ function main(argv) {
     const t = todo(pack, desc);
     console.log(t.flows + ' flows to describe in ' + t.modules.length + ' modules' + (t.overview ? '; the application overview is missing' : t.overviewStory ? '; the application has no long description' : '') +
       (t.missingModules.length ? '; ' + t.missingModules.length + ' modules have no description' : '') +
-      (t.shortModules.length ? '; ' + t.shortModules.length + ' modules have a summary but no long description (' + t.shortModules.join(', ') + ')' : '') + '.');
+      (t.shortModules.length ? '; ' + t.shortModules.length + ' modules have a summary but no long description (' + t.shortModules.join(', ') + ')' : '') +
+      (t.risks ? '; no risks yet' : '') + (t.context ? '; no context for developers yet' : '') + '.');
     t.modules.forEach((r) => {
       console.log('  ' + r.module + ' (pack line ' + r.line + '): ' + r.fresh.length + ' new, ' + r.changed.length + ' changed');
       if (list) r.fresh.concat(r.changed).forEach((qn) => console.log('    ' + qn));

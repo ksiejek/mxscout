@@ -194,6 +194,19 @@
 .dx-proc p.dx-lead { font-size:14px; }
 .dx-proc ol { margin:0; padding-left:20px; font-size:12.5px; color:var(--ink-2); display:flex; flex-direction:column; gap:2px; }
 .dx-chip.dim { cursor:default; color:var(--muted); padding:3px 10px; }
+/* Risks and the developer's context, both written by an agent: blocks one under another, like the processes. */
+.dx-kpis.three { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.dx-risks, .dx-dev { display:flex; flex-direction:column; gap:8px; margin-bottom:6px; }
+.dx-risk { --lvl:var(--muted); padding:12px 16px; display:flex; flex-direction:column; gap:7px; border-left:3px solid var(--lvl); }
+.dx-risk.p1 { --lvl:var(--danger); } .dx-risk.p2 { --lvl:var(--f-if); }
+.dx-risk-h { display:flex; align-items:baseline; gap:10px; }
+.dx-lvl { font-size:11px; font-weight:700; color:var(--lvl); border:1px solid color-mix(in srgb,var(--lvl) 50%,var(--line)); background:color-mix(in srgb,var(--lvl) 10%,var(--surface)); border-radius:5px; padding:0 6px; flex:none; }
+.dx-risk p, .dx-dev-row p { margin:0; font-size:13px; color:var(--ink-2); max-width:860px; white-space:pre-wrap; }
+.dx-risk p.dx-risk-fix b { color:var(--ink); }
+.dx-dev-row { display:grid; grid-template-columns:minmax(140px,240px) minmax(0,1fr); gap:6px 16px; padding:10px 14px; align-items:start; }
+.dx-dev-row.one { grid-template-columns:minmax(0,1fr); }
+.dx-dev-row > div { display:flex; flex-direction:column; gap:6px; }
+.dx-dev-row b { font-size:13px; } .dx-dev-row code { font-family:var(--mono); font-size:12.5px; color:var(--brand-ink); }
 
 /* entry and exit */
 .dx-ends { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px; }
@@ -407,6 +420,7 @@
   .dx { height:auto; overflow:visible; }
   .dx-brand { width:auto; } .dx-title { border-left:0; padding-left:0; }
   .dx-searchbox { width:100%; }
+  .dx-dev-row { grid-template-columns:minmax(0,1fr); }
   .dx-body { display:block; }
   .dx-nav { flex-direction:row; flex-wrap:wrap; border-right:0; border-bottom:1px solid var(--line); }
   .dx-nav-project { width:100%; }

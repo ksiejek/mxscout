@@ -201,7 +201,27 @@
     }
     // One table per kind: a microflow and a page may share a qualified name.
     ['modules', 'microflows', 'nanoflows', 'pages', 'entities'].forEach(function (k) { table(raw[k], out[k]); });
-    if (!out.app && !['modules', 'microflows', 'nanoflows', 'pages', 'entities'].some(function (k) { return Object.keys(out[k]).length; })) {
+    // Risks, ranked by the shared definition (skills/mendix-describe/reference/risk-levels.md), and what a
+    // developer should know before changing the model. Text again; a level outside P1–P3 drops the risk.
+    out.risks = (Array.isArray(raw.risks) ? raw.risks : []).slice(0, 200).map(function (x) {
+      return x && typeof x === 'object' && /^P[123]$/.test(x.level) && str(x.title, 300) ? {
+        level: x.level, title: str(x.title, 300), detail: str(x.detail, 3000), fix: str(x.fix, 1000),
+        where: (Array.isArray(x.where) ? x.where : []).map(function (s) { return str(s, 300); }).filter(Boolean).slice(0, 40)
+      } : null;
+    }).filter(Boolean);
+    var c = raw.context && typeof raw.context === 'object' ? raw.context : {};
+    function pairs(list, a, b) {
+      return (Array.isArray(list) ? list : []).slice(0, 80).map(function (x) {
+        return x && typeof x === 'object' && str(x[a], 300) && str(x[b], 1000) ? [str(x[a], 300), str(x[b], 1000)] : null;
+      }).filter(Boolean);
+    }
+    out.context = {
+      where: pairs(c.where, 'topic', 'place'),
+      conventions: pairs(c.conventions, 'pattern', 'meaning'),
+      pitfalls: (Array.isArray(c.pitfalls) ? c.pitfalls : []).map(function (s) { return str(s, 1000); }).filter(Boolean).slice(0, 80)
+    };
+    if (!out.context.where.length && !out.context.conventions.length && !out.context.pitfalls.length) out.context = null;
+    if (!out.app && !out.risks.length && !out.context && !['modules', 'microflows', 'nanoflows', 'pages', 'entities'].some(function (k) { return Object.keys(out[k]).length; })) {
       return { error: 'The file has the right format but no descriptions in it.' };
     }
     return { value: out };
@@ -227,6 +247,8 @@
     Object.keys(data.entities).forEach(function (q) { if (d.entities[q]) data.entities[q].desc = d.entities[q].text; });
     data.ai = {
       app: d.app, by: d.by, written: d.written, language: d.language,
+      // A file imported before risks and context existed has neither.
+      risks: d.risks || [], context: d.context || null,
       modules: Object.keys(d.modules).reduce(function (o, k) { o[k] = { summary: d.modules[k].text, story: d.modules[k].story || null }; return o; }, {})
     };
     return { described: described, stale: stale, missing: missing };

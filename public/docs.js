@@ -107,6 +107,9 @@
       ['Domain model', plural(k.entities, 'entity', 'entities') + ', each as a map: the entity in the middle, the entities pointing to it on one side and the ones it points to on the other. A click moves another one to the middle.'],
       ['Model quality', 'Elements nothing reaches, and disabled steps.']
     ];
+    var ai = data.ai || {};
+    if (ai.risks && ai.risks.length) inside.push(['Risks', plural(ai.risks.length, 'risk', 'risks') + ' an AI agent found in the model, ranked P1 to P3, each with where it is and what to do.']);
+    if (ai.context) inside.push(['For developers', 'Where things are, the naming the modules follow, and what breaks easily — written by an AI agent for whoever changes the model next.']);
 
     var shots = el('div', { class: 'docs-shots' }, [
       shot(data, { view: 'start' }, 'Overview', 'Where the reader starts.'),
@@ -150,13 +153,15 @@
           el('strong', { text: st.described + ' of ' + own + ' flows described' }),
           document.createTextNode(st.stale ? ' · ' + st.stale + ' out of date (the flow changed after it was described)' : ''),
           document.createTextNode(rec.value.app ? ' · with an overview of the application' + (rec.value.app.processes.length ? ' and ' + rec.value.app.processes.length + ' main processes' : '') : ''),
+          document.createTextNode(rec.value.risks && rec.value.risks.length ? ' · ' + plural(rec.value.risks.length, 'risk', 'risks') : ''),
+          document.createTextNode(rec.value.context ? ' · notes for developers' : ''),
           el('span', { class: 'hint', text: 'Imported ' + String(rec.importedAt || '').slice(0, 10) + (rec.fileName ? ' from ' + rec.fileName : '') + (rec.value.by ? ' · written by ' + rec.value.by : '') })
         ])
       : el('p', { class: 'muted', text: 'None yet. The documentation is complete without them; they add the sentences a business reader looks for.' });
     return el('div', { class: 'card docs-ai' }, [
       el('div', { class: 'docs-ai-text' }, [
         el('h3', { text: 'Descriptions for the business — written by AI' }),
-        el('p', { class: 'muted', text: 'MxScout reads the model; it does not write prose about it. An AI agent on your own machine can: what the application is for, its main processes, a sentence on each microflow. Export the AI pack, give it to the agent with the mendix-describe skill, import the file it writes. In the documentation every such sentence is marked as written by AI.' }),
+        el('p', { class: 'muted', text: 'MxScout reads the model; it does not write prose about it. An AI agent on your own machine can: what the application is for, its main processes, a sentence on each microflow, the risks it sees ranked P1 to P3, and what a developer should know before changing the model. Export the AI pack, give it to the agent with the mendix-describe skill, import the file it writes. In the documentation every such sentence is marked as written by AI.' }),
         status
       ]),
       el('div', { class: 'docs-ai-act' }, [

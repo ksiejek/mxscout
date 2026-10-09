@@ -70,7 +70,10 @@ module.exports = async function (t) {
     app: { summary: 'Takes orders and keeps them tidy.', story: STORY, audience: 'Sales staff.',
       processes: [{ name: 'Taking an order', summary: 'A clerk records an order.', story: STORY, steps: ['Open a new order', 'Save it'], flows: ['Sales.CreateOrder'] }] },
     modules: { Sales: { summary: 'Orders and customers.', story: STORY } },
-    microflows: { 'Sales.CreateOrder': { hash: pack.microflows['Sales.CreateOrder'].hash, text: 'Opens a fresh order for a customer.' } }
+    microflows: { 'Sales.CreateOrder': { hash: pack.microflows['Sales.CreateOrder'].hash, text: 'Opens a fresh order for a customer.' } },
+    // Ranked by reference/risk-levels.md, and the context a developer reads before a change.
+    risks: [{ level: 'P2', title: 'An order can be saved twice', detail: 'Nothing stops a second click.', where: ['Sales.CreateOrder'], fix: 'Disable the button while the flow runs.' }],
+    context: { where: [{ topic: 'Where an order starts', place: 'Sales.CreateOrder, from the order page.' }], conventions: [{ pattern: 'Create*', meaning: 'Makes a new record.' }], pitfalls: ['Saving outside Sales.CreateOrder skips the number.'] }
   };
   const after = todo(pack, desc);
   t.ok(after.flows === before.flows - 1 && !after.overview && !after.overviewStory && after.shortModules.length === 0, 'a described flow drops off the list: ' + after.flows + ' left');
@@ -93,6 +96,15 @@ module.exports = async function (t) {
   t.ok(check(pack, invented).some((p) => p.level === 'error' && /Sales\.NoSuchFlow/.test(p.text)), 'a name that is not in the pack is an error');
   const merged = merge([{ format: 'mxscout-descriptions', version: 1, microflows: { 'Sales.A': 'one' } }, desc]);
   t.ok(merged.microflows['Sales.A'] === 'one' && merged.microflows['Sales.CreateOrder'] && merged.app, 'merge joins parts into one file');
+  const unranked = JSON.parse(JSON.stringify(desc));
+  unranked.risks.push({ level: 'High', title: 'Something', where: ['Sales.Nowhere'] });
+  const rp = check(pack, unranked).map((p) => p.level + ' ' + p.text);
+  t.ok(rp.some((p) => /^error .*"level" must be/.test(p)) && rp.some((p) => /no "fix"/.test(p)) && rp.some((p) => /Sales\.Nowhere, which is not in the pack/.test(p)),
+    'a risk without a P1–P3 level is an error, one without a fix or with an unknown place a warning: ' + rp.filter((p) => /risks/.test(p)).length);
+  const parts = merge([desc, { risks: [{ level: 'P1', title: 'Another' }, { level: 'P2', title: 'An order can be saved twice', fix: 'newer' }], context: { pitfalls: ['Saving outside Sales.CreateOrder skips the number.', 'A second pitfall.'] } }]);
+  t.ok(parts.risks.length === 2 && parts.risks.find((r) => r.title === 'An order can be saved twice').fix === 'newer' && parts.context.pitfalls.length === 2 && parts.context.where.length === 1,
+    'merge adds the parts’ risks and context up, a risk written twice kept once');
+  t.ok(todo(pack, { format: 'mxscout-descriptions', version: 1 }).risks && !todo(pack, desc).risks && !todo(pack, desc).context, 'todo says whether risks and context are written');
 
   // ---- MxScout's own reading of the file ----
   const refused = await mx.evaluate(`JSON.stringify([MxDescribe.parse('nope').error, MxDescribe.parse('{"format":"other"}').error, MxDescribe.parse('{"format":"mxscout-descriptions","version":1}').error])`);
@@ -137,6 +149,34 @@ module.exports = async function (t) {
   t.ok(shown.paras === 2 && shown.procFold, 'the description keeps its paragraphs, and a process has its own fold');
   t.ok(shown.vertical === 'column', 'the processes stand one under another, not as tiles side by side');
   t.ok(await mx.evaluate(`!!Array.from(document.querySelectorAll('.docs-ai button')).find(b => b.textContent === 'Export AI pack')`), 'the pack is one button away');
+
+  // Risks and the developer's context: kept as text, each on a page of its own, names as links.
+  const extra = JSON.parse(await mx.evaluate(`JSON.stringify((function () {
+    var d = MxDocs.current(), host = document.createElement('div');
+    document.body.appendChild(host);
+    var v = MxDocsView.mount(d, host, { preview: true, state: { view: 'risks' } });
+    var nav = Array.from(host.querySelectorAll('.dx-nav-item')).map(function (b) { return b.textContent; });
+    var risk = host.querySelector('.dx-risk.p2');
+    var r = { nav: nav, title: risk && risk.querySelector('.dx-risk-h b').textContent, link: !!(risk && risk.querySelector('button.dx-chip')),
+      fix: risk && /What to do: Disable/.test(risk.textContent), ai: !!host.querySelector('.dx-main .dx-ai') };
+    v.go({ view: 'dev' });
+    r.dev = Array.from(host.querySelectorAll('.dx-main h3')).map(function (x) { return x.textContent; });
+    r.devLinks = host.querySelectorAll('.dx-dev button.dx-chip').length;
+    r.status = document.querySelector('.docs-ai-status').textContent;
+    var dropped = MxDescribe.parse(JSON.stringify({ format: 'mxscout-descriptions', version: 1, risks: [{ level: 'P7', title: 'x' }, { level: 'P1', title: '<b>y</b>' }] })).value;
+    r.kept = dropped.risks.map(function (x) { return x.level + ':' + x.title; });
+    var old = JSON.parse(JSON.stringify(d)); delete old.ai.risks; delete old.ai.context;
+    var h2 = document.createElement('div'); MxDocsView.mount(old, h2, { preview: true });
+    r.oldNav = Array.from(h2.querySelectorAll('.dx-nav-item')).length;
+    host.remove();
+    return r;
+  })())`));
+  t.ok(extra.nav.some((n) => /^Risks1$/.test(n)) && extra.nav.indexOf('For developers') !== -1, 'the documentation gets a Risks page and a page for developers: ' + JSON.stringify(extra.nav));
+  t.ok(extra.title === 'An order can be saved twice' && extra.link && extra.fix && extra.ai, 'a risk shows its level, its places as links and what to do, marked as AI');
+  t.ok(extra.dev.join('|') === 'Where things are|Naming conventions|Pitfalls before a change' && extra.devLinks >= 2, 'the developer page has its three parts, names inside sentences linked: ' + extra.devLinks);
+  t.ok(/1 risk/.test(extra.status) && /notes for developers/.test(extra.status), 'the section counts them');
+  t.ok(extra.kept.join() === 'P1:<b>y</b>', 'a risk with a level outside P1–P3 is dropped, and a title is kept as text');
+  t.ok(extra.oldNav === 5, 'a file imported before risks existed adds no empty pages');
 
   // A flow that changed after it was described says so.
   const marked = await mx.evaluate(`(function(){ var d = MxDocs.current(); var x = JSON.parse(JSON.stringify(d)); var v = MxDescribe.parse(${JSON.stringify(JSON.stringify(stale))}).value; MxDescribe.attach(x, v); return x.flows['microflow:Sales.CreateOrder'].descStale; })()`);

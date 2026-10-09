@@ -181,7 +181,8 @@ the stored model (no server, no live app needed):
   the same workflow with the same code, with Studio Pro's own layout one
   click away. **Descriptions for the business** — what the app is for, its
   main processes and its modules, each as a short summary with a long
-  description folded under it, and a sentence per flow — come from an AI agent outside
+  description folded under it, a sentence per flow, the risks ranked P1 to P3
+  and notes for developers — come from an AI agent outside
   MxScout: export the **AI pack**, run the `mendix-describe` skill on it,
   import the file it writes. Every such sentence is marked ✦ AI.
 
@@ -492,7 +493,12 @@ description of several paragraphs — and a sentence or two on each microflow
 and nanoflow, as a descriptions file you import back (Documentation →
 **Import descriptions…**). The two layers are defined once, in
 [`reference/business-narrative.md`](skills/mendix-describe/reference/business-narrative.md),
-and the mendix-docs skill writes its business document by the same file.
+and the mendix-docs skill writes its business document by the same file. The
+same agent ranks the risks it sees, by
+[`reference/risk-levels.md`](skills/mendix-describe/reference/risk-levels.md)
+— P1 security and data, P2 functional errors, P3 maintenance, shared with
+mendix-docs too — and writes what a developer should know before changing the
+model. Each gets its own page in the documentation.
 
 The pack is built to be cheap to read: Marketplace modules are left out, an
 index at the top gives each module's line range so the agent reads one module

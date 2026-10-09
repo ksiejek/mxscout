@@ -436,9 +436,12 @@
         themeBox,
         opts.actions ? h('div', { class: 'dx-actions' }, opts.actions) : null
       ]);
-      var NAV = [['start', 'Overview'], ['modules', 'Modules'], ['refs', 'Microflows & pages'], ['domain', 'Domain model'], ['quality', 'Model quality']];
+      // Risks and the developer's context exist only when an agent wrote them (describe.js), so their pages too.
+      var risks = data.ai && data.ai.risks || [], devCtx = data.ai && data.ai.context || null;
+      var NAV = [['start', 'Overview'], ['modules', 'Modules'], ['refs', 'Microflows & pages'], ['domain', 'Domain model'], ['quality', 'Model quality'],
+        risks.length ? ['risks', 'Risks'] : null, devCtx ? ['dev', 'For developers'] : null].filter(Boolean);
       var counts = { modules: data.kpi.modules, refs: data.kpi.microflows + data.kpi.nanoflows + data.kpi.pages, domain: data.kpi.entities,
-        quality: data.quality.unreached.length };
+        quality: data.quality.unreached.length, risks: risks.length };
       var navBtns = {};
       var nav = h('nav', { class: 'dx-nav', 'aria-label': 'Sections' }, [
         h('div', { class: 'dx-nav-project' }, [h('b', { text: data.project }), h('small', { text: (data.mendix ? 'Mendix ' + data.mendix + ' · ' : '') + 'generated ' + fmtDate(data.generatedAt) })])
@@ -531,8 +534,9 @@
         Object.keys(navBtns).forEach(function (k) { navBtns[k].classList.toggle('on', k === st.view); });
         clear(list); clear(main);
         drawLines = null;
-        root.classList.toggle('no-list', st.view === 'start' || st.view === 'quality');
-        var V = { start: drawStart, modules: drawModules, refs: drawRefs, domain: drawDomain, quality: drawQuality }[st.view] || drawStart;
+        if ((st.view === 'risks' && !risks.length) || (st.view === 'dev' && !devCtx)) st.view = 'start';
+        root.classList.toggle('no-list', st.view === 'start' || st.view === 'quality' || st.view === 'risks' || st.view === 'dev');
+        var V = { start: drawStart, modules: drawModules, refs: drawRefs, domain: drawDomain, quality: drawQuality, risks: drawRisks, dev: drawDev }[st.view] || drawStart;
         V();
       }
       function setTitle(t, sub) { titleEl.textContent = t; subEl.textContent = sub; }
@@ -585,11 +589,7 @@
                 pr.summary ? h('p', { class: 'dx-lead', text: pr.summary }) : null,
                 story(pr.story),
                 pr.steps.length ? h('ol', null, pr.steps.map(function (x) { return h('li', { text: x }); })) : null,
-                pr.flows.length ? h('div', { class: 'dx-chips' }, pr.flows.map(function (qn) {
-                  var key = ['microflow', 'nanoflow', 'page'].map(function (k) { return k + ':' + qn; }).filter(function (k) { return data.flows[k]; })[0];
-                  return key ? h('button', { type: 'button', class: 'dx-chip', onclick: function () { openKey(key); } }, [h('span', { class: 'dx-badge' + kindClass(data.flows[key].kind), text: badgeOf(data.flows[key]) }), data.flows[key].name])
-                    : h('span', { class: 'dx-chip dim', text: qn });
-                })) : null
+                pr.flows.length ? h('div', { class: 'dx-chips' }, pr.flows.map(refChip)) : null
               ]);
             })));
           }
@@ -599,8 +599,10 @@
           ['ƒ', 'Microflows & pages', 'What each flow takes and where it ends, every step top to bottom, and the data each step creates or changes.', function () { go({ view: 'refs' }); }],
           ['⬡', 'Domain model', 'A map per entity: the entities that point to it on one side, the ones it points to on the other.', function () { go({ view: 'domain' }); }],
           ['▦', 'Modules', 'What each module holds — own modules first, Marketplace modules after.', function () { go({ view: 'modules' }); }],
-          ['✓', 'Model quality', plural(q.unreached.length, 'element nothing reaches', 'elements nothing reaches') + ' · ' + plural(q.disabled, 'disabled step', 'disabled steps') + '.', function () { go({ view: 'quality' }); }]
-        ];
+          ['✓', 'Model quality', plural(q.unreached.length, 'element nothing reaches', 'elements nothing reaches') + ' · ' + plural(q.disabled, 'disabled step', 'disabled steps') + '.', function () { go({ view: 'quality' }); }],
+          risks.length ? ['⚠', 'Risks', levelCount('P1') + ' P1 · ' + levelCount('P2') + ' P2 · ' + levelCount('P3') + ' P3, each with where it is and what to do. Written by an AI agent.', function () { go({ view: 'risks' }); }] : null,
+          devCtx ? ['⌘', 'For developers', 'Where things are, the naming the modules follow, and what breaks easily — before you change the model. Written by an AI agent.', function () { go({ view: 'dev' }); }] : null
+        ].filter(Boolean);
         main.appendChild(h('h3', { class: 'dx-h', text: 'Where to start' }));
         main.appendChild(h('div', { class: 'dx-cards' }, cards.map(function (c) {
           return h('button', { type: 'button', class: 'dx-card dx-start', onclick: c[3] }, [h('i', { text: c[0] }), h('b', { text: c[1] }), h('span', { text: c[2] })]);
@@ -902,6 +904,71 @@
           return h('button', { type: 'button', class: 'dx-xl-row link', onclick: function () { openKey(k); } }, [h('span', { class: 'dx-badge' + kindClass(f.kind), text: badgeOf(f) }), h('b', { class: 'mono', text: f.qn }), h('small', { text: f.kind + ' ↗' })]);
         }
         table('Nothing reaches these', 'No microflow, page, menu, schedule, service or button in the model refers to them, and no role may run them directly. Candidates for removal — or for a reference that was forgotten. Marketplace modules are left out.', Q.unreached, flowRow);
+      }
+
+      // ---------- what an agent wrote beyond descriptions ----------
+      // A qualified name an agent wrote: a link when the model has it, plain text when it does not.
+      function refChip(qn) {
+        var key = ['microflow', 'nanoflow', 'page'].map(function (k) { return k + ':' + qn; }).filter(function (k) { return data.flows[k]; })[0];
+        if (key) return h('button', { type: 'button', class: 'dx-chip', onclick: function () { openKey(key); } }, [h('span', { class: 'dx-badge' + kindClass(data.flows[key].kind), text: badgeOf(data.flows[key]) }), data.flows[key].name]);
+        if (data.entities[qn]) return h('button', { type: 'button', class: 'dx-chip', onclick: function () { go({ view: 'domain', entity: qn }); } }, [h('span', { class: 'dx-badge en', text: 'E' }), data.entities[qn].name]);
+        return h('span', { class: 'dx-chip dim', text: qn });
+      }
+      function levelCount(l) { return risks.filter(function (r) { return r.level === l; }).length; }
+      var LEVELS = [['P1', 'Security and data', 'Fix before the next release.'], ['P2', 'Functional errors', 'Fix in one of the next releases.'], ['P3', 'Maintenance', 'Fix when you next work on that part.']];
+
+      function drawRisks() {
+        setTitle('Risks', data.project);
+        main.appendChild(crumbs([['Overview', function () { go({ view: 'start' }); }], ['Risks']]));
+        main.appendChild(h('p', { class: 'dx-p' }, ['An AI agent read this model and ranked what it found by one definition, the same the mendix-docs portal uses: P1 security and data, P2 functional errors, P3 maintenance. It sees only the model, so check a risk before you act on it. ', aiMark()]));
+        main.appendChild(h('div', { class: 'dx-kpis three' }, LEVELS.map(function (l) { return tile(levelCount(l[0]), l[0] + ' · ' + l[1].toLowerCase(), l[2]); })));
+        LEVELS.forEach(function (l) {
+          var list = risks.filter(function (r) { return r.level === l[0]; });
+          if (!list.length) return;
+          main.appendChild(h('h3', { class: 'dx-h', text: l[0] + ' — ' + l[1] + ' (' + list.length + ')' }));
+          main.appendChild(h('div', { class: 'dx-risks' }, list.map(function (r) {
+            return h('div', { class: 'dx-card dx-risk ' + r.level.toLowerCase() }, [
+              h('div', { class: 'dx-risk-h' }, [h('span', { class: 'dx-lvl', text: r.level }), h('b', { text: r.title })]),
+              r.detail ? h('p', { text: r.detail }) : null,
+              r.where.length ? h('div', { class: 'dx-chips' }, r.where.map(refChip)) : null,
+              r.fix ? h('p', { class: 'dx-risk-fix' }, [h('b', { text: 'What to do: ' }), r.fix]) : null
+            ]);
+          })));
+        });
+      }
+
+      function drawDev() {
+        setTitle('For developers', data.project);
+        main.appendChild(crumbs([['Overview', function () { go({ view: 'start' }); }], ['For developers']]));
+        main.appendChild(h('p', { class: 'dx-p' }, ['What to know before changing this model, for a developer or an AI agent: where things are that their names do not tell, the naming the modules follow, and what breaks easily. ', aiMark()]));
+        // A qualified name inside a sentence becomes a link under it — the sentence itself stays text.
+        function namesIn(text) {
+          var seen = {}, out = [];
+          (String(text).match(/\b[A-Za-z_]\w*\.[A-Za-z_]\w*\b/g) || []).forEach(function (qn) {
+            if (seen[qn]) return;
+            seen[qn] = true;
+            if (data.entities[qn] || ['microflow', 'nanoflow', 'page'].some(function (k) { return data.flows[k + ':' + qn]; })) out.push(refChip(qn));
+          });
+          return out.length ? h('div', { class: 'dx-chips' }, out) : null;
+        }
+        if (devCtx.where.length) {
+          main.appendChild(h('h3', { class: 'dx-h', text: 'Where things are' }));
+          main.appendChild(h('div', { class: 'dx-dev' }, devCtx.where.map(function (w) {
+            return h('div', { class: 'dx-card dx-dev-row' }, [h('b', { text: w[0] }), h('div', null, [h('p', { text: w[1] }), namesIn(w[1])])]);
+          })));
+        }
+        if (devCtx.conventions.length) {
+          main.appendChild(h('h3', { class: 'dx-h', text: 'Naming conventions' }));
+          main.appendChild(h('div', { class: 'dx-dev' }, devCtx.conventions.map(function (c) {
+            return h('div', { class: 'dx-card dx-dev-row' }, [h('code', { text: c[0] }), h('p', { text: c[1] })]);
+          })));
+        }
+        if (devCtx.pitfalls.length) {
+          main.appendChild(h('h3', { class: 'dx-h', text: 'Pitfalls before a change' }));
+          main.appendChild(h('div', { class: 'dx-dev' }, devCtx.pitfalls.map(function (p) {
+            return h('div', { class: 'dx-card dx-dev-row one' }, [h('p', { text: p }), namesIn(p)]);
+          })));
+        }
       }
 
       draw();

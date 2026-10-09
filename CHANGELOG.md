@@ -17,6 +17,22 @@ claim a version it is not.
 
 ## Unreleased
 
+### Risks ranked P1–P3, and notes for developers
+
+- **The descriptions file can carry the risks an agent finds in the model**,
+  each with a level, where it is (links to the flows, pages and entities) and
+  what to do. They get their own **Risks** page in the documentation, grouped
+  P1 security and data, P2 functional errors, P3 maintenance, marked ✦ AI.
+- **And what a developer should know before changing the model**: where
+  things are that their names do not tell, the naming the modules follow, and
+  what breaks easily — a **For developers** page.
+- **One definition of the levels for both tools**, in
+  `skills/mendix-describe/reference/risk-levels.md`: what each level means, how
+  soon to fix it, and how to calibrate. The mendix-docs skill ranks by the same
+  file.
+- Neither page appears without them, so a file imported earlier looks as
+  before. The checker flags a risk without a level, a fix or a known place.
+
 ### The business description: a summary on top, the long story under it
 
 - **The application, each main process and each module now come in two
