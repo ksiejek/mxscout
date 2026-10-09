@@ -36,6 +36,23 @@ claim a version it is not.
 - **MxScout now reads where every page's data comes from**, snippets
   included, and how every retrieve in a flow reads. Replace a project's
   model from its folder to get both.
+- **The documentation reads more easily.** A workflow carries what the flow
+  takes above Start, as Studio Pro draws its parameters, and what it returns
+  below the last step, so the drawing gets the room the two cards above it
+  took. A step's details open next to the step, not in a panel at the side;
+  a step with a complicated expression says so on its card and shows the
+  expression in its details, laid out with "then" and "else" on lines of their
+  own. An entity's page opens on who may read, write, create and delete it,
+  rule by rule, with the XPath that limits the rows. Model quality no longer
+  lists entities without access rules or microflows that skip entity access.
+  The title band stands apart from the menu, the domain map's cards are
+  narrower and further apart, and the scrollbars take the theme's colours.
+- **The export asks which modules go into the file**: every module is offered,
+  the Marketplace ones unticked.
+- **The Studio Pro layout of a flow fills the screen**, and only the drawing
+  moves; a parameter is drawn pointing into the flow, as Studio Pro draws it.
+- **In the Security section, a microflow is a link** — the one a scheduled
+  event runs, and the one behind a published REST operation.
 - **"Reached from" in a flow's popup is grouped by kind** — a heading per
   kind and the names under it as badges, like "Can be triggered by" — and
   the side column is wider.

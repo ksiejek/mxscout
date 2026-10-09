@@ -52,12 +52,22 @@ module.exports = async function (t) {
   await mx.waitFor(`!!document.querySelector('.modal .dx-embed .wfx-step')`, 5000, 'workflow');
   t.ok(await mx.evaluate(`Array.from(document.querySelectorAll('.fd-mode-btn.on')).map(b => b.textContent).join() === 'Workflow'`),
     'the Diagram tab opens on the workflow, with Studio Pro’s layout one click away');
-  t.ok(await mx.evaluate(`!!document.querySelector('.modal .dx-ends .dx-end.in') && !!document.querySelector('.modal .dx-ends .dx-end.out')`),
-    'it says what the flow takes and where it can end before the first step');
+  t.ok(await mx.evaluate(`!!document.querySelector('.modal .wfx > .wfx-in .wfx-param') && !!document.querySelector('.modal .wfx > .wfx-out') && !document.querySelector('.modal .dx-ends')`),
+    'it says what the flow takes above Start and what it returns below the last step, inside the drawing rather than in cards above it');
   await mx.evaluate(`Array.from(document.querySelectorAll('.modal .wfx-step')).find(s => /Create object/i.test(s.textContent)).click()`);
   const created = await mx.waitFor(`(function(){ var d = document.querySelector('.modal .wfx-detail'); return d && !d.hidden && d.textContent; })()`, 3000, 'detail');
   t.ok(/Created with/.test(created) && /Number/.test(created) && /'X'/.test(created),
     'clicking a create step pins it, with each member and the value it gets: ' + created.slice(0, 160));
+  // Next to the step, inside the drawing, not in a panel at the canvas's side.
+  const beside = await mx.evaluate(`(function () {
+    var d = document.querySelector('.modal .wfx-detail'), s = document.querySelector('.modal .wfx-step.pinned');
+    var dr = d.getBoundingClientRect(), sr = s.getBoundingClientRect();
+    var side = /at-(right|left|below)/.exec(d.className);
+    var gap = !side ? -1 : side[1] === 'right' ? dr.left - sr.right : side[1] === 'left' ? sr.left - dr.right : dr.top - sr.bottom;
+    return { inside: d.parentNode.classList.contains('wfx'), side: side && side[1], gap: Math.round(gap) };
+  })()`);
+  t.ok(beside.inside && beside.side && beside.gap >= 6 && beside.gap <= 24,
+    'a step’s details open next to that step, inside the drawing: ' + JSON.stringify(beside));
   await mx.evaluate(`Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Close').click()`);
 
   await openFlow('SweepOrders');
@@ -73,6 +83,14 @@ module.exports = async function (t) {
   t.ok(drawn.edges > 5, 'the arrows are drawn: ' + drawn.edges);
   t.ok(drawn.branches.indexOf('true') !== -1 && drawn.branches.indexOf('false') !== -1, 'the decision’s arrows carry their branch values: ' + JSON.stringify(drawn.branches));
   t.ok(!!drawn.viewBox, 'the drawing has a view to pan and zoom');
+  // Studio Pro's layout takes the whole screen bar a 1% margin, and the
+  // window itself does not scroll: only the drawing moves.
+  const fill = await mx.evaluate(`(function () {
+    var m = document.querySelector('.modal'), r = m.getBoundingClientRect();
+    return { fill: m.classList.contains('modal-fill'), w: r.width / innerWidth, h: r.height / innerHeight, scrolls: m.scrollHeight > m.clientHeight + 1 };
+  })()`);
+  t.ok(fill.fill && fill.w > 0.96 && fill.h > 0.96 && !fill.scrolls,
+    'Studio Pro’s layout fills the screen and the window around it does not scroll: ' + JSON.stringify(fill));
 
   // The children of a loop sit inside it.
   const inside = await mx.evaluate(`(function () {

@@ -163,12 +163,14 @@ the stored model (no server, no live app needed):
   it holds, previews of it drawn from this project, and the export. The file
   is the whole model as documentation, built from it each time one is loaded:
   an Overview of the project's numbers, the Modules and what each holds,
-  Microflows & pages (for every flow: what it takes, where it can end, its
-  **workflow drawn top to bottom**, and on a click on a step the members it
-  sets and the arguments it passes, value by value), the Domain model as a
+  Microflows & pages (for every flow: its **workflow drawn top to bottom**,
+  with what it takes above Start and what it returns below, and on a click on
+  a step, next to it, the members it sets and the arguments it passes, value
+  by value, an expression laid out to be read), the Domain model as a
   **map** — the entity in the middle, the entities pointing to it on one side
-  and the ones it points to on the other — and Model quality, where the model
-  looks unfinished. It looks like MxScout, dark or light. It is **one
+  and the ones it points to on the other, and who may read, write, create and
+  delete it — and Model quality, where the model looks unfinished. You choose
+  which modules go into the file; the Marketplace ones start unticked. It looks like MxScout, dark or light. It is **one
   encrypted HTML file** — the documentation under a fresh access code (the
   same WebCrypto envelope as the review report), the reader's own source and
   its stylesheet, nothing else — that opens in any browser and asks for the

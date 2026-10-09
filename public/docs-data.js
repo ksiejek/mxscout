@@ -256,7 +256,21 @@
         generalization: en.generalization || null, view: !!en.viewEntity, doc: en.documentation || null,
         attributes: (en.attributes || []).map(function (a) { return { name: a.name, type: a.enumerationQualifiedName ? 'Enumeration ' + a.enumerationQualifiedName : a.type + (a.length ? '(' + a.length + ')' : '') }; }),
         roles: rules.map(function (r) { return r.moduleRole; }).filter(function (v, i, all) { return v && all.indexOf(v) === i; }),
-        rules: rules.length
+        rules: rules.length,
+        // Who may do what with it, one entry per rule: the module role, the
+        // user roles that carry it, how many members it reads and writes,
+        // create and delete, and the XPath that limits the rows, kept exact.
+        access: rules.map(function (r) {
+          var members = [r.attrAccess || {}, r.assocAccess || {}];
+          var read = 0, write = 0;
+          members.forEach(function (m) { Object.keys(m).forEach(function (k) { if (m[k] === 'rw') write++; if (m[k] === 'r' || m[k] === 'rw') read++; }); });
+          return {
+            role: r.moduleRole,
+            userRoles: (model.userRoles || []).filter(function (u) { return (u.moduleRoles || []).indexOf(r.moduleRole) !== -1; }).map(function (u) { return u.name; }),
+            read: read, write: write, create: !!r.allowCreate, del: !!r.allowDelete,
+            xpath: r.xpathConstraint || null
+          };
+        })
       };
       mod(en.module).entities.push(en.qualifiedName);
     });
@@ -269,14 +283,6 @@
       var f = flows[k];
       // A microflow with roles is reachable from the client; a page or nanoflow with roles from navigation or a button.
       return !f.calledBy.length && !(f.roles && f.roles.length) && !(modules[f.module] && modules[f.module].marketplace);
-    }).sort();
-    var noAccess = Object.keys(entities).filter(function (q) {
-      var e = entities[q];
-      return e.persistable && !e.rules && !(modules[e.module] && modules[e.module].marketplace);
-    }).sort();
-    var pastAccess = Object.keys(flows).filter(function (k) {
-      var f = flows[k];
-      return f.kind === 'microflow' && f.entityAccess === false && f.roles.length && !(modules[f.module] && modules[f.module].marketplace);
     }).sort();
     var disabled = 0;
     function countOff(list) { (list || []).forEach(function (b) { if (b.card && b.card.off) disabled++; ['body', 'error'].forEach(function (k) { countOff(b[k]); }); (b.branches || []).forEach(function (x) { countOff(x.body); }); }); }
@@ -304,7 +310,7 @@
       roles: (model.userRoles || []).map(function (r) { return { name: r.name, moduleRoles: r.moduleRoles || [] }; }),
       scheduled: automation.map(function (a) { return { name: a.qualifiedName, microflow: a.microflow, schedule: a.schedule || null, enabled: !!a.enabled }; }),
       services: (model.publishedServices || []).map(function (s) { return { name: s.qualifiedName || s.name, kind: s.kind || null }; }),
-      quality: { unreached: unreached, noAccess: noAccess, pastAccess: pastAccess, disabled: disabled }
+      quality: { unreached: unreached, disabled: disabled }
     };
   }
 

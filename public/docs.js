@@ -104,7 +104,7 @@
       ['Overview', 'The application at a glance: modules, how many microflows, nanoflows, pages and entities, roles, scheduled events and published services.'],
       ['Microflows & pages', plural(k.microflows, 'microflow', 'microflows') + ', ' + plural(k.nanoflows, 'nanoflow', 'nanoflows') + ' and ' + plural(k.pages, 'page', 'pages') + '. Each flow as a workflow from top to bottom: what it takes, where it can end, every step — and, on a click, the data a step creates or changes and the arguments a call passes.'],
       ['Domain model', plural(k.entities, 'entity', 'entities') + ', each as a map: the entity in the middle, the entities pointing to it on one side and the ones it points to on the other. A click moves another one to the middle.'],
-      ['Model quality', 'Elements nothing reaches, entities without access rules, microflows that skip entity access, disabled steps.']
+      ['Model quality', 'Elements nothing reaches, and disabled steps.']
     ];
 
     var shots = el('div', { class: 'docs-shots' }, [
@@ -299,9 +299,45 @@
     ].join('\n');
   }
 
+  // The documentation of the chosen modules only. Flows and entities of the
+  // others are left out; a call or an association that leads to one of them
+  // stays named, as a reference this file does not follow.
+  function subset(data, keep) {
+    var out = Object.assign({}, data);
+    out.modules = data.modules.filter(function (m) { return keep[m.name]; });
+    out.flows = {};
+    Object.keys(data.flows).forEach(function (k) { if (keep[data.flows[k].module]) out.flows[k] = data.flows[k]; });
+    out.entities = {};
+    Object.keys(data.entities).forEach(function (q) { if (keep[data.entities[q].module]) out.entities[q] = data.entities[q]; });
+    out.associations = data.associations.filter(function (a) { return out.entities[a.from] || out.entities[a.to]; });
+    var disabled = 0;
+    function countOff(list) {
+      (list || []).forEach(function (b) {
+        if (b.card && b.card.off) disabled++;
+        countOff(b.body); countOff(b.error);
+        (b.branches || []).forEach(function (x) { countOff(x.body); });
+      });
+    }
+    var kinds = { microflow: 0, nanoflow: 0, page: 0 };
+    Object.keys(out.flows).forEach(function (k) { kinds[out.flows[k].kind]++; countOff(out.flows[k].workflow); });
+    out.quality = Object.assign({}, data.quality, {
+      unreached: data.quality.unreached.filter(function (k) { return out.flows[k]; }), disabled: disabled
+    });
+    out.kpi = Object.assign({}, data.kpi, {
+      modules: out.modules.filter(function (m) { return !m.marketplace; }).length,
+      marketplace: out.modules.filter(function (m) { return m.marketplace; }).length,
+      microflows: kinds.microflow, nanoflows: kinds.nanoflow, pages: kinds.page,
+      entities: Object.keys(out.entities).length
+    });
+    return out;
+  }
+
   function doExport() {
-    var data = current();
-    if (!data) return;
+    var all = current();
+    if (!all) return;
+    var keep = dialog.keep || {};
+    if (!all.modules.some(function (m) { return keep[m.name]; })) return;
+    var data = subset(all, keep);
     var code = window.MxCrypto.generateCode();
     dialog.busy = true; dialog.error = null; app.render();
     // The stylesheet is this app's own file, read from this same server.
@@ -317,20 +353,64 @@
       .catch(function (err) { dialog.busy = false; dialog.error = (err && err.message) || 'Could not build the file.'; app.render(); });
   }
 
-  function openExport() { dialog = { busy: false, code: null, fileName: null, error: null, note: null }; app.render(); }
+  // Which modules go into the file, chosen first: every module of the
+  // project is offered, the Marketplace ones unticked — they are somebody
+  // else's code, and in a real project they are half the model (Karol,
+  // 2026-10-09).
+  function openExport() {
+    var keep = {};
+    (current() || { modules: [] }).modules.forEach(function (m) { keep[m.name] = !m.marketplace; });
+    dialog = { busy: false, code: null, fileName: null, error: null, note: null, keep: keep };
+    app.render();
+  }
+
+  function moduleChooser(data) {
+    var el = app.el;
+    var keep = dialog.keep;
+    function set(fn) { return function () { data.modules.forEach(function (m) { keep[m.name] = fn(m); }); dialog.code = null; app.render(); }; }
+    var chosen = data.modules.filter(function (m) { return keep[m.name]; }).length;
+    return el('div', { class: 'docs-mods-wrap' }, [
+      el('div', { class: 'docs-mods-head' }, [
+        el('strong', { text: 'Modules in the file' }),
+        el('span', { class: 'muted', text: chosen + ' of ' + data.modules.length }),
+        el('span', { class: 'docs-mods-quick' }, [
+          el('button', { class: 'btn btn-sm btn-ghost', text: 'All', onclick: set(function () { return true; }) }),
+          el('button', { class: 'btn btn-sm btn-ghost', text: 'Own modules', onclick: set(function (m) { return !m.marketplace; }) }),
+          el('button', { class: 'btn btn-sm btn-ghost', text: 'None', onclick: set(function () { return false; }) })
+        ])
+      ]),
+      el('div', { class: 'docs-mods' }, data.modules.map(function (m) {
+        var box = el('input', { type: 'checkbox' });
+        box.checked = !!keep[m.name];
+        box.addEventListener('change', function () { keep[m.name] = box.checked; dialog.code = null; app.render(); });
+        var n = m.microflows.length + m.nanoflows.length;
+        return el('label', { class: 'docs-mod' + (keep[m.name] ? ' on' : '') + (m.marketplace ? ' mk' : '') }, [
+          box,
+          el('span', { class: 'docs-mod-t' }, [
+            el('strong', { text: m.name }),
+            el('span', { class: 'muted', text: (m.marketplace ? 'Marketplace · ' : '') + plural(n, 'flow', 'flows') + ' · ' + plural(m.entities.length, 'entity', 'entities') })
+          ])
+        ]);
+      }))
+    ]);
+  }
 
   function renderExportModal() {
     if (!dialog) return null;
     var el = app.el;
     var close = function () { if (dialog.busy) return; dialog = null; app.render(); };
-    var data = current() || { kpi: {} };
+    var all = current() || { kpi: {}, modules: [] };
+    var data = all.modules.length ? subset(all, dialog.keep || {}) : all;
+    var none = all.modules.length && !data.modules.length;
     var kids = [
       el('h3', { text: 'Export the documentation' }),
-      el('p', { class: 'muted', text: 'One HTML file with everything described on this page — ' + (data.kpi.microflows || 0) + ' microflows, ' + (data.kpi.nanoflows || 0) + ' nanoflows, ' + (data.kpi.pages || 0) + ' pages, ' + (data.kpi.entities || 0) + ' entities, every workflow — encrypted. It opens in any browser and asks for an access code; nothing is sent anywhere.' }),
+      el('p', { class: 'muted', text: 'One HTML file with everything described on this page, for the modules you choose — now ' + (data.kpi.microflows || 0) + ' microflows, ' + (data.kpi.nanoflows || 0) + ' nanoflows, ' + (data.kpi.pages || 0) + ' pages, ' + (data.kpi.entities || 0) + ' entities, every workflow — encrypted. It opens in any browser and asks for an access code; nothing is sent anywhere.' }),
+      all.modules.length ? moduleChooser(all) : null,
       el('div', { class: 'report-option' }, [
         el('div', { class: 'report-option-head' }, [
           el('strong', { text: 'Encrypted HTML file' }),
-          el('button', { class: 'btn btn-sm btn-primary', text: dialog.busy ? 'Working…' : 'Build file', disabled: dialog.busy ? 'disabled' : null, onclick: doExport })
+          el('button', { class: 'btn btn-sm btn-primary', text: dialog.busy ? 'Working…' : 'Build file', disabled: dialog.busy || none ? 'disabled' : null,
+            title: none ? 'Choose at least one module' : null, onclick: doExport })
         ]),
         el('p', { class: 'muted', text: 'The documentation describes the application’s structure and its weak spots, so it is never written unencrypted. Send the code by a different channel than the file.' })
       ])

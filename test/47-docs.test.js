@@ -23,6 +23,9 @@ module.exports = async function (t) {
   await mx.evaluate(`(async function () {
     var bytes = Uint8Array.from(atob("${v1b64}"), function (c) { return c.charCodeAt(0); }).buffer;
     var model = await window.MxMpr.buildModel({ mprBytes: bytes, appName: 'Sales', readContentsFile: function () { throw new Error('v1'); } });
+    // A Marketplace module, hidden by default everywhere else: the export
+    // still offers it, unticked.
+    model.modules.push({ name: 'Atlas_Core', fromAppStore: true });
     await MxStore.saveProjectWithModel({ id: 'pdocs', name: 'DocDemo', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       source: { kind: 'test' }, bytes: 1, summary: null, appUrl: null }, model);
   })()`);
@@ -64,6 +67,26 @@ module.exports = async function (t) {
   t.ok(await mx.evaluate(`document.querySelectorAll('.docs-shot .dx.preview').length >= 2`),
     'its previews are the reader itself, drawn small from this project: ' + await mx.evaluate(`document.querySelectorAll('.docs-shot .dx.preview').length`));
   t.ok(await mx.evaluate(`!document.querySelector('.docs-landing > .dx')`), 'and there is no second, full reader in the app to keep true');
+  const tiles = await mx.evaluate(`JSON.stringify(Array.from(document.querySelectorAll('.docs-inside > .card')).map(function (x) { var r = x.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.height)]; }))`);
+  // Tiles side by side start at one height and are one height: the bug was a
+  // margin that pushed every tile but the first 14px down.
+  t.ok(JSON.parse(tiles).every(function (a, i, all) { return all.every(function (b) { var d = Math.abs(b[0] - a[0]); return d > 40 || (d === 0 && b[1] === a[1]); }); }),
+    'the tiles of "What is in it" in one row are one height, the first no taller than the rest: ' + tiles);
+
+  // ---- the export: which modules go in, chosen first ----
+  await mx.evaluate(`Array.from(document.querySelectorAll('.docs-landing button')).find(b => /Export documentation/.test(b.textContent)).click()`);
+  await mx.waitFor(`!!document.querySelector('.docs-mods')`, 5000, 'module chooser');
+  const mods = JSON.parse(await mx.evaluate(`JSON.stringify(Array.from(document.querySelectorAll('.docs-mod')).map(function (l) { return [l.querySelector('strong').textContent, l.querySelector('input').checked]; }))`));
+  t.ok(mods.some(function (m) { return m[0] === 'Sales' && m[1]; }) && mods.some(function (m) { return m[0] === 'Atlas_Core' && !m[1]; }),
+    'every module is offered, own ones ticked and Marketplace ones not: ' + JSON.stringify(mods));
+  const buildBtn = `Array.from(document.querySelectorAll('.modal button')).find(function (b) { return /Build file/.test(b.textContent); })`;
+  await mx.evaluate(`Array.from(document.querySelectorAll('.docs-mods-quick button')).find(function (b) { return b.textContent === 'None'; }).click()`);
+  t.ok(await mx.evaluate(`${buildBtn}.disabled && /now 0 microflows/.test(document.querySelector('.modal').textContent)`),
+    'with no module chosen there is nothing to build, and the count says so');
+  await mx.evaluate(`Array.from(document.querySelectorAll('.docs-mods-quick button')).find(function (b) { return b.textContent === 'Own modules'; }).click()`);
+  t.ok(await mx.evaluate(`!${buildBtn}.disabled && /now 2 microflows/.test(document.querySelector('.modal').textContent)`),
+    'and "Own modules" puts the project’s own back');
+  await mx.evaluate(`Array.from(document.querySelectorAll('.modal button')).find(function (b) { return b.textContent === 'Close'; }).click()`);
 
   // ---- the encrypted export, round-tripped ----
   // Build the file exactly as the Export button does, then open it from a real
@@ -120,7 +143,7 @@ module.exports = async function (t) {
     await ex.waitFor(`!!document.querySelector('.dx-list .dx-item')`, 5000, 'flow list');
     await ex.evaluate(`Array.from(document.querySelectorAll('.dx-list .dx-item')).find(function (x) { return /CreateOrder/.test(x.textContent); }).click()`);
     await ex.waitFor(`document.querySelectorAll('.wfx-step').length >= 2`, 5000, 'export workflow');
-    t.ok(await ex.evaluate(`!!document.querySelector('.dx-ends .dx-end.in') && !!document.querySelector('.dx-ends .dx-end.out')`),
+    t.ok(await ex.evaluate(`!!document.querySelector('.wfx > .wfx-in') && !!document.querySelector('.wfx > .wfx-out')`),
       'a flow states its entry and its exits before its first step');
     await ex.evaluate(`Array.from(document.querySelectorAll('.wfx-step')).find(function (s) { return /Create object/i.test(s.textContent); }).click()`);
     const step = await ex.waitFor(`(function(){ var d = document.querySelector('.wfx-detail'); return d && !d.hidden && d.textContent; })()`, 3000, 'pinned');
@@ -133,9 +156,17 @@ module.exports = async function (t) {
       'the domain model is a map: the entity in the middle, a column on each side');
     const around = await ex.evaluate(`document.querySelectorAll('.dm-map .dm-n').length`);
     t.ok(around >= 1, 'with the entities it is associated with around it: ' + around);
+    t.ok(await ex.evaluate(`document.querySelector('.dx-crumbs').nextElementSibling.classList.contains('dx-acc')`),
+      'who can access an entity is the first thing on its page');
+    await ex.evaluate(`Array.from(document.querySelectorAll('.dx-list .dx-item')).find(function (x) { return x.querySelector('b').textContent === 'Customer'; }).click()`);
+    const acc = await ex.waitFor(`document.querySelector('.dx-acc-row') && document.querySelector('.dx-acc').textContent`, 5000, 'access card');
+    t.ok(/Sales\.User/.test(acc) && /read/.test(acc) && /create/.test(acc) && /only rows where/.test(acc) && /\[Age > 0\]/.test(acc),
+      'one row per rule: the role, what it may do, and the XPath that limits the rows, exactly: ' + acc);
     await ex.evaluate(`Array.from(document.querySelectorAll('.dx-nav-item')).find(function (b) { return /quality/i.test(b.textContent); }).click()`);
-    t.ok(await ex.waitFor(`/without access rules/.test(document.querySelector('.dx-main').textContent)`, 5000, 'quality'),
+    t.ok(await ex.waitFor(`/Nothing reaches these/.test(document.querySelector('.dx-main').textContent)`, 5000, 'quality'),
       'and Model quality reports where the model looks unfinished');
+    t.ok(await ex.evaluate(`!/without access rules|skip entity access/.test(document.querySelector('.dx-main').textContent)`),
+      'without the two access lists: what access a role has belongs to the entity and to the Security section, not to a list of exceptions (Karol, 2026-10-09)');
     await ex.close();
   } finally {
     exportServer.close();

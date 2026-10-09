@@ -172,6 +172,11 @@ module.exports = async function (t) {
     'a scheduled event is listed with what it runs and when — it executes outside every role in the model');
   t.ok(/Sales\.RecalculateTotals/.test(panel), 'naming the microflow it sets off');
   t.ok(/off/.test(panel), 'and a queue or event that is switched off says so rather than looking live');
+  // The microflow is a link: the next question is what it does.
+  await mx.evaluate(`Array.from(document.querySelectorAll('.sec-flow-link')).find(function (b) { return b.textContent === 'Sales.RecalculateTotals'; }).click()`);
+  t.ok(await mx.waitFor(`!!document.querySelector('.popup-tabs') && /RecalculateTotals/.test(document.querySelector('.modal h3').textContent)`, 5000, 'flow popup'),
+    'and clicking the microflow a scheduled event runs opens it');
+  await mx.evaluate(`Array.from(document.querySelectorAll('.modal button')).find(function (b) { return b.textContent === 'Close'; }).click()`);
 
   // ---- an enumeration attribute says what it may hold ----
   // The entity popup used to name the enumeration and stop there; the values

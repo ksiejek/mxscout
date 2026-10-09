@@ -767,7 +767,12 @@
           ? el('span', { text: auth.join(', ') })
           : el('span', { class: 'sec-off', text: 'none' })]),
         el('td', {}, [(s.exposes || []).length
-          ? el('span', { text: s.exposes.length + ' · ' + s.exposes.slice(0, 3).join(', ') + (s.exposes.length > 3 ? ' …' : ''), title: s.exposes.join('\n') })
+          ? el('div', { class: 'sec-exposes', title: s.exposes.join('\n') }, s.exposes.slice(0, 4).map(function (op) {
+              // "POST order → Sales.CancelOrder": the operation, and the
+              // microflow behind it as a link.
+              var m = /^(.*?)\s*→\s*(\S+)\s*$/.exec(String(op));
+              return el('div', {}, m ? [el('span', { class: 'muted', text: m[1] + ' → ' }), flowLink(model, m[2])] : [el('span', { text: op })]);
+            }).concat(s.exposes.length > 4 ? [el('div', { class: 'muted', text: '+ ' + (s.exposes.length - 4) + ' more' })] : []))
           : el('span', { class: 'muted', text: '—' })])
       ]);
     });
@@ -782,6 +787,18 @@
         el('tbody', {}, rows)
       ])
     ]);
+  }
+
+  // A microflow named on this page opens over it, wherever it is named: the
+  // reader came to see what runs, and the next question is what it does.
+  function flowLink(model, name) {
+    if (!name) return el('span', { class: 'muted', text: '—' });
+    var flow = (model.microflows || []).find(function (f) { return f.qualifiedName === name; });
+    if (!flow) return el('span', { class: 'trig-name', text: name });
+    return el('button', {
+      class: 'link-btn trig-name sec-flow-link', text: name, title: 'Open ' + name,
+      onclick: function () { peekObject('microflows', flow); }
+    });
   }
 
   // ---------- runs without a user ----------
@@ -802,9 +819,7 @@
           el('span', { class: 'muted sec-note', text: a.kind }),
           a.enabled === false ? markNote('off', 'Defined, but switched off') : null
         ].filter(Boolean)),
-        el('td', {}, [a.microflow
-          ? el('span', { class: 'trig-name', text: a.microflow })
-          : el('span', { class: 'muted', text: '—' })]),
+        el('td', {}, [flowLink(model, a.microflow)]),
         el('td', {}, [what.length
           ? el('span', { text: what.join(' · ') })
           : el('span', { class: 'muted', text: '—' })])

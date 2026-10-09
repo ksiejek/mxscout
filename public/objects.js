@@ -1122,8 +1122,12 @@
       window.MxLive.forgetDataPane();
       render();
     };
+    // Studio Pro's layout is a drawing the size Studio Pro made it, so it gets
+    // the whole screen bar a 1% margin, and only the drawing scrolls — not
+    // the window around it as well (Karol, 2026-10-09).
+    var fill = activeTab === 'diagram' && state.detail.diagramMode === 'studio';
     var backdrop = el('div', { class: 'modal-backdrop', onclick: function (e) { if (e.target === backdrop) close(); } }, [
-      withMod(el('div', { class: 'modal modal-detail modal-mod' }, [
+      withMod(el('div', { class: 'modal modal-detail modal-mod' + (fill ? ' modal-fill' : '') }, [
         el('div', { class: 'popup-head' }, [
           el('div', {}, [
             el('h3', { text: flow.name }),

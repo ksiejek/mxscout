@@ -2297,7 +2297,9 @@
       syncLogEntities();
       body = window.MxLogs.render();
     } else if (docsInProject()) {
-      body = window.MxDocs.render(state.detail.model, findProject(state.activeId));
+      // The whole model, Marketplace modules included: the export offers every
+      // module and leaves the Marketplace ones unticked.
+      body = window.MxDocs.render(state.detail.rawModel || state.detail.model, findProject(state.activeId));
     } else if (state.storageError) {
       body = el('div', { class: 'empty' }, [
         el('h2', { text: 'This browser’s storage is unavailable' }),

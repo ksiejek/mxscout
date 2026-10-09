@@ -57,6 +57,42 @@
     }
     function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); return n; }
     function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+
+    // What a card may say about itself. A short plain value ("'Comics'",
+    // "$Order/Number", "from $Ticket") belongs on the card; an expression with
+    // logic in it ("if $Supplier/Name = empty then …") makes the card as wide
+    // as the expression and says nothing at a glance, so it is shown only in
+    // the step's details, laid out (Karol, 2026-10-09).
+    function simpleText(text) {
+      var t = String(text || '');
+      return t.length <= 48 && t.indexOf('\n') === -1 && !/\b(if|then|else)\b/i.test(t);
+    }
+    // A Mendix expression, laid out to be read: "then" and "else" each start a
+    // line, indented under the "if" they belong to, and a long condition
+    // breaks before its "and" / "or". Text in quotes is never touched.
+    function prettyExpr(src) {
+      var text = String(src || '').replace(/\s+/g, ' ').trim();
+      if (simpleText(text)) return text;
+      var re = /'(?:[^']|'')*'|\b(?:if|then|else|and|or)\b|[^'\s]+|\s+/gi;
+      var lines = [], line = '', depth = 0, m;
+      function pad(n) { return new Array(n + 1).join('  '); }
+      function flush() { if (line.trim()) lines.push(line.replace(/\s+$/, '')); line = ''; }
+      while ((m = re.exec(text))) {
+        var tok = m[0], kw = tok.toLowerCase();
+        if (kw === 'if') { if (line.trim() && !/^\s*(then|else)\s*$/i.test(line)) { flush(); line = pad(depth); } depth++; line += 'if '; continue; }
+        if (kw === 'then' || kw === 'else') { flush(); line = pad(Math.max(depth, 1)) + kw + ' '; continue; }
+        if ((kw === 'and' || kw === 'or') && line.replace(/^\s+/, '').length > 40) {
+          var ind = /^\s*/.exec(line)[0].length / 2;
+          flush(); line = pad(ind + 1) + kw + ' '; continue;
+        }
+        if (/^\s+$/.test(tok)) { if (line && !/\s$/.test(line)) line += ' '; continue; }
+        // An XPath's next [constraint] starts a line of its own.
+        if (tok.charAt(0) === '[' && /\]\s*$/.test(line) && line.trim().length > 30) { var at = /^\s*/.exec(line)[0]; flush(); line = at; }
+        line += tok;
+      }
+      flush();
+      return lines.join('\n');
+    }
     function shortName(qn) { return String(qn || '').split('.').pop(); }
     function badgeOf(f) {
       if (f.kind === 'page') return 'PG';
@@ -98,23 +134,49 @@
       var known = env.known || function () { return false; };
       var open = env.open || function () {};
       var wrap = h('div', { class: 'wf-wrap' });
-      add(wrap, ends(f, env));
       if (!f.workflow) {
+        add(wrap, ends(f, env));
         wrap.appendChild(h('div', { class: 'dx-note', text: 'No drawing for this ' + f.kind + ' in the model — it was imported as JSON, or the flow is empty.' }));
         return wrap;
       }
+      // A step's details open NEXT TO the step, inside the drawing, and move
+      // with it as the drawing scrolls: a panel at the side of the canvas
+      // read as a separate window, far from what was clicked (Karol,
+      // 2026-10-09). Right of the step when there is room, left when not,
+      // under it when neither side has room.
       var detail = h('aside', { class: 'wfx-detail', hidden: true });
-      var canvas = h('div', { class: 'wfx-canvas' }, [h('div', { class: 'wfx' }, seqNodes(f.workflow, f))]);
-      var stage = h('div', { class: 'wfx-stage' }, [canvas, detail]);
+      // What it takes sits above Start and what it hands back below the last
+      // step, inside the drawing: two cards above the canvas took the room
+      // the workflow needed and gave the page a second scrollbar (Karol,
+      // 2026-10-09).
+      var inner = h('div', { class: 'wfx' }, [entryNode(f), link()].concat(seqNodes(f.workflow, f), [exitNode(f)]));
+      inner.appendChild(detail);
+      var canvas = h('div', { class: 'wfx-canvas' }, [inner]);
+      var stage = h('div', { class: 'wfx-stage' }, [canvas]);
       var pinned = null;
+      var POP = 360, GAP = 16;
+      function place(node) {
+        var ir = inner.getBoundingClientRect(), nr = node.getBoundingClientRect();
+        // Previews are drawn scaled; positions are worked out inside the scale.
+        var k = inner.offsetWidth ? ir.width / inner.offsetWidth : 1;
+        var left = (nr.left - ir.left) / k, right = (nr.right - ir.left) / k, top = (nr.top - ir.top) / k;
+        var width = Math.max(inner.scrollWidth, inner.offsetWidth);
+        var side = right + GAP + POP <= width + 8 ? 'right' : left - GAP - POP >= 0 ? 'left' : 'below';
+        detail.className = 'wfx-detail at-' + side;
+        detail.style.left = (side === 'right' ? right + GAP : side === 'left' ? left - GAP - POP : Math.max(0, left)) + 'px';
+        detail.style.top = (side === 'below' ? (nr.bottom - ir.top) / k + 10 : top - 4) + 'px';
+        if (detail.scrollIntoView) detail.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
       function pin(node) {
         if (pinned) pinned.classList.remove('pinned');
-        if (!node || node === pinned) { pinned = null; detail.hidden = true; stage.classList.remove('has-detail'); return; }
+        if (!node || node === pinned) { pinned = null; detail.hidden = true; return; }
         pinned = node; node.classList.add('pinned');
         clear(detail).appendChild(node._detail());
-        detail.hidden = false; stage.classList.add('has-detail');
+        detail.hidden = false;
+        place(node);
       }
       canvas.addEventListener('click', function (e) {
+        if (detail.contains(e.target)) return;
         var n = e.target.closest ? e.target.closest('[data-pick]') : null;
         if (n && canvas.contains(n)) pin(n); else pin(null);
       });
@@ -130,6 +192,7 @@
         stage.classList.toggle('full', on);
         big.textContent = on ? '✕ Close' : '⤢ Enlarge';
         big.classList.toggle('over', on);
+        if (pinned) place(pinned);
       } });
       if (!env.preview) {
         doc.addEventListener('keydown', function (e) {
@@ -177,10 +240,12 @@
             ]));
           } else if (b.t === 'split') {
             var dec = h('div', { class: 'wfx-dec', 'data-pick': '1', tabindex: '0' }, [h('span', { class: 'dia' }, [h('b', { text: '?' })]),
-              h('div', null, [h('div', { class: 't', text: b.title }), b.cond ? h('div', { class: 'd mono', text: b.cond }) : null])]);
+              h('div', null, [h('div', { class: 't', text: b.title }),
+                b.cond && simpleText(b.cond) && b.cond !== b.title ? h('div', { class: 'd mono', text: b.cond }) : null,
+                b.cond && !simpleText(b.cond) ? h('span', { class: 'tag', text: 'ƒx condition' }) : null])]);
             dec._detail = function () {
               return detailOf(b.kind === 'decision' ? 'Decision' : 'Object type decision', b.title, b.no, 'if',
-                [b.cond ? ['Condition', b.cond, true] : null, ['Branches', b.branches.map(function (x) { return CASE[x.label] || x.label || '–'; }).join(' · ')]].filter(Boolean), null, b.doc);
+                [b.cond ? ['Condition', prettyExpr(b.cond), true] : null, ['Branches', b.branches.map(function (x) { return CASE[x.label] || x.label || '–'; }).join(' · ')]].filter(Boolean), null, b.doc);
             };
             var going = b.branches.map(function (x, k) { return x.ends ? -1 : k; }).filter(function (k) { return k >= 0; });
             var lo = going.length ? Math.min.apply(null, going) : -1, hi = going.length ? Math.max.apply(null, going) : -1;
@@ -200,7 +265,8 @@
             var node = h('div', { class: 'wfx-step wk-' + c.fam + (c.off ? ' off' : '') + (target && known(target) ? ' calls' : ''), 'data-pick': '1', tabindex: '0', role: 'button' }, [
               h('span', { class: 'ic', text: FAM_ICON[c.fam] || '•' }),
               h('div', { class: 'tx' }, [h('div', { class: 'k' }, [c.kick, h('span', { class: 'no', text: String(b.no) })]), h('div', { class: 't', text: c.title }),
-                c.detail ? h('div', { class: 'd', text: c.detail }) : null,
+                c.detail && simpleText(c.detail) ? h('div', { class: 'd', text: c.detail }) : null,
+                c.detail && !simpleText(c.detail) ? h('span', { class: 'tag', text: 'ƒx expression' }) : null,
                 count ? h('span', { class: 'tag data', text: count + (c.ref && c.ref.kind !== 'page' && !c.creates && c.fam === 'call' ? (count === 1 ? ' argument' : ' arguments') : count === 1 ? ' field' : ' fields') }) : null,
                 c.err ? h('span', { class: 'tag', text: 'custom error handling' }) : null, c.off ? h('span', { class: 'tag', text: 'disabled' }) : null])
             ]);
@@ -209,7 +275,10 @@
                 ? h('button', { type: 'button', class: 'dx-btn primary go', text: 'Open ' + shortName(c.ref.qn) + ' →', onclick: function (e) { e.stopPropagation(); open(target); } })
                 : (c.ref && c.ref.kind ? h('div', { class: 'go dim', text: c.ref.qn + ' is not in this documentation' }) : null);
               var ent = c.creates && c.rows && env.openEntity ? c.rows.filter(function (r) { return r[0] === 'Refers to'; })[0] : null;
-              return detailOf(c.kick, c.title, b.no, c.fam, c.rows.map(function (r) { return [r[0], r[1], /^(Detail|Value|Refers to)$/.test(r[0])]; }),
+              return detailOf(c.kick, c.title, b.no, c.fam, c.rows.map(function (r) {
+                var code = /^(Detail|Value|Refers to)$/.test(r[0]);
+                return [r[0], code && r[0] !== 'Refers to' ? prettyExpr(r[1]) : r[1], code];
+              }),
                 fieldTable(c, f), c.doc, [go, ent && env.knownEntity && env.knownEntity(ent[1])
                   ? h('button', { type: 'button', class: 'dx-btn go', text: 'Show ' + shortName(ent[1]) + ' in the domain model', onclick: function (e) { e.stopPropagation(); env.openEntity(ent[1]); } }) : null]);
             };
@@ -222,8 +291,40 @@
       }
     }
 
+    // What the flow takes, drawn where Studio Pro draws its parameters: above
+    // Start, as yellow shapes pointing into the flow. Under them, who starts
+    // it, in one line.
+    function entryNode(f) {
+      var callers = {};
+      (f.calledBy || []).forEach(function (c) { (callers[c.kind] = callers[c.kind] || []).push(c); });
+      var from = [f.roles.length ? h('span', { class: 'dx-pill', title: f.roles.join(', '), text: 'by ' + plural(f.roles.length, 'role', 'roles') }) : null]
+        .concat(Object.keys(callers).map(function (k) {
+          return h('span', { class: 'dx-pill', title: callers[k].map(function (c) { return c.qn; }).join('\n'), text: plural(callers[k].length, k, CALLER[k] || k + 's') });
+        })).filter(Boolean);
+      return h('div', { class: 'wfx-in' }, [
+        h('div', { class: 'wfx-in-params' }, f.params.length ? f.params.map(function (p) {
+          var type = String(p.type || '');
+          return h('div', { class: 'wfx-param', title: p.name + ' : ' + type }, [h('b', { class: 'mono', text: p.name }),
+            h('small', { class: 'mono', text: /^[\w]+\.[\w]+$/.test(type) ? shortName(type) : type })]);
+        }) : [h('div', { class: 'wfx-param none', text: 'no parameters' })]),
+        h('div', { class: 'wfx-in-from' }, [h('span', { class: 'wfx-in-k', text: 'started' })]
+          .concat(from.length ? from : [h('span', { class: 'dx-end-none', text: 'by nothing in the model' })]))
+      ]);
+    }
+    // What it hands back, once, under the whole drawing; each end in the
+    // drawing still says what it returns.
+    function exitNode(f) {
+      var exits = f.exits || [], ends = 0, errors = 0;
+      exits.forEach(function (x) { if (x.error) errors += x.count || 1; else ends += x.count || 1; });
+      return h('div', { class: 'wfx-out' }, [
+        h('span', { class: 'wfx-in-k', text: 'returns' }),
+        h('span', { class: 'wfx-ret' + (f.returns ? ' mono' : ''), title: f.returns || '', text: f.returns || 'nothing' }),
+        h('span', { class: 'wfx-out-n', text: [ends ? plural(ends, 'end', 'ends') : null, errors ? plural(errors, 'error end', 'error ends') : null].filter(Boolean).join(' · ') })
+      ]);
+    }
+
     // What the flow takes and where it can end — the two things to know before
-    // reading a single step.
+    // reading a single step. Used where there is no drawing to put them in.
     function ends(f, env) {
       if (f.kind === 'page') return null;
       var callers = {};
@@ -275,7 +376,7 @@
           return h('tr', null, [
             h('td', { class: 'mono n' }, [x.association ? h('i', { class: 'as', title: 'association', text: '↔ ' }) : null, x.name]),
             h('td', { class: 'op', text: x.op && x.op !== 'Set' ? x.op.toLowerCase() : '=' }),
-            h('td', { class: 'mono v', text: x.value === '' ? '(empty)' : x.value })
+            h('td', { class: 'mono v', text: x.value === '' ? '(empty)' : prettyExpr(x.value) })
           ]);
         })) : null,
         plain.length ? h('div', { class: 'wfx-plain' }, [h('span', { text: 'Passed on unchanged: ' }), h('span', { class: 'mono', text: plain.join(', ') })]) : null
@@ -322,7 +423,7 @@
       ]);
       var NAV = [['start', 'Overview'], ['modules', 'Modules'], ['refs', 'Microflows & pages'], ['domain', 'Domain model'], ['quality', 'Model quality']];
       var counts = { modules: data.kpi.modules, refs: data.kpi.microflows + data.kpi.nanoflows + data.kpi.pages, domain: data.kpi.entities,
-        quality: data.quality.unreached.length + data.quality.noAccess.length + data.quality.pastAccess.length };
+        quality: data.quality.unreached.length };
       var navBtns = {};
       var nav = h('nav', { class: 'dx-nav', 'aria-label': 'Sections' }, [
         h('div', { class: 'dx-nav-project' }, [h('b', { text: data.project }), h('small', { text: (data.mendix ? 'Mendix ' + data.mendix + ' · ' : '') + 'generated ' + fmtDate(data.generatedAt) })])
@@ -476,7 +577,7 @@
           ['ƒ', 'Microflows & pages', 'What each flow takes and where it ends, every step top to bottom, and the data each step creates or changes.', function () { go({ view: 'refs' }); }],
           ['⬡', 'Domain model', 'A map per entity: the entities that point to it on one side, the ones it points to on the other.', function () { go({ view: 'domain' }); }],
           ['▦', 'Modules', 'What each module holds — own modules first, Marketplace modules after.', function () { go({ view: 'modules' }); }],
-          ['✓', 'Model quality', plural(q.unreached.length, 'element nothing reaches', 'elements nothing reaches') + ' · ' + plural(q.noAccess.length, 'entity without access rules', 'entities without access rules') + '.', function () { go({ view: 'quality' }); }]
+          ['✓', 'Model quality', plural(q.unreached.length, 'element nothing reaches', 'elements nothing reaches') + ' · ' + plural(q.disabled, 'disabled step', 'disabled steps') + '.', function () { go({ view: 'quality' }); }]
         ];
         main.appendChild(h('h3', { class: 'dx-h', text: 'Where to start' }));
         main.appendChild(h('div', { class: 'dx-cards' }, cards.map(function (c) {
@@ -641,6 +742,7 @@
         if (!q) { main.appendChild(h('div', { class: 'dx-note', text: 'This model has no entities.' })); return; }
         var e = data.entities[q];
         main.appendChild(crumbs([['Overview', function () { go({ view: 'start' }); }], ['Domain model', null], [e.module], [e.name]]));
+        main.appendChild(accessCard(e));
 
         var inn = {}, out = {}, self = [];
         data.associations.forEach(function (a) {
@@ -722,7 +824,37 @@
           main.appendChild(h('div', { class: 'dx-card dx-table' }, [h('table', null, [h('thead', null, h('tr', null, [h('th', { text: 'Name' }), h('th', { text: 'Type' })]))].concat([h('tbody', null,
             e.attributes.map(function (a) { return h('tr', null, [h('td', { class: 'mono', text: a.name }), h('td', { class: 'mono', text: a.type })]); }))]))]));
         } else main.appendChild(h('div', { class: 'dx-note', text: 'No attributes of its own' + (e.generalization ? ' — it inherits those of ' + shortName(e.generalization) + '.' : '.') }));
-        main.appendChild(h('div', { class: 'dx-p', text: e.rules ? 'Readable by: ' + (e.roles.map(shortName).join(', ') || '–') : (e.persistable ? 'No access rules — no role can read it from the client.' : 'Not persistable — access rules do not apply.') }));
+      }
+
+      // Who may do what with an entity — the first thing on its page, not a
+      // muted line under the attributes where it went unseen (Karol,
+      // 2026-10-09). One row per rule: the user roles that carry it as
+      // badges, what it allows as marks, and the XPath that limits the rows.
+      function accessCard(e) {
+        var rows = e.access || [];
+        var head = h('div', { class: 'dx-acc-h' }, [h('b', { text: 'Who can access it' }),
+          h('span', { class: 'dx-acc-sub', text: rows.length ? plural(rows.length, 'access rule', 'access rules')
+            : e.persistable ? 'No access rules — no role can read it from the client, only microflows that skip entity access.'
+            : 'No access rules.' })]);
+        if (!rows.length) return h('div', { class: 'dx-card dx-acc empty' }, [head]);
+        return h('div', { class: 'dx-card dx-acc' }, [head, h('div', { class: 'dx-acc-rows' }, rows.map(function (r) {
+          var can = [];
+          if (r.read) can.push(h('span', { class: 'dx-can r', text: 'read ' + r.read })); else can.push(h('span', { class: 'dx-can no', text: 'no read' }));
+          if (r.write) can.push(h('span', { class: 'dx-can w', text: 'write ' + r.write }));
+          if (r.create) can.push(h('span', { class: 'dx-can c', text: 'create' }));
+          if (r.del) can.push(h('span', { class: 'dx-can d', text: 'delete' }));
+          return h('div', { class: 'dx-acc-row' }, [
+            h('div', { class: 'dx-acc-who' }, [
+              h('div', { class: 'dx-acc-users' }, r.userRoles.length ? r.userRoles.map(function (u) { return h('span', { class: 'dx-urole', text: u }); })
+                : [h('span', { class: 'dx-urole none', text: 'no user role carries it' })]),
+              h('small', { class: 'mono', text: r.role })
+            ]),
+            h('div', { class: 'dx-acc-can' }, can),
+            h('div', { class: 'dx-acc-rows-x' }, r.xpath
+              ? [h('span', { class: 'dx-acc-k', text: 'only rows where' }), h('code', { class: 'dx-acc-x', text: prettyExpr(r.xpath) })]
+              : [h('span', { class: 'dx-acc-all', text: 'every row' })])
+          ]);
+        }))]);
       }
 
       // ---------- model quality ----------
@@ -730,8 +862,7 @@
         var Q = data.quality;
         setTitle('Model quality', data.project);
         main.appendChild(crumbs([['Overview', function () { go({ view: 'start' }); }], ['Model quality']]));
-        main.appendChild(h('div', { class: 'dx-kpis four' }, [tile(Q.unreached.length, 'nothing reaches'), tile(Q.noAccess.length, 'entities without access rules'),
-          tile(Q.pastAccess.length, 'microflows past entity access'), tile(Q.disabled, 'disabled steps')]));
+        main.appendChild(h('div', { class: 'dx-kpis two' }, [tile(Q.unreached.length, 'nothing reaches'), tile(Q.disabled, 'disabled steps')]));
         function table(title, note, keys, row) {
           main.appendChild(h('h3', { class: 'dx-h', text: title + ' (' + keys.length + ')' }));
           main.appendChild(h('p', { class: 'dx-p', text: note }));
@@ -743,10 +874,6 @@
           return h('button', { type: 'button', class: 'dx-xl-row link', onclick: function () { openKey(k); } }, [h('span', { class: 'dx-badge' + kindClass(f.kind), text: badgeOf(f) }), h('b', { class: 'mono', text: f.qn }), h('small', { text: f.kind + ' ↗' })]);
         }
         table('Nothing reaches these', 'No microflow, page, menu, schedule, service or button in the model refers to them, and no role may run them directly. Candidates for removal — or for a reference that was forgotten. Marketplace modules are left out.', Q.unreached, flowRow);
-        table('Entities without access rules', 'Persistable entities in own modules with no access rule: no role can read or write them through the client, only microflows that skip entity access.', Q.noAccess, function (q) {
-          return h('button', { type: 'button', class: 'dx-xl-row link', onclick: function () { go({ view: 'domain', entity: q }); } }, [h('span', { class: 'dx-badge en', text: 'E' }), h('b', { class: 'mono', text: q }), h('small', { text: 'entity ↗' })]);
-        });
-        table('Microflows that skip entity access', 'Callable by roles, but read and write past the access rules — whatever role starts them. Usually deliberate; worth knowing.', Q.pastAccess, flowRow);
       }
 
       draw();

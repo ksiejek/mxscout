@@ -281,7 +281,9 @@
       truncated = laidN.truncated;
       g.appendChild(textNode(laidN, b.x + 7, b.y + 5, 'start'));
     } else if (n.kind === 'parameter') {
-      g.appendChild(s('rect', { x: b.x, y: b.y, width: b.w, height: b.h, rx: 6, class: 'fd-param' }));
+      // Studio Pro draws a parameter as a yellow shape that narrows to a point,
+      // not as a box: square on top, a triangle pointing into the flow below.
+      g.appendChild(s('path', { d: 'M' + b.x + ',' + b.y + ' H' + (b.x + b.w) + ' V' + (b.y + b.h * 0.55) + ' L' + b.cx + ',' + (b.y + b.h) + ' L' + b.x + ',' + (b.y + b.h * 0.55) + ' Z', class: 'fd-param', 'stroke-linejoin': 'round' }));
       var laidP = layoutText([{ text: n.title || 'Parameter', style: 'meta' }], Math.max(60, b.w + 120), LINE_H.meta);
       truncated = laidP.truncated;
       g.appendChild(textNode(laidP, b.cx, b.y + b.h + 2, 'middle', 'fd-below'));
