@@ -1,7 +1,7 @@
 /* MxScout — documentation, the reader.
  *
  * Draws what docs-data.js builds, in MxScout's own look: its mark, its amber,
- * its sidebar; dark as MxScout is, and a light theme designed on the same
+ * its sidebar; dark and light, the two palettes MxScout itself has, the light one designed on the same
  * rules for whoever reads the exported file in daylight. Every microflow and
  * nanoflow is a WORKFLOW — cards from top to bottom, what it takes at the top,
  * where it can end at the bottom, a decision's branches side by side, loops as

@@ -62,7 +62,7 @@
     var frame = el('div', { class: 'docs-shot-frame' });
     var host = el('div', { class: 'docs-shot-host' });
     frame.appendChild(host);
-    window.MxDocsView.mount(data, host, { theme: 'dark', preview: true, state: state });
+    window.MxDocsView.mount(data, host, { theme: document.documentElement.getAttribute('data-mode') || 'dark', preview: true, state: state });
     // The reader is laid out at a desktop size and drawn small: scaled to
     // whatever width the frame gets, so it reads as a screenshot of the file.
     function fit() { if (frame.clientWidth) host.style.transform = 'scale(' + (frame.clientWidth / 1280) + ')'; }
@@ -92,7 +92,8 @@
   function render(model, project) {
     if (project) loadDescriptions(project.id);
     var rec = project ? descs[project.id] : null;
-    if (kept && kept.model === model && kept.desc === rec) return kept.host;
+    var mode = document.documentElement.getAttribute('data-mode') || 'dark';
+    if (kept && kept.model === model && kept.desc === rec && kept.mode === mode) return kept.host;
     var el = app.el;
     var built = buildData(model, project);
     var data = built.data;
@@ -134,7 +135,7 @@
       el('p', { class: 'muted docs-shots-note', text: 'These are the file’s own pages, drawn small from this project. In the file they are dark or light — the reader picks, or it follows the system.' }),
       shots
     ]);
-    kept = { model: model, desc: rec, host: host, data: data };
+    kept = { model: model, desc: rec, host: host, data: data, mode: mode };
     return host;
   }
 
@@ -253,7 +254,7 @@
       '})();'
     ].join('\n');
   }
-  // MxScout's look before anything is decrypted: dark as MxScout is, light
+  // MxScout's look before anything is decrypted: dark, as MxScout is by default, light
   // when the system asks for it — the same two themes the reader has.
   function gateStyle() {
     return [

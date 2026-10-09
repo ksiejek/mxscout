@@ -868,8 +868,51 @@
         el('div', { class: 'sidebar-label', text: 'Projects' }),
         renderProjectTree()
       ].filter(Boolean)),
-      el('div', { class: 'sidebar-foot' }, [guide, about, versionBtn])
+      el('div', { class: 'sidebar-foot' }, [guide, about, versionBtn, themeSwitch()])
     ]);
+  }
+
+  // ---------- light, dark, or the system's ----------
+  // The same choice the exported documentation offers, with the same two
+  // palettes. Dark is the default because it is what MxScout has always
+  // looked like; the choice is kept with the other settings in this
+  // browser's own database. <html> carries the choice (data-theme, which the
+  // stylesheet's palettes key on) and the theme in effect (data-mode, for
+  // the few rules and the module hues that must know which one it is).
+  var THEME_SETTING = 'theme';
+  var systemLight = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
+  function themeInEffect() {
+    var pref = state.settings.theme || 'dark';
+    return pref === 'auto' ? (systemLight && systemLight.matches ? 'light' : 'dark') : pref;
+  }
+  function applyTheme() {
+    var root = document.documentElement;
+    root.setAttribute('data-theme', state.settings.theme || 'dark');
+    root.setAttribute('data-mode', themeInEffect());
+  }
+  function setTheme(pref) {
+    state.settings.theme = pref;
+    applyTheme();
+    render();
+    // A lost preference is cosmetic, so a failed write raises no banner.
+    store.put('settings', { key: THEME_SETTING, value: pref }).catch(function () { return null; });
+  }
+  if (systemLight && systemLight.addEventListener) {
+    systemLight.addEventListener('change', function () {
+      if (state.settings.theme === 'auto') { applyTheme(); render(); }
+    });
+  }
+  function themeSwitch() {
+    var pref = state.settings.theme || 'dark';
+    return el('div', { class: 'theme-switch', role: 'group', 'aria-label': 'Theme' }, [
+      ['light', '☀ Light', 'Light'], ['dark', '☾ Dark', 'Dark'], ['auto', 'Auto', 'Follow the system']
+    ].map(function (t) {
+      return el('button', {
+        class: pref === t[0] ? 'on' : '', text: t[1], title: t[2],
+        'aria-pressed': pref === t[0] ? 'true' : 'false',
+        onclick: function () { setTheme(t[0]); }
+      });
+    }));
   }
 
   // ---------- new-project form ----------
@@ -1286,8 +1329,10 @@
     for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
     return h;
   }
+  // The same hue in both themes; only how light it is changes, so a module
+  // keeps its colour and still reads on white.
   function moduleColor(name) {
-    return 'hsl(' + moduleHue(name) + ', 58%, 63%)';
+    return 'hsl(' + moduleHue(name) + ', 58%, ' + (themeInEffect() === 'light' ? '42%' : '63%') + ')';
   }
   // Every module-coloured element gets its hue as a CSS custom property, so
   // the stylesheet decides HOW the colour is used (a stripe, a border, text)
@@ -2707,6 +2752,10 @@
       return store.get('settings', 'author');
     }).then(function (row) {
       state.settings.author = row ? row.value : null;
+      return store.get('settings', THEME_SETTING);
+    }).then(function (row) {
+      state.settings.theme = row && /^(light|dark|auto)$/.test(row.value) ? row.value : 'dark';
+      applyTheme();
       return loadProjects();
     }).then(function () {
       if (!state.activeId && carriedOver &&

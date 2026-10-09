@@ -17,6 +17,14 @@ claim a version it is not.
 
 ## Unreleased
 
+### A light theme for MxScout
+
+- **MxScout has a light palette**, the same one the exported documentation's
+  light theme uses: warm paper, the amber deepened to read on white. Choose
+  light, dark or the system's at the foot of the sidebar; the choice is kept
+  with your other settings in this browser. Dark stays the default. The
+  workflow in a flow's window and the documentation previews follow it.
+
 ### Entity access, set against what actually uses it
 
 - **The Security section now compares every access rule with the pages and

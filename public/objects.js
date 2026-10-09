@@ -1098,7 +1098,7 @@
             open: openQn
           })
         : window.MxDocsView.flow(window.MxDocsData.flowEntry(flow, sel.kind), {
-            theme: 'dark',
+            theme: document.documentElement.getAttribute('data-mode') || 'dark',
             known: function (key) { return !!target(key.slice(key.indexOf(':') + 1)); },
             open: function (key) { openQn(key.slice(key.indexOf(':') + 1)); }
           });

@@ -54,6 +54,38 @@
   --text-2xl: 24px;
 }
 
+/* The light palette: the same rules in daylight, and the same colours the
+   exported documentation's light theme uses, so the two read as one product.
+   Warm paper instead of near-black; the amber deepened until it reads on
+   white; the alarm red darkened for text. Chosen in the sidebar (light, dark,
+   or the system's), kept in this browser's own database with the other
+   settings. Dark stays the default: it is what MxScout has always looked
+   like. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f6f5f2;
+  --panel: #ffffff;
+  --panel-2: #f3f1ec;
+  --text: #1c1a16;
+  --muted: #716b61;
+  --accent: #b8730f;
+  --border: #e2ded5;
+  --alarm: #c9412f;
+}
+@media (prefers-color-scheme: light) {
+  :root[data-theme="auto"] {
+  color-scheme: light;
+  --bg: #f6f5f2;
+  --panel: #ffffff;
+  --panel-2: #f3f1ec;
+  --text: #1c1a16;
+  --muted: #716b61;
+  --accent: #b8730f;
+  --border: #e2ded5;
+  --alarm: #c9412f;
+  }
+}
+
 * { box-sizing: border-box; }
 
 html, body { height: 100%; }
@@ -2853,3 +2885,26 @@ button.au-place:hover, button.au-place:focus-visible { background: color-mix(in 
 .au-entity { font-size: 13px; font-weight: 600; padding: 0; overflow-wrap: anywhere; text-align: left; }
 .au-aside { margin: 12px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 .sec-sub-h .mark { margin-left: 8px; }
+
+/* ---------- the few colours that were written for a dark ground ----------
+   Everything else follows the tokens. These were literal, and pale text on
+   white, or a near-black note in a light drawing, is unreadable. app.js sets
+   data-mode on <html> to the theme in effect, so "auto" resolves once. */
+:root[data-mode="light"] .msg.error,
+:root[data-mode="light"] .warn-text { color: #9c2c1e; }
+:root[data-mode="light"] .create-access-ok { color: #146b42; }
+:root[data-mode="light"] .scan-user-guest { color: #8a6a10; }
+:root[data-mode="light"] .modal-backdrop { background: rgba(40, 30, 10, 0.35); }
+:root[data-mode="light"] .fd-note { fill: #fbf3d6; stroke: #c9b46a; }
+:root[data-mode="light"] .fd-param { fill: #f8e7a8; stroke: #b8901f; }
+:root[data-mode="light"] .fd-t-note { fill: #4a4128; }
+:root[data-mode="light"] .fd-edge-annotation { stroke: #c9b46a; }
+:root[data-mode="light"] .fd-diamond { stroke: #b8901f; }
+:root[data-mode="light"] ::-webkit-scrollbar-thumb { background-color: #cfc9bd; }
+
+/* the theme switch, at the foot of the sidebar */
+.theme-switch { display: flex; gap: 2px; padding: 2px; margin: 4px 8px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); }
+.theme-switch button { flex: 1; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+.theme-switch button:hover { color: var(--text); }
+.theme-switch button.on { background: var(--accent); color: #08120f; }
+:root[data-mode="light"] .theme-switch button.on { color: #ffffff; }
