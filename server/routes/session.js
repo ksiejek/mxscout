@@ -177,12 +177,21 @@ function validateScalarParams(raw) {
 function handleBridgePing(req, res) {
   setCors(req, res);
   if (!tokenMatches(req.query.get('token'))) {
-    sendJson(res, 403, { error: 'Invalid or missing token — reconnect in MxScout for a fresh snippet.' });
+    sendJson(res, 403, state.getSessionToken()
+      ? { error: 'Invalid or missing token — reconnect in MxScout for a fresh snippet.' }
+      : { error: 'Disconnected in MxScout.', disconnected: true });
     return;
   }
   state.touchCommandPoll();
+  // Who is signed in, if the bridge said. Bounded and restricted to the
+  // characters a Mendix user role name can have, since it is shown in the UI.
+  const name = String(req.query.get('user') || '').slice(0, 120);
+  const roles = String(req.query.get('roles') || '').split(',')
+    .map((r) => r.trim()).filter((r) => USER_ROLE_RE.test(r)).slice(0, 50);
+  if (name || roles.length) state.setBridgeUser({ name: name || null, roles });
   sendJson(res, 200, { ok: true });
 }
+const USER_ROLE_RE = /^[A-Za-z0-9_][A-Za-z0-9_ .-]{0,99}$/;
 
 const ATTR_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 function validateAttrNames(raw) {
@@ -320,8 +329,10 @@ async function handleSetCommand(req, res) {
   sendJson(res, 200, { ok: true, commandId: command.id });
 }
 
+// Disconnect: ends the bridge's session, not only the armed command (see
+// endBridgeSession in state.js for why that distinction was the bug).
 function handleClearCommand(req, res) {
-  state.setPendingCommand(null);
+  state.endBridgeSession();
   sendJson(res, 200, { ok: true });
 }
 
@@ -331,7 +342,8 @@ function handleGetCommandStatus(req, res) {
   const lastPollAt = state.getLastCommandPollAt();
   const listenerConnected = state.heldPollCount() > 0 ||
     (!!lastPollAt && (Date.now() - new Date(lastPollAt).getTime()) < LISTENER_STALE_MS);
-  sendJson(res, 200, { pending, result: state.getCommandResult(), listenerConnected });
+  sendJson(res, 200, { pending, result: state.getCommandResult(), listenerConnected,
+    user: listenerConnected ? state.getBridgeUser() : null });
 }
 
 // Cross-origin — the listener runs on the TARGET app's own tab. Token travels
@@ -383,7 +395,9 @@ function dispatchIfAny(res) {
 function handleCommandPoll(req, res) {
   setCors(req, res);
   if (!tokenMatches(req.query.get('token'))) {
-    sendJson(res, 403, { error: 'Invalid or missing token — reconnect in MxScout for a fresh snippet.' });
+    sendJson(res, 403, state.getSessionToken()
+      ? { error: 'Invalid or missing token — reconnect in MxScout for a fresh snippet.' }
+      : { error: 'Disconnected in MxScout.', disconnected: true });
     return;
   }
   state.touchCommandPoll();

@@ -74,6 +74,21 @@ module.exports = async function (t) {
   t.ok(await app.evaluate(`/Environment allowed/.test(document.body.textContent)`),
     'the panel reports each step and its outcome, not just a spinner');
 
+  // The signed-in person, next to the roles: the bridge reports their name and
+  // user roles, and "view as" them reaches what all their roles reach.
+  const signedOpt = await mx.waitFor(`(function () {
+    var o = Array.from(document.querySelectorAll('.role-select option')).find(function (x) { return /signed in/.test(x.textContent); });
+    return o && o.parentNode.tagName === 'OPTGROUP' && o.textContent;
+  })()`, 10000, 'signed-in option');
+  t.ok(signedOpt === 'tester (signed in) — Agent + Viewer',
+    'the role list offers the person signed in to the app, with every user role they hold: ' + signedOpt);
+  await mx.evaluate(`(function () { var s = document.querySelector('.role-select'); s.value = 'tester (signed in)'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+  const maps = await mx.waitFor(`(function () { var s = document.querySelector('.role-select'); return s && s.value === 'tester (signed in)' && s.getAttribute('title'); })()`, 5000, 'signed-in selected');
+  t.ok(/maps to 2 module roles: Sales\.Agent, Sales\.Viewer/.test(maps),
+    'and viewing as them is both roles at once, not one of them: ' + maps);
+  await openEntityPopup(mx);
+  await mx.evaluate(clickTab('Data'));
+
   const rows = await mx.waitFor(`document.querySelectorAll('.data-table tbody tr').length === 10 && 10`, 20000, 'rows');
   t.ok(rows === 10, 'ten rows appear in MxScout');
   t.ok(await mx.evaluate(`document.querySelector('.data-summary').textContent`) === '1–10 of 253',

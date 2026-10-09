@@ -279,6 +279,10 @@
     // roles is one thing to look at, not six.
     result.widerByEntity = byEntity(result.wider);
     result.unusedByEntity = byEntity(result.unused);
+    result.unwrittenByEntity = byEntity(result.unwritten);
+    // A missing create, write or delete right makes the step fail; a missing
+    // read makes a retrieve find nothing. Only the first is a fault.
+    result.failing = result.cannotDo.filter(function (f) { return f.items.some(function (i) { return i.what !== 'read'; }); }).length;
     if (accessUseCache) accessUseCache.set(model, { whole: whole, result: result });
     return result;
   }
@@ -341,6 +345,32 @@
       kids.push(el('div', { class: 'muted au-more', text: 'Also named in ' + groups.mention.length + ' more place' + (groups.mention.length === 1 ? '' : 's') + ' on pages and in flows.' }));
     }
     return el('div', { class: 'au-uses' }, kids);
+  }
+
+  // One flow and what it does that the roles reaching it may not.
+  var WHAT = { read: 'reads', create: 'creates', write: 'changes', del: 'deletes', 'delete': 'deletes' };
+  function flowRow(model, f, failing) {
+    var section = f.kind === 'nanoflow' ? 'nanoflows' : 'microflows';
+    var target = (model[section] || []).find(function (x) { return x.qualifiedName === f.flow; });
+    var head = target
+      ? el('button', { class: 'link-btn au-entity', text: f.flow, title: 'Open ' + f.flow, onclick: function () { peekObject(section, target); } })
+      : el('span', { class: 'au-entity', text: f.flow });
+    return el('div', { class: 'au-row' }, [
+      el('div', { class: 'au-row-head' }, [head, el('span', { class: 'muted au-count', text: f.kind })]),
+      el('div', { class: 'au-lines' }, f.items.map(function (i) {
+        var bad = failing && i.what !== 'read';
+        return el('div', { class: 'au-line' }, [
+          el('div', { class: 'au-roles' }, roleBadges(i.userRoles)),
+          el('span', { class: 'au-what' + (bad ? ' au-bad' : '') }, [
+            el('span', { text: (WHAT[i.what] || i.what) + ' ' }),
+            el('span', { class: 'mono', text: i.entity + (i.members ? ' · ' + i.members.join(', ') : '') }),
+            el('span', { class: 'muted', text: failing
+              ? (i.what === 'read' ? ' — with no rule to read it, so it finds nothing' : ' — without the right, so it fails')
+              : ' — which these roles may not by their own rules' })
+          ])
+        ]);
+      }))
+    ]);
   }
 
   function roleBadges(names) {
@@ -438,6 +468,66 @@
       })));
     }
 
+    // ---- write, create and delete rights nothing uses ----
+    var spare = au.unwrittenByEntity;
+    kids.push(el('h4', { class: 'sec-sub-h' }, [
+      el('span', { text: 'May write, nothing writes (' + spare.length + ')' }),
+      markNote('worth knowing', 'Possibly deliberate: a Java action or a published service MxScout does not follow may use it')
+    ]));
+    if (!spare.length) {
+      kids.push(el('p', { class: 'muted', text: 'Every write, create and delete right a user role holds is used by something it reaches.' }));
+    } else {
+      kids.push(el('p', { class: 'hint', text: 'The user role may change these attributes, or create or delete the entity, and nothing it reaches does: no input on its pages, no New or Delete button, no nanoflow or microflow that runs with its rights. A pluggable widget bound to an attribute counts as writing it, so what is listed here is what nothing could be writing.' }));
+      kids.push(el('div', { class: 'au-list' }, spare.map(function (group) {
+        // Roles that are missing the same use share a line.
+        var lines = [], bySig = {};
+        group.items.forEach(function (i) {
+          var parts = [];
+          if (i.attributes.length) parts.push('write ' + i.attributes.join(', '));
+          if (i.create) parts.push('create');
+          if (i.del) parts.push('delete');
+          var sig = parts.join(' · ');
+          if (!bySig[sig]) { bySig[sig] = { text: sig, roles: [] }; lines.push(bySig[sig]); }
+          bySig[sig].roles.push(i.userRole);
+        });
+        return el('div', { class: 'au-row' }, [
+          el('div', { class: 'au-row-head' }, [entityButton(group)]),
+          el('div', { class: 'au-lines' }, lines.map(function (l) {
+            return el('div', { class: 'au-line' }, [
+              el('div', { class: 'au-roles' }, roleBadges(l.roles)),
+              el('span', { class: 'au-what mono', text: l.text })
+            ]);
+          }))
+        ]);
+      })));
+    }
+
+    // ---- allowed to run, not allowed to do ----
+    var fail = au.cannotDo;
+    kids.push(el('h4', { class: 'sec-sub-h' }, [
+      el('span', { text: 'May run it, may not do what it does (' + fail.length + ')' }),
+      au.failing ? mark('find', 'to act on', 'A step the role has no right to fails when that role runs it') : markNote('worth knowing')
+    ]));
+    if (!fail.length) {
+      kids.push(el('p', { class: 'muted', text: 'Every nanoflow and every microflow that applies entity access does only what the roles that reach it may do.' }));
+    } else {
+      kids.push(el('p', { class: 'hint', text: 'A nanoflow, or a microflow that applies entity access, works with the rights of whoever runs it. These are reached by user roles that lack a right one of their steps needs: creating, changing or deleting without the right fails for that role; reading without any rule finds nothing.' }));
+      kids.push(el('div', { class: 'au-list' }, fail.map(function (f) { return flowRow(model, f, true); })));
+    }
+
+    // ---- past entity access ----
+    var past = au.pastAccess;
+    kids.push(el('h4', { class: 'sec-sub-h' }, [
+      el('span', { text: 'Does for a role what its rules do not allow (' + past.length + ')' }),
+      markNote('worth knowing', 'Usually deliberate: a microflow is the controlled way to let a role change what it may not change directly')
+    ]));
+    if (!past.length) {
+      kids.push(el('p', { class: 'muted', text: 'No microflow that skips entity access lets a role change what its own rules forbid.' }));
+    } else {
+      kids.push(el('p', { class: 'hint', text: 'These microflows do not apply entity access and may be called by the user roles shown. They, or the microflows they call that do not apply it either, create, change or delete what those roles may not by their own rules. That is how a role is given a controlled way to do it — worth knowing which ones do.' }));
+      kids.push(el('div', { class: 'au-list' }, past.map(function (f) { return flowRow(model, f, false); })));
+    }
+
     if (au.setAside.length) {
       kids.push(el('p', { class: 'au-aside' }, [
         markUnchecked('not judged', 'MxScout cannot tell which entity a published OData entity set hands out'),
@@ -469,6 +559,7 @@
     var au = found.accessUse;
     if (au && au.widerByEntity.length) counts.push(au.widerByEntity.length + ' entit' + (au.widerByEntity.length === 1 ? 'y' : 'ies') + ' read wider than used');
     if (au && au.unusedByEntity.length) counts.push(au.unusedByEntity.length + ' with access nothing uses');
+    if (au && au.failing) counts.push(au.failing + ' flow' + (au.failing === 1 ? '' : 's') + ' a role may run but not finish');
     if (counts.length) kids.push(el('div', { class: 'sec-counts', text: counts.join(' · ') }));
 
     if (found.findings.length) {

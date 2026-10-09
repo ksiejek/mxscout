@@ -12,6 +12,12 @@ module.exports = async function (t) {
 
   t.ok((await fetch(B + '/api/session/ping?token=nope')).status === 403, 'ping refuses a wrong token');
   t.ok((await fetch(B + '/api/session/ping?token=' + s1.token)).status === 200, 'ping accepts the current token');
+  // The ping says who is signed in; the server keeps a name and role names,
+  // bounded, and drops anything that is not a role name.
+  await fetch(B + '/api/session/ping?token=' + s1.token + '&user=tester&roles=' + encodeURIComponent('Agent,Viewer,<img src=x>'));
+  const who = (await json(B + '/api/session/exec')).user;
+  t.ok(who && who.name === 'tester' && JSON.stringify(who.roles) === JSON.stringify(['Agent', 'Viewer']),
+    'the signed-in user and their role names come back with the status, anything else dropped: ' + JSON.stringify(who));
 
   // A parked poll must be woken by arming, not by a timer.
   const started = Date.now();
@@ -96,6 +102,25 @@ module.exports = async function (t) {
     'a new session does not inherit the previous bridge as connected');
   t.ok((await fetch(B + '/api/session/exec/poll?wait=1&token=' + s1.token)).status === 403,
     'the superseded token is refused, so the old bridge stops instead of looping');
+
+  // Disconnect ends the bridge's session. It used to clear only the armed
+  // command, so a bridge parked on a poll kept the session "connected" and
+  // the UI flipped back to connected on its next status check.
+  const parkedAgain = json(B + '/api/session/exec/poll?wait=1&token=' + s2.token);
+  await new Promise((r) => setTimeout(r, 150));
+  t.ok((await json(B + '/api/session/exec')).listenerConnected === true, 'a bridge on the new session is connected');
+  const off = await fetch(B + '/api/session/exec', { method: 'DELETE' });
+  await parkedAgain;
+  await new Promise((r) => setTimeout(r, 100));
+  t.ok(off.status === 200 && (await json(B + '/api/session/exec')).listenerConnected === false,
+    'Disconnect releases the parked poll and the session reads as disconnected');
+  const refused = await fetch(B + '/api/session/exec/poll?wait=1&token=' + s2.token);
+  const refusedBody = await refused.json();
+  t.ok(refused.status === 403 && refusedBody.disconnected === true,
+    'and the bridge’s next poll is refused with the reason, so it stops and says it was disconnected');
+  await new Promise((r) => setTimeout(r, 1200));
+  t.ok((await json(B + '/api/session/exec')).listenerConnected === false,
+    'and it stays disconnected');
 
   // The 404 was two words of plain text until 2026-09-16 — the one screen a
   // reader reaches by mistyping an address, in a tool that asks to be read.

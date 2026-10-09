@@ -166,6 +166,7 @@ function getPerfLimit() { return perfLimit; }
 // session invalidates every script pasted for the previous one.
 function startSession() {
   sessionToken = crypto.randomBytes(16).toString('hex');
+  bridgeUser = null;
   pendingCommand = null;
   commandResult = null;
   queryResult = null;
@@ -187,7 +188,32 @@ function startSession() {
   return sessionToken;
 }
 
+// The bridge's Disconnect. Until 2026-10-09 it only cleared the armed
+// command, and the bridge in the app tab — still parked on a poll with a
+// valid token — kept the session "connected": the button vanished, the UI
+// said connect, and the next status check said connected again. A disconnect
+// has to end the thing that connects, so the token goes: the parked poll is
+// released, its next poll is refused, and the bridge stops. Nothing else is
+// touched — the admin-port connection belongs to the performance recorder,
+// which does not use this token.
+function endBridgeSession() {
+  sessionToken = null;
+  bridgeUser = null;
+  pendingCommand = null;
+  commandResult = null;
+  queryResult = null;
+  lastCommandPollAt = null;
+  wakeCommandWaiters();
+}
+
 function getSessionToken() { return sessionToken; }
+
+// Who is signed in to the app the bridge runs in: a name and the names of
+// their user roles, as the bridge reported them on connect. Nothing else
+// about the session, and gone with the session.
+let bridgeUser = null;
+function setBridgeUser(user) { bridgeUser = user; }
+function getBridgeUser() { return bridgeUser; }
 
 function getPendingCommand() { return pendingCommand; }
 function setPendingCommand(command) {
@@ -212,6 +238,7 @@ function touchCommandPoll() { lastCommandPollAt = new Date().toISOString(); }
 
 function clearSession() {
   sessionToken = null;
+  bridgeUser = null;
   pendingCommand = null;
   commandResult = null;
   queryResult = null;
@@ -226,7 +253,7 @@ function clearSession() {
 }
 
 module.exports = {
-  startSession, getSessionToken, clearSession,
+  startSession, getSessionToken, clearSession, endBridgeSession, setBridgeUser, getBridgeUser,
   getPendingCommand, setPendingCommand, markCommandDispatched,
   getCommandResult, setCommandResult,
   getQueryResult, setQueryResult,

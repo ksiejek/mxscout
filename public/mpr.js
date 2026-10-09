@@ -395,6 +395,10 @@
       // this answers "how much of it could this ask for", which is what an
       // access rule has to be measured against (see accessuse.js).
       retrieves: [],
+      // Which attributes it sets, per entity — { "Module.Entity": ["Attr"] }
+      // — from the change and create actions' own items, which name each
+      // attribute in full. What a write right is measured against.
+      writes: {},
       commitCount: 0, deleteCount: 0, rollbackCount: 0,
       calls: [], javaActions: [], jsActions: [],
       restCalls: 0, opensPages: [], messages: 0, validations: 0, logs: 0,
@@ -415,6 +419,17 @@
       if (parts.length >= 3) found = parts[0] + '.' + parts[1];
     });
     return found;
+  }
+  // The attributes a change or create action sets, into `writes`.
+  function noteWrites(writes, items) {
+    payload(items).forEach(function (item) {
+      var name = item && typeof item.Attribute === 'string' ? item.Attribute : '';
+      var parts = name.split('.');
+      if (parts.length < 3) return;
+      var entity = parts[0] + '.' + parts[1];
+      var list = writes[entity] = writes[entity] || [];
+      if (list.indexOf(parts[2]) === -1) list.push(parts[2]);
+    });
   }
 
   function readFlowActivity(raw, ctx) {
@@ -499,6 +514,7 @@
             add(out.creates, created);
             if (action.VariableName) varEntity[action.VariableName] = created;
           }
+          noteWrites(out.writes, action.Items);
           if (inLoop) out.inLoop.creates++;
           // "Create object … commit: Yes" is a write to the database in one
           // activity. Counting only the separate Commit activity would miss
@@ -515,6 +531,7 @@
           var changed = entityOfChangeItems(action.Items) || entityOfVar(action.ChangeVariableName);
           add(out.changes, changed);
           if (changed && action.ChangeVariableName) varEntity[action.ChangeVariableName] = changed;
+          noteWrites(out.writes, action.Items);
           if (inLoop) out.inLoop.changes++;
           // Committing straight from the change action is the same write as a
           // separate commit activity and has to count as one.
@@ -614,8 +631,21 @@
       path: steps.map(function (st) { return typeof st.Association === 'string' ? st.Association : null; }).filter(Boolean)
     };
   }
-  function readPageData(raw, ctx) {
-    var out = { dataSources: [], snippets: [], flowRefs: [], mentions: [] };
+  // Input widgets a person types or picks a value into. A pluggable widget
+  // does not say whether it edits what it is bound to, so one bound to an
+  // attribute counts as editing it: a write right is reported unused only
+  // when nothing at all could be using it.
+  var PAGE_INPUT = {
+    'Forms$TextBox': true, 'Forms$TextArea': true, 'Forms$DatePicker': true, 'Forms$CheckBox': true,
+    'Forms$RadioButtonGroup': true, 'Forms$DropDown': true, 'CustomWidgets$WidgetValue': true
+  };
+  function readPageData(raw, ctx, parameters) {
+    // edits: attributes an input on the page sets ("Module.Entity.Attr");
+    // creates / deletes: entities a New or Delete button acts on.
+    var out = { dataSources: [], snippets: [], flowRefs: [], mentions: [], edits: [], creates: [], deletes: [] };
+    var widgetEntity = {}, pendingDeletes = [];
+    var paramEntity = {};
+    (parameters || []).forEach(function (p) { if (p && p.name && p.entityQualifiedName) paramEntity[p.name] = p.entityQualifiedName; });
     function add(list, value) {
       if (value && list.indexOf(value) === -1) list.push(value);
     }
@@ -633,15 +663,33 @@
       var x = typeof node.XPathConstraint === 'string' ? node.XPathConstraint.trim() : '';
       return x || null;
     }
-    function walk(node, widget, depth) {
+    function walk(node, widget, depth, here) {
       if (!node || typeof node !== 'object' || depth > 400) return;
       if (Array.isArray(node)) {
-        for (var i = 0; i < node.length; i++) walk(node[i], widget, depth + 1);
+        for (var i = 0; i < node.length; i++) walk(node[i], widget, depth + 1, here);
         return;
       }
       var type = node['$Type'];
       // The nearest named widget, so a finding can say WHICH list it means.
       if (node !== raw && typeof node.Name === 'string' && node.Name) widget = node.Name;
+      // The object a widget's children work on: the entity of its own data
+      // source, which is what a Delete button inside it deletes.
+      var own = node.DataSource && typeof node.DataSource === 'object' ? pageEntityRef(node.DataSource.EntityRef) : null;
+      if (own) {
+        here = own.entity;
+        if (typeof node.Name === 'string' && node.Name) widgetEntity[node.Name] = own.entity;
+      }
+      if (typeof type === 'string') {
+        if (PAGE_INPUT[type] && node.Editable !== 'Never' && node.AttributeRef && typeof node.AttributeRef.Attribute === 'string') {
+          add(out.edits, node.AttributeRef.Attribute);
+        } else if (type === 'Forms$CreateObjectClientAction') {
+          var made = pageEntityRef(node.EntityRef);
+          if (made) add(out.creates, made.entity);
+        } else if (type === 'Forms$DeleteClientAction') {
+          var sv = node.SourceVariable && typeof node.SourceVariable === 'object' ? node.SourceVariable : {};
+          pendingDeletes.push({ param: sv.PageParameter || sv.SnippetParameter || '', widget: sv.Widget || '', here: here || null });
+        }
+      }
       var source = null;
       if (typeof type === 'string') {
         if (PAGE_DATABASE_SOURCE.test(type)) {
@@ -676,12 +724,18 @@
           else if (key === 'Attribute') mention(value.split('.').slice(0, 2).join('.'));
           else if (key === 'XPathConstraint') mentionText(value);
         } else if (value && typeof value === 'object') {
-          walk(value, widget, depth + 1);
+          walk(value, widget, depth + 1, here);
         }
       }
     }
-    walk(raw, null, 0);
+    walk(raw, null, 0, null);
+    // A Delete button names the object it deletes by the page parameter, the
+    // widget, or nothing at all (the object of the widget it sits in).
+    pendingDeletes.forEach(function (d) {
+      add(out.deletes, (d.param && paramEntity[d.param]) || (d.widget && widgetEntity[d.widget]) || d.here);
+    });
     out.snippets.sort(); out.flowRefs.sort(); out.mentions.sort();
+    out.edits.sort(); out.creates.sort(); out.deletes.sort();
     return out;
   }
 
@@ -1719,11 +1773,17 @@
         payload(raw.Attributes).forEach(function (a) {
           if (!a || a['$Type'] !== 'DomainModels$Attribute') return;
           var described = attributeTypeOf(a);
-          entity.attributes.push({
+          var attr = {
             name: a.Name, type: described.type, length: described.length,
             defaultValue: a.Value && typeof a.Value.DefaultValue === 'string' ? a.Value.DefaultValue : null,
             enumerationQualifiedName: described.enumerationQualifiedName
-          });
+          };
+          // A calculated attribute is worked out by a microflow when an
+          // object is read, and is not stored, so no XPath can name it — one
+          // in the "any text field" search failed the whole query. Marked
+          // only when true, so every other attribute keeps its old shape.
+          if (a.Value && a.Value['$Type'] === 'DomainModels$CalculatedValue') attr.calculated = true;
+          entity.attributes.push(attr);
         });
 
         // Older files carry this as "Generalization", newer as
@@ -1958,21 +2018,23 @@
                 result.nanoflows.push(flow);
               }
             } else {
-              var pageData = readPageData(raw, pageCtx);
+              var pageData = readPageData(raw, pageCtx, parameters);
               result.pages.push({
                 module: moduleName, name: raw.Name, qualifiedName: qn, path: at.path,
                 allowedModuleRoles: allowedModuleRoles, parameters: parameters, calledBy: [],
                 dataSources: pageData.dataSources, snippets: pageData.snippets,
-                flowRefs: pageData.flowRefs, mentions: pageData.mentions
+                flowRefs: pageData.flowRefs, mentions: pageData.mentions,
+                edits: pageData.edits, creates: pageData.creates, deletes: pageData.deletes
               });
             }
           }
         } else if (ownerModule && type === 'Forms$Snippet') {
-          var snippetData = readPageData(raw, pageCtx);
+          var snippetData = readPageData(raw, pageCtx, extractParameters(entityById, raw));
           result.snippets.push({
             module: ownerModule, name: raw.Name, qualifiedName: ownerModule + '.' + raw.Name,
             dataSources: snippetData.dataSources, snippets: snippetData.snippets,
-            flowRefs: snippetData.flowRefs, mentions: snippetData.mentions
+            flowRefs: snippetData.flowRefs, mentions: snippetData.mentions,
+            edits: snippetData.edits, creates: snippetData.creates, deletes: snippetData.deletes
           });
         } else if (ownerModule && (type === 'Rest$PublishedRestService' ||
             type === 'WebServices$PublishedService' || /PublishedODataService/.test(type))) {

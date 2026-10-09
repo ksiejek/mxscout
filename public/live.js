@@ -140,7 +140,7 @@
   // SEARCHABLE_TYPE and the field picker in renderDataPane.
   function searchableAttrs(entity) {
     return (entity.attributes || [])
-      .filter(function (a) { return /string/i.test(a.type || ''); })
+      .filter(function (a) { return /^string$/i.test(a.type || '') && !a.calculated; })
       .map(function (a) { return a.name; })
       .slice(0, 12);
   }

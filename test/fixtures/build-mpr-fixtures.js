@@ -544,7 +544,25 @@ const UNITS = [
                 XPathConstraint: '[Age >= 18]\n' } } }
         ]) } },
       { $Type: 'Forms$SnippetCallWidget', Name: 'lines',
-        FormCall: { $Type: 'Forms$SnippetCall', Form: 'Sales.OrderLines' } }
+        FormCall: { $Type: 'Forms$SnippetCall', Form: 'Sales.OrderLines' } },
+      // What the page lets a person change: an input that edits, one that
+      // only shows (Editable: Never), a New button, and a Delete button
+      // inside a data view, which deletes that data view's object.
+      { $Type: 'Forms$TextBox', Name: 'number', Editable: 'Always',
+        AttributeRef: { $Type: 'DomainModels$AttributeRef', Attribute: 'Sales.Order.Number', EntityRef: null } },
+      { $Type: 'Forms$TextBox', Name: 'customerName', Editable: 'Never',
+        AttributeRef: { $Type: 'DomainModels$AttributeRef', Attribute: 'Sales.Customer.Name', EntityRef: null } },
+      { $Type: 'Forms$ActionButton', Name: 'newCustomer',
+        Action: { $Type: 'Forms$CreateObjectClientAction',
+          EntityRef: { $Type: 'DomainModels$DirectEntityRef', Entity: 'Sales.Customer' } } },
+      { $Type: 'Forms$DataView', Name: 'theOrder',
+        DataSource: { $Type: 'Forms$DataViewSource',
+          EntityRef: { $Type: 'DomainModels$DirectEntityRef', Entity: 'Sales.Order' } },
+        Widgets: marked(2, [
+          { $Type: 'Forms$ActionButton', Name: 'deleteOrder',
+            Action: { $Type: 'Forms$DeleteClientAction', ClosePage: false,
+              SourceVariable: null } }
+        ]) }
     ])
   } },
 

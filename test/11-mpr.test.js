@@ -196,8 +196,18 @@ module.exports = async function (t) {
   const overview = v1.pages.filter(function (p) { return p.qualifiedName === 'Sales.Order_Overview'; })[0];
   t.ok(JSON.stringify(overview.dataSources) === JSON.stringify([
     { kind: 'database', entity: 'Sales.Order', path: [], xpath: null, widget: 'allOrders' },
-    { kind: 'database', entity: 'Sales.Customer', path: [], xpath: '[Age >= 18]', widget: 'adults' }
+    { kind: 'database', entity: 'Sales.Customer', path: [], xpath: '[Age >= 18]', widget: 'adults' },
+    { kind: 'context', entity: 'Sales.Order', path: [], xpath: null, widget: 'theOrder' }
   ]), 'a page names where its lists come from: the database with no XPath, and a pluggable widget with one, trimmed and found one level down inside its property value: ' + JSON.stringify(overview.dataSources));
+  // What the page lets a person change — what a write, create or delete
+  // right is measured against.
+  t.ok(JSON.stringify(overview.edits) === JSON.stringify(['Sales.Order.Number']),
+    'an input that edits is collected, one set to Editable: Never is not: ' + JSON.stringify(overview.edits));
+  t.ok(JSON.stringify(overview.creates) === JSON.stringify(['Sales.Customer']) && JSON.stringify(overview.deletes) === JSON.stringify(['Sales.Order']),
+    'a New button names what it creates, and a Delete button inside a data view deletes that data view’s object: ' +
+    JSON.stringify({ creates: overview.creates, deletes: overview.deletes }));
+  t.ok(JSON.stringify(flow.activity.writes) === JSON.stringify({ 'Sales.Order': ['Number'] }),
+    'and a flow records the attributes its create and change actions set: ' + JSON.stringify(flow.activity.writes));
   t.ok(JSON.stringify(overview.snippets) === JSON.stringify(['Sales.OrderLines']) &&
     JSON.stringify(overview.flowRefs) === JSON.stringify([]),
     'the snippet it places is named, so what the snippet reads counts for this page: ' + JSON.stringify(overview.snippets));

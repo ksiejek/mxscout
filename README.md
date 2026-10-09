@@ -157,8 +157,11 @@ the stored model (no server, no live app needed):
   role, from the model alone: an entity the role may read in full where
   every page and flow it can reach shows only part of it (over an
   association, with an XPath, the object a page was given), and a rule
-  nothing the role can reach uses at all. A page is not what protects the
-  data, the rule is — this is where the two disagree.
+  nothing the role can reach uses at all; a write, create or delete right
+  nothing uses; a flow a role may run that needs a right the role lacks, so it
+  fails for that role; and a microflow that skips entity access doing for a
+  role what its rules forbid. A page is not what protects the data, the rule
+  is — this is where the two disagree.
 - **Documentation** — where the project's documentation file is made: what
   it holds, previews of it drawn from this project, and the export. The file
   is the whole model as documentation, built from it each time one is loaded:
@@ -432,7 +435,7 @@ so has no object on the page at all. Nothing here is over 2,500 lines:
 | `public/bridge.js` | the snippet pasted into the app tab, written as ordinary code and serialized when generated |
 | `public/objects.js` | the two object popups |
 | `public/security.js` | the Security section: the project's own security settings, the roles, and what the model says about its passwords |
-| `public/accessuse.js` | entity access against what uses it: per user role, rules wider than every page and flow the role reaches, and rules nothing it reaches uses |
+| `public/accessuse.js` | entity access against what uses it: per user role, rules wider than every page and flow the role reaches, rules and write rights nothing it reaches uses, flows that need a right the role lacks, and microflows that skip entity access to do what the role may not |
 | `public/accessrule.js` | one row-level access rule — the readable rendering of its XPath, and whether MxScout could follow it at all |
 | `public/comments.js` | comments: writing, filtering, history, and how two copies of one reconcile |
 | `public/report.js` | the encrypted HTML report and the clipboard copy for Word |

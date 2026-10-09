@@ -1256,11 +1256,26 @@
   // reads as "no role filter — show everything".
   function moduleRoleSetFor(model, roleName) {
     if (!roleName || roleName === 'all') return null;
+    // The person signed in to the app can hold more than one user role, and
+    // reaches what all of them reach together.
+    var signed = state.detail && state.detail.signedIn;
+    var names = signed && roleName === signed.label ? signed.roles : [roleName];
     var set = {};
     userRolesOf(model).forEach(function (r) {
-      if (r.name === roleName) (r.moduleRoles || []).forEach(function (mr) { set[mr] = true; });
+      if (names.indexOf(r.name) !== -1) (r.moduleRoles || []).forEach(function (mr) { set[mr] = true; });
     });
     return set;
+  }
+
+  // Who is signed in to the app the bridge is connected to, as the bridge
+  // reported it: a name and the names of their user roles. Remembered on the
+  // project view, so "view as" stays meaningful if the bridge drops.
+  function signedInUser() {
+    var live = state.detail && state.detail.live;
+    var st = live && live.exec && live.exec.status;
+    var u = st && st.listenerConnected && st.user;
+    if (!u || !(u.roles || []).length) return null;
+    return { label: (u.name || 'Signed-in user') + ' (signed in)', name: u.name || null, roles: u.roles.slice() };
   }
 
   function listHitsSet(list, set) {
@@ -1390,6 +1405,21 @@
       if (r.name === state.detail.role) o.setAttribute('selected', 'selected');
       select.appendChild(o);
     });
+    // Besides the roles, the person signed in to the app — the one MxScout
+    // is connected through — with every user role they hold together. A
+    // tester is often given two, and "what can I see" is then neither role
+    // alone (Karol, 2026-10-09).
+    var live = signedInUser();
+    if (live) state.detail.signedIn = live;
+    var signed = state.detail.signedIn;
+    if (signed) {
+      var known = signed.roles.filter(function (n) { return roles.some(function (r) { return r.name === n; }); });
+      var so = el('option', { value: signed.label,
+        text: signed.label + ' — ' + (signed.roles.join(' + ')) + (live ? '' : ' · not connected') });
+      if (state.detail.role === signed.label) so.setAttribute('selected', 'selected');
+      if (!known.length) so.setAttribute('disabled', 'disabled');
+      select.appendChild(el('optgroup', { label: 'Signed in to the app' }, [so]));
+    }
     select.addEventListener('change', function () { state.detail.role = select.value; state.detail.selectedEntity = null; state.detail.selectedFlow = null; render(); });
 
     var set = moduleRoleSetFor(model, state.detail.role);

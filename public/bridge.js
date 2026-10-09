@@ -181,7 +181,10 @@
       var user = attempt(function () { return mx.session.getUserName(); }) || null;
       if (!user) user = attempt(function () { return mx.session.getUserAttribute('Name'); }) || null;
       var guest = !!attempt(function () { return mx.session.isGuest(); });
-      return { user: user, guest: guest };
+      // The user roles this session holds, by name, so MxScout can show what
+      // THIS person reaches, which may be more than one role.
+      var roles = attempt(function () { return mx.session.getUserRoleNames(); });
+      return { user: user, guest: guest, roles: Array.isArray(roles) ? roles.filter(function (r) { return typeof r === 'string'; }) : [] };
     }
     function csrf() { return attempt(function () { return mx.session.getConfig('csrftoken'); }) || ''; }
 
@@ -459,6 +462,52 @@
       } catch (e) { out.error = (e && e.message) || String(e); settle(); }
     }
 
+    // Searching every text field at once is one XPath with an "or" per field,
+    // and it fails as a whole when a single field cannot be searched: one
+    // this session may not read, one the app computes instead of storing. A
+    // tester saw that as "the any-field search does not work, I always have
+    // to pick a field" (Karol, 2026-10-09). So when it fails, each field is
+    // tried on its own, the ones that work are remembered for this entity,
+    // and the search runs again over those. Nothing more is read: each try
+    // asks for one row, and only its success is kept.
+    var searchableByEntity = {};
+    function queryPageAnyText(spec, search, offset, amount, done) {
+      var term = String(search || '').replace(/'/g, '').trim();
+      var known = searchableByEntity[spec.qualifiedName];
+      var anyText = !spec.searchField && term && (spec.searchAttrs || []).length;
+      if (anyText && known) spec = withAttrs(spec, known);
+      queryPage(spec, search, offset, amount, function (out) {
+        if (!out.error || !anyText || known) { done(out); return; }
+        probeSearchable(spec, term, function (ok) {
+          searchableByEntity[spec.qualifiedName] = ok;
+          if (!ok.length) {
+            out.error = 'None of the text fields of ' + spec.qualifiedName + ' can be searched in this session. Choose one field to search instead.';
+            done(out);
+            return;
+          }
+          queryPage(withAttrs(spec, ok), search, offset, amount, done);
+        });
+      });
+    }
+    function withAttrs(spec, attrs) {
+      return { qualifiedName: spec.qualifiedName, columns: spec.columns, searchAttrs: attrs, searchField: '', searchType: '' };
+    }
+    function probeSearchable(spec, term, done) {
+      var attrs = (spec.searchAttrs || []).slice(), ok = [], i = 0;
+      (function next() {
+        if (i >= attrs.length) { done(ok); return; }
+        var a = attrs[i++];
+        try {
+          mxGet({
+            xpath: '//' + spec.qualifiedName + '[contains(' + a + ",'" + term + "')]",
+            filter: { offset: 0, amount: 1, sort: [] },
+            callback: function () { ok.push(a); next(); },
+            error: function () { next(); }
+          });
+        } catch (e) { next(); }
+      })();
+    }
+
     // ---------- running a flow ----------
     // `list` is [{name, guids: [...one or more], entityQualifiedName}] — a
     // single-Object parameter and a List-typed one are the same shape here,
@@ -704,7 +753,7 @@
           searchField: cmd.searchField || '',
           searchType: cmd.searchType || ''
         };
-        queryPage(spec, cmd.search, cmd.offset || 0, cmd.amount || PAGE_SIZE, function (out) {
+        queryPageAnyText(spec, cmd.search, cmd.offset || 0, cmd.amount || PAGE_SIZE, function (out) {
           setBadge('Connected as ' + (session.user || 'unknown') + (session.guest ? ' (guest)' : ''));
           post(CFG.origin + '/api/session/data', {
             token: CFG.token, commandId: cmd.id, ok: !out.error, message: out.error, data: out
@@ -819,8 +868,14 @@
           // stays open.
           if (r.status === 403) {
             running = false;
-            setBadge('This code is out of date — MxScout reconnected. Copy the new code from MxScout.');
-            return null;
+            // Disconnect in MxScout ends the session on purpose; a new
+            // session elsewhere makes this code stale. Say which.
+            return r.json().catch(function () { return {}; }).then(function (body) {
+              setBadge(body && body.disconnected
+                ? 'Disconnected in MxScout. Paste a new code from MxScout to connect again.'
+                : 'This code is out of date — MxScout reconnected. Copy the new code from MxScout.');
+              return null;
+            });
           }
           return r.json();
         })
@@ -1094,7 +1149,12 @@
     }
     document.addEventListener('securitypolicyviolation', onCspViolation);
 
-    fetch(CFG.origin + '/api/session/ping?token=' + encodeURIComponent(CFG.token))
+    // The ping carries who is signed in: a name and the names of their user
+    // roles, nothing else, so MxScout can offer "view as the signed-in
+    // user". Held in the MxScout server's memory while this bridge is
+    // connected, forgotten on disconnect.
+    fetch(CFG.origin + '/api/session/ping?token=' + encodeURIComponent(CFG.token) +
+      '&user=' + encodeURIComponent(session.user || '') + '&roles=' + encodeURIComponent((session.roles || []).join(',')))
       .then(function (r) {
         if (r.ok) return r.json();
         // A response DID come back — this reached MxScout, and MxScout said

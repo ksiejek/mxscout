@@ -2885,6 +2885,11 @@ button.au-place:hover, button.au-place:focus-visible { background: color-mix(in 
 .au-entity { font-size: 13px; font-weight: 600; padding: 0; overflow-wrap: anywhere; text-align: left; }
 .au-aside { margin: 12px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 .sec-sub-h .mark { margin-left: 8px; }
+.au-lines { display: flex; flex-direction: column; gap: 6px; }
+.au-line { display: flex; flex-direction: column; gap: 4px; }
+.au-what { font-size: 12.5px; line-height: 1.5; overflow-wrap: anywhere; }
+.au-what.au-bad { color: var(--alarm); }
+.au-what.au-bad .muted { color: color-mix(in srgb, var(--alarm) 70%, var(--muted)); }
 
 /* ---------- the few colours that were written for a dark ground ----------
    Everything else follows the tokens. These were literal, and pale text on

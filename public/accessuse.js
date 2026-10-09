@@ -13,6 +13,15 @@
  *     the whole table.
  *   NEVER USED — the role has a rule on the entity, and nothing the role can
  *     reach shows it, reads it, takes it or returns it.
+ *   WRITTEN NEVER — the role may write attributes, create or delete, and
+ *     nothing it reaches does: no input on its pages, no New or Delete
+ *     button, no flow that runs with its rights.
+ *   ALLOWED TO RUN, NOT ALLOWED TO DO — a nanoflow, or a microflow that
+ *     applies entity access, that the role can reach, does something the
+ *     role has no right to: it fails for that role, or finds nothing.
+ *   PAST ENTITY ACCESS — a microflow that does not apply entity access, that
+ *     the role may call, creates, changes or deletes what the role itself
+ *     may not. Usually deliberate; always worth knowing.
  *
  * Why the first one matters at all: a page is not a security boundary. What
  * a signed-in user can fetch is decided by the rule, not by the list that
@@ -97,6 +106,40 @@
       return out;
     }
 
+    // Every specialization of an entity: an object of one is an object of
+    // the generalization, so a right on either can be what a step uses.
+    var childrenOf = {};
+    entities.forEach(function (e) { if (e.generalization) (childrenOf[e.generalization] = childrenOf[e.generalization] || []).push(e.qualifiedName); });
+    function descendants(qn) {
+      var out = [], q = (childrenOf[qn] || []).slice();
+      while (q.length) { var c = q.shift(); if (out.indexOf(c) !== -1) continue; out.push(c); q = q.concat(childrenOf[c] || []); }
+      return out;
+    }
+    // What a set of module roles may do with one entity, by its own rules.
+    function rightsOn(qn, roles) {
+      var r = { any: false, read: false, create: false, del: false, write: {} };
+      ((entityByName[qn] || {}).accessRules || []).forEach(function (rule) {
+        if (!rule || !roles[rule.moduleRole]) return;
+        r.any = true;
+        if (grantsRead(rule)) r.read = true;
+        if (rule.allowCreate) r.create = true;
+        if (rule.allowDelete) r.del = true;
+        Object.keys(rule.attrAccess || {}).forEach(function (a) { if (rule.attrAccess[a] === 'rw') r.write[a] = true; });
+      });
+      return r;
+    }
+    // Rights on the entity or on any specialization of it: a step that works
+    // on a variable of the generalization may be handed either.
+    function rightsAround(qn, roles) {
+      var all = [qn].concat(descendants(qn)).map(function (x) { return rightsOn(x, roles); });
+      var r = { any: false, read: false, create: rightsOn(qn, roles).create, del: false, write: {} };
+      all.forEach(function (x) {
+        r.any = r.any || x.any; r.read = r.read || x.read; r.del = r.del || x.del;
+        Object.keys(x.write).forEach(function (a) { r.write[a] = true; });
+      });
+      return r;
+    }
+
     var flowByName = {};
     (model.microflows || []).forEach(function (f) { flowByName[f.qualifiedName] = [{ flow: f, kind: 'microflow' }]; });
     (model.nanoflows || []).forEach(function (f) {
@@ -142,7 +185,8 @@
     }
 
     var visible = options.visible || null; // a Set of entity names to report on
-    var wider = [], unused = [], setAside = [];
+    var wider = [], unused = [], setAside = [], unwritten = [], cannotDo = {}, pastAccess = {};
+    var pastCache = {}; // writesPast, per flow
 
     subjects.forEach(function (subject) {
       var roles = {};
@@ -157,7 +201,9 @@
         return;
       }
 
-      var uses = reachFor(roles);
+      var reach = reachFor(roles);
+      var uses = reach.uses;
+      var unusedHere = {};
       entities.forEach(function (entity) {
         var qn = entity.qualifiedName;
         if (visible && !visible.has(qn)) return;
@@ -181,6 +227,7 @@
         };
         if (!found.length) {
           unused.push(item);
+          unusedHere[qn] = true;
           return;
         }
         // "Every row in the database" means nothing for an entity that is
@@ -189,9 +236,93 @@
         if (found.some(function (u) { return u.how === 'all'; })) return;
         wider.push(item);
       });
+
+      // ---- written never: write, create and delete rights nothing uses ----
+      entities.forEach(function (entity) {
+        var qn = entity.qualifiedName;
+        if ((visible && !visible.has(qn)) || unusedHere[qn]) return;
+        var r = rightsOn(qn, roles);
+        if (!r.any) return;
+        // A write to an attribute counts whichever way the object was typed
+        // where it was written: as this entity, a generalization or a
+        // specialization of it.
+        var family = [qn].concat(ancestors(qn), descendants(qn));
+        var written = {};
+        family.forEach(function (x) { (reach.writes[x] || []).forEach(function (a) { written[a] = true; }); });
+        var never = Object.keys(r.write).filter(function (a) { return !written[a]; }).sort();
+        var createNever = r.create && !reach.creates[qn];
+        var deleteNever = r.del && ![qn].concat(ancestors(qn)).some(function (x) { return reach.deletes[x]; });
+        if (!never.length && !createNever && !deleteNever) return;
+        unwritten.push({ entity: qn, name: entity.name, module: entity.module, userRole: subject.name,
+          attributes: never, create: !!createNever, del: !!deleteNever });
+      });
+
+      // ---- allowed to run, not allowed to do ----
+      reach.rightsFlows.forEach(function (rf) {
+        var f = rf.flow, act = f.activity;
+        if (!act) return;
+        var missing = [];
+        (act.retrieves || []).forEach(function (x) {
+          if (!rightsAround(x.entity, roles).read) push(missing, { what: 'read', entity: x.entity });
+        });
+        (act.creates || []).forEach(function (e) {
+          if (entityByName[e] && !rightsOn(e, roles).create) push(missing, { what: 'create', entity: e });
+        });
+        (act.deletes || []).forEach(function (e) {
+          if (entityByName[e] && !rightsAround(e, roles).del) push(missing, { what: 'delete', entity: e });
+        });
+        Object.keys(act.writes || {}).forEach(function (e) {
+          if (!entityByName[e]) return;
+          var w = rightsAround(e, roles).write;
+          var no = act.writes[e].filter(function (a) { return !w[a]; });
+          if (no.length) push(missing, { what: 'write', entity: e, members: no.sort() });
+        });
+        if (visible) missing = missing.filter(function (m) { return visible.has(m.entity); });
+        if (!missing.length) return;
+        collect(cannotDo, f, rf.kind, subject.name, missing);
+      });
+
+      // ---- past entity access ----
+      reach.pastFlows.forEach(function (pf) {
+        var beyond = [];
+        pf.writes.forEach(function (w) {
+          if (visible && !visible.has(w.entity)) return;
+          if (w.what === 'create' && !rightsOn(w.entity, roles).create) push(beyond, w);
+          else if (w.what === 'delete' && !rightsAround(w.entity, roles).del) push(beyond, w);
+          else if (w.what === 'write') {
+            var rw = rightsAround(w.entity, roles).write;
+            var no = w.members.filter(function (a) { return !rw[a]; });
+            if (no.length) push(beyond, { what: 'write', entity: w.entity, members: no.sort() });
+          }
+        });
+        if (beyond.length) collect(pastAccess, pf.flow, 'microflow', subject.name, beyond);
+      });
     });
 
-    return { wider: wider, unused: unused, setAside: setAside, judged: subjects.length - setAside.length };
+    function push(list, item) {
+      var key = JSON.stringify(item);
+      if (!list.some(function (x) { return JSON.stringify(x) === key; })) list.push(item);
+    }
+    // One entry per flow and per thing it does, with the user roles it is
+    // true for: six roles that all fail at the same step are one line.
+    function collect(into, f, kind, userRole, items) {
+      var entry = into[f.qualifiedName] = into[f.qualifiedName] || { flow: f.qualifiedName, name: f.name, module: f.module, kind: kind, items: {} };
+      items.forEach(function (it) {
+        var key = JSON.stringify(it);
+        var slot = entry.items[key] = entry.items[key] || Object.assign({ userRoles: [] }, it);
+        if (slot.userRoles.indexOf(userRole) === -1) slot.userRoles.push(userRole);
+      });
+    }
+    function flatten(map) {
+      return Object.keys(map).sort().map(function (k) {
+        var e = map[k];
+        return { flow: e.flow, name: e.name, module: e.module, kind: e.kind,
+          items: Object.keys(e.items).map(function (x) { return e.items[x]; }) };
+      });
+    }
+
+    return { wider: wider, unused: unused, setAside: setAside, judged: subjects.length - setAside.length,
+      unwritten: unwritten, cannotDo: flatten(cannotDo), pastAccess: flatten(pastAccess) };
 
     function unique(list) {
       return list.filter(function (v, i) { return list.indexOf(v) === i; }).sort();
@@ -199,7 +330,14 @@
 
     // Everything one user role reaches, as entity name -> [use].
     function reachFor(roles) {
-      var uses = {};
+      var uses = {}, writes = {}, creates = {}, deletes = {}, rightsFlows = [], pastFlows = [];
+      function wrote(qualifiedAttr) {
+        var p = String(qualifiedAttr).split('.');
+        if (p.length < 3) return;
+        var e = p[0] + '.' + p[1];
+        var list = writes[e] = writes[e] || [];
+        if (list.indexOf(p[2]) === -1) list.push(p[2]);
+      }
       function use(qn, how, where) {
         if (!qn || !entityByName[qn]) return;
         (uses[qn] = uses[qn] || []).push(Object.assign({ how: how }, where));
@@ -237,6 +375,9 @@
         });
         (c.flowRefs || []).forEach(queueFlow);
         (c.mentions || []).forEach(function (qn) { use(qn, 'mention', { via: where.via, name: where.name }); });
+        (c.edits || []).forEach(wrote);
+        (c.creates || []).forEach(function (e) { creates[e] = true; });
+        (c.deletes || []).forEach(function (e) { deletes[e] = true; });
         (c.snippets || []).forEach(function (name) {
           if (snippetSeen[name]) return;
           snippetSeen[name] = true;
@@ -281,6 +422,10 @@
         var withRights = kind === 'nanoflow' || f.applyEntityAccess === true;
         var where = { via: kind, name: f.qualifiedName };
         if (withRights && act) {
+          rightsFlows.push({ flow: f, kind: kind });
+          Object.keys(act.writes || {}).forEach(function (e) { act.writes[e].forEach(function (a) { wrote(e + '.' + a); }); });
+          (act.creates || []).forEach(function (e) { creates[e] = true; });
+          (act.deletes || []).forEach(function (e) { deletes[e] = true; });
           (act.retrieves || []).forEach(function (r) {
             use(r.entity, r.over === 'association' ? 'association' : (r.xpath ? 'xpath' : 'all'),
               Object.assign({ xpath: r.xpath || null }, where));
@@ -299,9 +444,40 @@
           entitiesIn(f.returnType, entityByName).forEach(function (qn) { use(qn, 'microflow', where); });
         }
         if (act) (act.calls || []).forEach(queueFlow);
+        // A microflow the role may call that does not apply entity access:
+        // what it, and every microflow it calls that does not either, writes.
+        if (kind === 'microflow' && !withRights && isCallable) pastFlows.push({ flow: f, writes: writesPast(f) });
       }
 
-      return uses;
+      return { uses: uses, writes: writes, creates: creates, deletes: deletes, rightsFlows: rightsFlows, pastFlows: pastFlows };
+    }
+
+    // What a microflow without entity access writes, through the calls that
+    // also run without it — a sub-microflow doing the writing is the usual
+    // shape. Stops at one that applies entity access: that one runs with the
+    // caller's rights and is judged as such.
+    function writesPast(f) {
+      if (pastCache[f.qualifiedName]) return pastCache[f.qualifiedName];
+      var out = [], seen = {}, q = [f];
+      while (q.length) {
+        var g = q.shift();
+        if (!g || seen[g.qualifiedName]) continue;
+        seen[g.qualifiedName] = true;
+        var act = g.activity;
+        if (!act) continue;
+        (act.creates || []).forEach(function (e) { if (entityByName[e]) push(out, { what: 'create', entity: e }); });
+        (act.deletes || []).forEach(function (e) { if (entityByName[e]) push(out, { what: 'delete', entity: e }); });
+        Object.keys(act.writes || {}).forEach(function (e) {
+          if (entityByName[e]) push(out, { what: 'write', entity: e, members: act.writes[e].slice().sort() });
+        });
+        (act.calls || []).forEach(function (name) {
+          (flowByName[name] || []).forEach(function (x) {
+            if (x.kind === 'microflow' && x.flow.applyEntityAccess !== true) q.push(x.flow);
+          });
+        });
+      }
+      pastCache[f.qualifiedName] = out;
+      return out;
     }
   }
 

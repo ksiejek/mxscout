@@ -17,6 +17,29 @@ claim a version it is not.
 
 ## Unreleased
 
+### Three more access checks, the signed-in user, and two Live fixes
+
+- **The Security section checks what a role does, not only what it reads.**
+  Write, create and delete rights nothing the role reaches uses (no input on
+  its pages, no New or Delete button, no flow with its rights); a nanoflow or
+  a microflow with entity access that a role can run and that needs a right
+  the role lacks, so it fails for that role — these are counted at the top as
+  something to act on; and a microflow that skips entity access doing for a
+  role what its own rules forbid.
+- **View as the person signed in to the app.** When MxScout is connected, the
+  "View as" list offers that person next to the roles, with every user role
+  they hold at once — a tester given two roles sees what both reach. The
+  bridge reports the name and the role names when it connects; MxScout keeps
+  them in memory while connected.
+- **Disconnect disconnects.** It used to clear only a waiting request, so the
+  bridge in the app tab kept the session alive and the app read as connected
+  again a moment later. It now ends the bridge's session; the bridge stops and
+  says it was disconnected.
+- **The search over every text field works when one of them cannot be
+  searched** — a field the signed-in user may not read, or one the app
+  computes. Calculated attributes are left out, and when the search still
+  fails the bridge searches the fields that can be searched.
+
 ### A light theme for MxScout
 
 - **MxScout has a light palette**, the same one the exported documentation's

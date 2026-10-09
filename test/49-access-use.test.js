@@ -16,6 +16,14 @@
  *                    Agent cannot call: what it does inside does not count.
  *   Odata          — a published OData service is open to it: set aside and
  *                    named, never judged.
+ * And the three about what a role DOES:
+ *   Sales.Customer — Agent may write Name and Phone and create customers;
+ *                    the page edits Name only: Phone and create go unused.
+ *   Sales.NewRefund — a nanoflow Agent may run creates a Refund, which Agent
+ *                    may not create: it fails for Agent.
+ *   Sales.ForceClose — a microflow without entity access Agent may call sets
+ *                    an Order's Status and deletes Notes, neither of which
+ *                    Agent may do itself.
  */
 'use strict';
 const { openSeededProject } = require('./helpers');
@@ -43,7 +51,9 @@ const MODEL = {
   entities: [
     { module: 'Sales', name: 'Order', qualifiedName: 'Sales.Order', attributes: [], accessRules: [rule('Sales.Agent'), rule('Sales.Odata')] },
     { module: 'Sales', name: 'Note', qualifiedName: 'Sales.Note', attributes: [], accessRules: [rule('Sales.Agent')] },
-    { module: 'Sales', name: 'Customer', qualifiedName: 'Sales.Customer', attributes: [], accessRules: [rule('Sales.Agent')] },
+    { module: 'Sales', name: 'Customer', qualifiedName: 'Sales.Customer', attributes: [], accessRules: [
+      { moduleRole: 'Sales.Agent', defaultAccess: null, attrAccess: { Name: 'rw', Phone: 'rw' }, assocAccess: {}, allowCreate: true, allowDelete: false, xpathConstraint: null }] },
+    { module: 'Sales', name: 'Refund', qualifiedName: 'Sales.Refund', attributes: [], accessRules: [rule('Sales.Agent', '[Open = true]')] },
     { module: 'Sales', name: 'Invoice', qualifiedName: 'Sales.Invoice', attributes: [], accessRules: [rule('Sales.Agent', '[Paid = false]')] },
     { module: 'Sales', name: 'Log', qualifiedName: 'Sales.Log', attributes: [], accessRules: [rule('Sales.Agent')] },
     { module: 'Admin', name: 'Setting', qualifiedName: 'Admin.Setting', attributes: [], accessRules: [rule('Admin.Clerk')] }
@@ -57,7 +67,8 @@ const MODEL = {
         { kind: 'database', entity: 'Sales.Order', path: [], xpath: "[System.owner = '[%CurrentUser%]']", widget: 'myOrders' },
         { kind: 'database', entity: 'Sales.Customer', path: [], xpath: null, widget: 'customers' }
       ],
-      snippets: ['Sales.OrderNotes'], flowRefs: [], mentions: ['Sales.Customer', 'Sales.Order']
+      snippets: ['Sales.OrderNotes'], flowRefs: [], mentions: ['Sales.Customer', 'Sales.Order'],
+      edits: ['Sales.Customer.Name'], creates: [], deletes: []
     },
     {
       module: 'Sales', name: 'ClerkHome', qualifiedName: 'Sales.ClerkHome', allowedModuleRoles: ['Sales.Clerk'],
@@ -75,9 +86,18 @@ const MODEL = {
     module: 'Sales', name: 'WriteLog', qualifiedName: 'Sales.WriteLog', allowedModuleRoles: [],
     applyEntityAccess: false, parameters: [], calledBy: [],
     activity: { reads: ['Sales.Log'], retrieves: [{ entity: 'Sales.Log', over: 'database', xpath: null }],
-      creates: ['Sales.Log'], changes: [], deletes: [], commits: [], calls: [] }
+      creates: ['Sales.Log'], changes: [], deletes: [], commits: [], calls: [], writes: {} }
+  }, {
+    module: 'Sales', name: 'ForceClose', qualifiedName: 'Sales.ForceClose', allowedModuleRoles: ['Sales.Agent'],
+    applyEntityAccess: false, parameters: [], calledBy: [],
+    activity: { reads: [], retrieves: [], creates: [], changes: ['Sales.Order'], deletes: ['Sales.Note'], commits: ['Sales.Order'], calls: [],
+      writes: { 'Sales.Order': ['Status'] } }
   }],
-  nanoflows: [],
+  nanoflows: [{
+    module: 'Sales', name: 'NewRefund', qualifiedName: 'Sales.NewRefund', allowedModuleRoles: ['Sales.Agent'],
+    parameters: [], calledBy: [],
+    activity: { reads: [], retrieves: [], creates: ['Sales.Refund'], changes: [], deletes: [], commits: [], calls: [], writes: {} }
+  }],
   publishedServices: [{
     kind: 'OData', module: 'Sales', name: 'Reporting', qualifiedName: 'Sales.Reporting',
     allowedModuleRoles: ['Sales.Odata'], authentication: ['Basic'], authenticationMicroflow: null, exposes: ['Orders']
@@ -106,12 +126,25 @@ module.exports = async function (t) {
   t.ok(JSON.stringify(r.setAside) === JSON.stringify([{ userRole: 'Odata', services: ['Reporting'] }]),
     'a user role a published OData service is open to is set aside and named, never reported as unused: ' + JSON.stringify(r.setAside));
 
+  // ---- what a role does ----
+  t.ok(JSON.stringify(r.unwritten) === JSON.stringify([{ entity: 'Sales.Customer', name: 'Customer', module: 'Sales', userRole: 'Agent', attributes: ['Phone'], create: true, del: false }]),
+    'a write right nothing writes, and a create right nothing uses, are reported; the attribute the page edits is not: ' + JSON.stringify(r.unwritten));
+  t.ok(JSON.stringify(r.cannotDo) === JSON.stringify([{ flow: 'Sales.NewRefund', name: 'NewRefund', module: 'Sales', kind: 'nanoflow',
+    items: [{ userRoles: ['Agent'], what: 'create', entity: 'Sales.Refund' }] }]),
+    'a nanoflow a role may run that creates what the role may not create is reported, with who it fails for: ' + JSON.stringify(r.cannotDo));
+  const past = r.pastAccess[0] || { items: [] };
+  t.ok(r.pastAccess.length === 1 && past.flow === 'Sales.ForceClose' &&
+    past.items.some(function (i) { return i.what === 'write' && i.entity === 'Sales.Order' && i.members[0] === 'Status'; }) &&
+    past.items.some(function (i) { return i.what === 'delete' && i.entity === 'Sales.Note'; }),
+    'a microflow without entity access that does for a role what its rules forbid is reported, step by step: ' + JSON.stringify(r.pastAccess));
+
   // ---- the card ----
   await mx.evaluate(`(function(){
     var n = Array.from(document.querySelectorAll('button,a')).filter(function (e) { return /^Security/.test(e.textContent.trim()); });
     n[n.length - 1].click(); return true; })()`);
   await mx.waitFor(`!!document.querySelector('.au-card')`, 8000, 'access card');
   const counts = await mx.evaluate(`document.querySelector('.sec-counts').textContent`);
+  t.ok(/1 flow a role may run but not finish/.test(counts), 'a flow that fails for a role is counted in the band: ' + counts);
   t.ok(/2 entities read wider than used/.test(counts) && /2 with access nothing uses/.test(counts),
     'the band counts entities, not role-and-entity pairs: ' + counts);
   const card = await mx.evaluate(`document.querySelector('.au-card').textContent`);
@@ -119,6 +152,10 @@ module.exports = async function (t) {
     'the card says which mode the project is in, since that decides how open a wide rule is');
   t.ok(/Odata/.test(card) && /Reporting/.test(card) && /not judged/.test(card),
     'and names the role it did not judge, with the service that is why');
+  t.ok(/May write, nothing writes \(1\)/.test(card) && /write Phone · create/.test(card),
+    'the card lists the unused write and create rights');
+  t.ok(/creates Sales\.Refund — without the right, so it fails/.test(card) && /deletes Sales\.Note/.test(card),
+    'and the flows that fail for a role, and the ones that do what a role may not');
   const entities = await mx.evaluate(`Array.from(document.querySelectorAll('.au-item .au-entity-name')).map(function (n) { return n.textContent; }).join('|')`);
   t.ok(entities === 'Sales.Note|Sales.Order', 'one row per entity, collapsed: ' + entities);
 

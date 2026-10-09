@@ -103,7 +103,7 @@ function mkTransientObj(guid, entity, fields) {
 }
 
 window.mx = {
-  session: { getUserName: function(){ return 'tester'; }, isGuest: function(){ return false; }, getConfig: function(k){ return k === 'csrftoken' ? 'CSRF123' : null; } },
+  session: { getUserName: function(){ return 'tester'; }, isGuest: function(){ return false; }, getUserRoleNames: function(){ return ['Agent', 'Viewer']; }, getConfig: function(k){ return k === 'csrftoken' ? 'CSRF123' : null; } },
   data: {
     get: function (o) {
       if (o.guid) {
@@ -151,6 +151,14 @@ http.createServer((req, res) => {
     return;
   }
   if (u.pathname === '/fake/rows') {
+    // A field this session may not read: a real runtime refuses the whole
+    // retrieve when the XPath names it, which is what broke the any-text
+    // search. Only test/51 has an entity with a Secret field.
+    if ((u.searchParams.get('xpath') || '').indexOf('contains(Secret,') !== -1) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Access denied: Secret' }));
+      return;
+    }
     const all = matches(u.searchParams.get('xpath'));
     const off = Number(u.searchParams.get('offset')) || 0;
     const amt = Number(u.searchParams.get('amount')) || 10;
