@@ -73,12 +73,13 @@ module.exports = async function (t) {
     return { model: model, filesRead: seen.length };
   })()`);
 
-  // All seventeen. It used to be fourteen of fifteen, with the Folder units
+  // All of them, nineteen now that a snippet is read for what its widgets
+  // show. It used to be fourteen of fifteen, with the Folder units
   // skipped because nothing the walk needed was inside one — until the folder
   // names BECAME something it needs: they are the project tree. A folder unit
   // holds one field, its Name, so this is three more BSON documents of a few
   // dozen bytes; on a real project it is 435 more out of 3,879.
-  t.ok(v2.filesRead === 18, 'v2 opens only the units the walk actually needs: ' + v2.filesRead);
+  t.ok(v2.filesRead === 19, 'v2 opens only the units the walk actually needs: ' + v2.filesRead);
 
   // ---- the two formats are the same app, and say so in the same words ----
   // Everything except meta must come out byte-identical from both shapes.
@@ -180,6 +181,35 @@ module.exports = async function (t) {
     JSON.stringify(flow.activity && flow.activity.reads));
   t.ok(!!flow.activity && flow.activity.calls.indexOf('Sales.RefreshOrders') !== -1,
     'and a nanoflow call is counted as a call: ' + JSON.stringify(flow.activity && flow.activity.calls));
+
+  // ---- how much of an entity each read can reach ----
+  // What an access rule is measured against (accessuse.js): a retrieve over
+  // an association from an object in hand, or from the database with or
+  // without an XPath. A flow body spells the field "XpathConstraint".
+  t.ok(JSON.stringify(flow.activity.retrieves) === JSON.stringify([{ entity: 'Sales.Order', over: 'association', xpath: null }]),
+    'a retrieve over an association says so: ' + JSON.stringify(flow.activity.retrieves));
+  const sweep = v1.microflows.filter(function (f) { return f.qualifiedName === 'Sales.SweepOrders'; })[0];
+  t.ok(JSON.stringify(sweep.activity.retrieves) === JSON.stringify([{ entity: 'Sales.Order', over: 'database', xpath: '[Sales.Order_Customer/Sales.Customer/Age > 18]' }]),
+    'and a database retrieve keeps its XPath, exactly: ' + JSON.stringify(sweep.activity.retrieves));
+
+  // ---- where a page's data comes from ----
+  const overview = v1.pages.filter(function (p) { return p.qualifiedName === 'Sales.Order_Overview'; })[0];
+  t.ok(JSON.stringify(overview.dataSources) === JSON.stringify([
+    { kind: 'database', entity: 'Sales.Order', path: [], xpath: null, widget: 'allOrders' },
+    { kind: 'database', entity: 'Sales.Customer', path: [], xpath: '[Age >= 18]', widget: 'adults' }
+  ]), 'a page names where its lists come from: the database with no XPath, and a pluggable widget with one, trimmed and found one level down inside its property value: ' + JSON.stringify(overview.dataSources));
+  t.ok(JSON.stringify(overview.snippets) === JSON.stringify(['Sales.OrderLines']) &&
+    JSON.stringify(overview.flowRefs) === JSON.stringify([]),
+    'the snippet it places is named, so what the snippet reads counts for this page: ' + JSON.stringify(overview.snippets));
+  t.ok(JSON.stringify(overview.mentions) === JSON.stringify(['Sales.Customer', 'Sales.Order']),
+    'and every entity its widgets name is collected: ' + JSON.stringify(overview.mentions));
+  const lines = (v1.snippets || []).filter(function (s) { return s.qualifiedName === 'Sales.OrderLines'; })[0];
+  t.ok(!!lines && JSON.stringify(lines.dataSources) === JSON.stringify([
+    { kind: 'association', entity: 'Sales.Customer', path: ['Sales.Order_Customer'], xpath: null, widget: 'customerOfOrder' }
+  ]), 'a snippet is read the same way: a data view over an association from the object in context, with the path it follows: ' + JSON.stringify(lines && lines.dataSources));
+  t.ok(v2.model.snippets && JSON.stringify(v2.model.snippets) === JSON.stringify(v1.snippets) &&
+    JSON.stringify(v2.model.pages) === JSON.stringify(v1.pages),
+    'and a v2 project, one file per document, reads to exactly the same thing');
 
   // ---- the project's Security screen ----
   const sec = v1.security;

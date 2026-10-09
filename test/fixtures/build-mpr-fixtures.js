@@ -138,7 +138,10 @@ const U = {
   // Avalon belong to both a microflow and a page. Without a pair here, a
   // reader that resolves "Sales.CreateOrder" to whichever of the two it
   // indexed last passes every test.
-  createOrderPage: id(0xb5)
+  createOrderPage: id(0xb5),
+  // A snippet the page places, so what a page reads includes what its
+  // snippets read.
+  snippet:       id(0xb6)
 };
 const E = { customer: id(0xb1), order: id(0xb2), openOrders: id(0xb3) };
 // Associations carry an $ID of their own; see the Order_Customer unit below.
@@ -522,7 +525,39 @@ const UNITS = [
     Widgets: marked(2, [
       { $Type: 'Forms$ActionButton', Name: 'OpenCreateOrder',
         Action: { $Type: 'Forms$FormAction',
-          FormSettings: { $Type: 'Forms$FormSettings', Form: 'Sales.CreateOrder' } } }
+          FormSettings: { $Type: 'Forms$FormSettings', Form: 'Sales.CreateOrder' } } },
+      // Where the page's data comes from, one of each shape that decides how
+      // much of an entity a role is shown, as measured on Helpdesk: a list
+      // straight from the database with no XPath, a pluggable widget (Data
+      // grid 2 is one) with an XPath one level down inside its property
+      // value, and a snippet placed on the page.
+      { $Type: 'Forms$ListView', Name: 'allOrders',
+        DataSource: { $Type: 'Forms$ListViewXPathSource',
+          EntityRef: { $Type: 'DomainModels$DirectEntityRef', Entity: 'Sales.Order' },
+          XPathConstraint: '' } },
+      { $Type: 'CustomWidgets$CustomWidget', Name: 'adults',
+        Object: { $Type: 'CustomWidgets$WidgetObject', Properties: marked(2, [
+          { $Type: 'CustomWidgets$WidgetProperty',
+            Value: { $Type: 'CustomWidgets$WidgetValue',
+              DataSource: { $Type: 'CustomWidgets$CustomWidgetXPathSource',
+                EntityRef: { $Type: 'DomainModels$DirectEntityRef', Entity: 'Sales.Customer' },
+                XPathConstraint: '[Age >= 18]\n' } } }
+        ]) } },
+      { $Type: 'Forms$SnippetCallWidget', Name: 'lines',
+        FormCall: { $Type: 'Forms$SnippetCall', Form: 'Sales.OrderLines' } }
+    ])
+  } },
+
+  // A data view over an association from the object in context: it shows
+  // that order's customer, never the customer table.
+  { unit: U.snippet, container: U.folder, containment: 'Documents', doc: {
+    $Type: 'Forms$Snippet', Name: 'OrderLines',
+    Widgets: marked(2, [
+      { $Type: 'Forms$DataView', Name: 'customerOfOrder',
+        DataSource: { $Type: 'Forms$DataViewSource',
+          EntityRef: { $Type: 'DomainModels$IndirectEntityRef', Steps: marked(2, [
+            { $Type: 'DomainModels$EntityRefStep', Association: 'Sales.Order_Customer', DestinationEntity: 'Sales.Customer' }
+          ]) } } }
     ])
   } },
 

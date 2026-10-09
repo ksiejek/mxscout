@@ -153,7 +153,12 @@ the stored model (no server, no live app needed):
   holding the password. Plus the two things a role filter cannot answer — what
   the app publishes to the outside (REST, OData, web services, each with its
   own role list and its own authentication) and what runs on a timer with
-  nobody signed in.
+  nobody signed in. And entity access set against what uses it, per user
+  role, from the model alone: an entity the role may read in full where
+  every page and flow it can reach shows only part of it (over an
+  association, with an XPath, the object a page was given), and a rule
+  nothing the role can reach uses at all. A page is not what protects the
+  data, the rule is — this is where the two disagree.
 - **Documentation** — where the project's documentation file is made: what
   it holds, previews of it drawn from this project, and the export. The file
   is the whole model as documentation, built from it each time one is loaded:
@@ -425,6 +430,7 @@ so has no object on the page at all. Nothing here is over 2,500 lines:
 | `public/bridge.js` | the snippet pasted into the app tab, written as ordinary code and serialized when generated |
 | `public/objects.js` | the two object popups |
 | `public/security.js` | the Security section: the project's own security settings, the roles, and what the model says about its passwords |
+| `public/accessuse.js` | entity access against what uses it: per user role, rules wider than every page and flow the role reaches, and rules nothing it reaches uses |
 | `public/accessrule.js` | one row-level access rule — the readable rendering of its XPath, and whether MxScout could follow it at all |
 | `public/comments.js` | comments: writing, filtering, history, and how two copies of one reconcile |
 | `public/report.js` | the encrypted HTML report and the clipboard copy for Word |

@@ -134,8 +134,8 @@ module.exports = async function (t) {
   // rather than stopping at "the row is there".
   t.ok(await mx.evaluate(`document.querySelector('.trig-row .trig-name').tagName`) === 'BUTTON',
     'the row offers a real button, not a label dressed as one');
-  t.ok(await mx.evaluate(`document.querySelector('.trig-row').textContent`) === 'pageSales.Dup',
-    'the row says a page reaches this flow: ' + await mx.evaluate(`document.querySelector('.trig-row').textContent`));
+  t.ok(await mx.evaluate(`document.querySelector('.trig-group').textContent`) === 'Page (1)Sales.Dup',
+    'the group says a page reaches this flow: ' + await mx.evaluate(`document.querySelector('.trig-group').textContent`));
   await mx.evaluate(`document.querySelector('.trig-row .trig-name').click()`);
   const dupTabs = await mx.waitFor(`document.querySelectorAll('.popup-tab').length === 2 &&
     Array.from(document.querySelectorAll('.popup-tab')).map(function (t) { return t.textContent; }).join(',')`, 8000, 'popup');

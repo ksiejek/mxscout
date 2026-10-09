@@ -215,6 +215,9 @@
       meta: { source: 'mpr', generatedAt: new Date().toISOString(), appName: null, mendixVersion: null },
       modules: [], entities: [], associations: [], userRoles: [], moduleRoles: [],
       microflows: [], nanoflows: [], pages: [],
+      // What a snippet's widgets read, so a page that places one reads it
+      // too (see readPageData). Nothing else about a snippet is modelled.
+      snippets: [],
       javaActions: [], constants: [], enumerations: [],
       publishedServices: [], automation: [],
       // The project tree. `folders` carries the empty ones too, which is not
@@ -386,6 +389,12 @@
     return {
       count: 0, loops: 0,
       reads: [], creates: [], changes: [], deletes: [], commits: [],
+      // One entry per retrieve, in order: what it reads, and HOW — over an
+      // association from an object already in hand, or from the database with
+      // or without an XPath. `reads` above answers "what does this touch";
+      // this answers "how much of it could this ask for", which is what an
+      // access rule has to be measured against (see accessuse.js).
+      retrieves: [],
       commitCount: 0, deleteCount: 0, rollbackCount: 0,
       calls: [], javaActions: [], jsActions: [],
       restCalls: 0, opensPages: [], messages: 0, validations: 0, logs: 0,
@@ -472,6 +481,13 @@
           if (entity) {
             add(out.reads, entity);
             if (action.ResultVariableName) varEntity[action.ResultVariableName] = entity;
+            // A flow body spells it "XpathConstraint", a page "XPathConstraint".
+            var flowXpath = typeof source.XpathConstraint === 'string' ? source.XpathConstraint.trim() : '';
+            out.retrieves.push({
+              entity: entity,
+              over: typeof source.Entity === 'string' ? 'database' : 'association',
+              xpath: flowXpath || null
+            });
           }
           if (inLoop) out.inLoop.reads++;
           return;
@@ -561,6 +577,111 @@
     walk(collection.Objects, false);
     [out.reads, out.creates, out.changes, out.deletes, out.commits,
       out.calls, out.javaActions, out.jsActions, out.opensPages].forEach(function (list) { list.sort(); });
+    return out;
+  }
+
+  // ---------------- what a page READS ----------------
+  // Every widget that shows data names where the data comes from, and that is
+  // the whole question an access rule has to be measured against: a list that
+  // reads every row of an entity straight from the database needs a rule that
+  // allows every row, while a list over an association, with an XPath, or
+  // handed over by a microflow sees only part of the table, whatever the
+  // rule allows. The page is not what enforces that (the rule is), which is
+  // exactly why the difference is worth seeing.
+  //
+  // MEASURED on Helpdesk (Mendix 11), pages and snippets together: 555 data
+  // views, 481 pluggable widgets with an XPath source (Data grid 2 and its
+  // kin), 98 microflow sources, 89 association sources, 70 list views with an
+  // XPath source, 46 listen-to-widget sources, 29 image viewers, 15 nanoflow
+  // sources. A Mendix 9 data grid's source ends in "XPathSource" or
+  // "DatabaseSource" as well, which is why the test is the suffix.
+  //
+  // Read in one walk over the document, so it costs what reading the page
+  // already cost. References are by NAME everywhere on a page, never by id.
+  var PAGE_DATABASE_SOURCE = /(XPathSource|DatabaseSource)$/;
+  var PAGE_CONTEXT_SOURCE = {
+    'Forms$AssociationSource': true, 'Forms$DataViewSource': true, 'Forms$ImageViewerSource': true
+  };
+  // An entity reference is either the entity itself, or a path of
+  // association steps from the object in context, ending on the entity.
+  function pageEntityRef(ref) {
+    if (!ref || typeof ref !== 'object') return null;
+    if (typeof ref.Entity === 'string' && ref.Entity) return { entity: ref.Entity, path: [] };
+    var steps = payload(ref.Steps).filter(function (st) { return st && typeof st.DestinationEntity === 'string'; });
+    if (!steps.length) return null;
+    return {
+      entity: steps[steps.length - 1].DestinationEntity,
+      path: steps.map(function (st) { return typeof st.Association === 'string' ? st.Association : null; }).filter(Boolean)
+    };
+  }
+  function readPageData(raw, ctx) {
+    var out = { dataSources: [], snippets: [], flowRefs: [], mentions: [] };
+    function add(list, value) {
+      if (value && list.indexOf(value) === -1) list.push(value);
+    }
+    function mention(name) {
+      if (typeof name === 'string' && ctx.entityNames.has(name)) add(out.mentions, name);
+    }
+    // An XPath names entities as Module.Entity tokens among association and
+    // attribute names; only the ones that ARE entities are kept.
+    function mentionText(text) {
+      if (typeof text !== 'string' || text.indexOf('.') === -1) return;
+      var re = /([A-Za-z_]\w*)\.([A-Za-z_]\w*)/g, m;
+      while ((m = re.exec(text))) mention(m[1] + '.' + m[2]);
+    }
+    function xpathOf(node) {
+      var x = typeof node.XPathConstraint === 'string' ? node.XPathConstraint.trim() : '';
+      return x || null;
+    }
+    function walk(node, widget, depth) {
+      if (!node || typeof node !== 'object' || depth > 400) return;
+      if (Array.isArray(node)) {
+        for (var i = 0; i < node.length; i++) walk(node[i], widget, depth + 1);
+        return;
+      }
+      var type = node['$Type'];
+      // The nearest named widget, so a finding can say WHICH list it means.
+      if (node !== raw && typeof node.Name === 'string' && node.Name) widget = node.Name;
+      var source = null;
+      if (typeof type === 'string') {
+        if (PAGE_DATABASE_SOURCE.test(type)) {
+          var dbRef = pageEntityRef(node.EntityRef);
+          // A database source with a path is constrained by the object in
+          // context: it reads that object's rows, not the table.
+          if (dbRef) source = { kind: dbRef.path.length ? 'association' : 'database', entity: dbRef.entity, path: dbRef.path, xpath: xpathOf(node) };
+        } else if (PAGE_CONTEXT_SOURCE[type]) {
+          var ctxRef = pageEntityRef(node.EntityRef);
+          if (ctxRef) source = { kind: ctxRef.path.length ? 'association' : 'context', entity: ctxRef.entity, path: ctxRef.path, xpath: null };
+        } else if (type === 'Forms$MicroflowSource') {
+          var settings = node.MicroflowSettings || {};
+          if (typeof settings.Microflow === 'string' && settings.Microflow) source = { kind: 'microflow', flow: settings.Microflow };
+        } else if (type === 'Forms$NanoflowSource') {
+          if (typeof node.Nanoflow === 'string' && node.Nanoflow) source = { kind: 'nanoflow', flow: node.Nanoflow };
+        } else if (type === 'Forms$SnippetCall') {
+          add(out.snippets, typeof node.Form === 'string' ? node.Form : null);
+        }
+      }
+      if (source) {
+        source.widget = widget || null;
+        out.dataSources.push(source);
+        if (source.entity) mention(source.entity);
+      }
+      for (var key in node) {
+        var value = node[key];
+        if (typeof value === 'string') {
+          // A button, an event or a data source naming a flow: what this page
+          // can set off, for whoever may open it.
+          if ((key === 'Microflow' || key === 'Nanoflow') && value) add(out.flowRefs, value);
+          else if (key === 'Entity' || key === 'DestinationEntity') mention(value);
+          else if (key === 'Attribute') mention(value.split('.').slice(0, 2).join('.'));
+          else if (key === 'XPathConstraint') mentionText(value);
+        } else if (value && typeof value === 'object') {
+          walk(value, widget, depth + 1);
+        }
+      }
+    }
+    walk(raw, null, 0);
+    out.snippets.sort(); out.flowRefs.sort(); out.mentions.sort();
     return out;
   }
 
@@ -1764,6 +1885,7 @@
 
     var viewSources = {}; // "Module.Doc" -> the OQL of a view entity's source document
     var documentRows = byContainment.get('Documents') || [];
+    var pageCtx = { entityNames: new Set(result.entities.map(function (e) { return e.qualifiedName; })) };
     report('Reading microflows, nanoflows and pages', 0, documentRows.length);
     for (var d = 0; d < documentRows.length; d++) {
       var docRow = documentRows[d];
@@ -1836,12 +1958,22 @@
                 result.nanoflows.push(flow);
               }
             } else {
+              var pageData = readPageData(raw, pageCtx);
               result.pages.push({
                 module: moduleName, name: raw.Name, qualifiedName: qn, path: at.path,
-                allowedModuleRoles: allowedModuleRoles, parameters: parameters, calledBy: []
+                allowedModuleRoles: allowedModuleRoles, parameters: parameters, calledBy: [],
+                dataSources: pageData.dataSources, snippets: pageData.snippets,
+                flowRefs: pageData.flowRefs, mentions: pageData.mentions
               });
             }
           }
+        } else if (ownerModule && type === 'Forms$Snippet') {
+          var snippetData = readPageData(raw, pageCtx);
+          result.snippets.push({
+            module: ownerModule, name: raw.Name, qualifiedName: ownerModule + '.' + raw.Name,
+            dataSources: snippetData.dataSources, snippets: snippetData.snippets,
+            flowRefs: snippetData.flowRefs, mentions: snippetData.mentions
+          });
         } else if (ownerModule && (type === 'Rest$PublishedRestService' ||
             type === 'WebServices$PublishedService' || /PublishedODataService/.test(type))) {
           var service = type === 'Rest$PublishedRestService' ? readPublishedRest(raw)

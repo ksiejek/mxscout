@@ -260,7 +260,193 @@
       unchecked.push(u);
     });
 
-    return { verdict: verdict, findings: findings, noted: noted, unchecked: unchecked };
+    return { verdict: verdict, findings: findings, noted: noted, unchecked: unchecked, accessUse: accessUseOf(model) };
+  }
+
+  // ---------- entity access against what uses it ----------
+  // Measured on the WHOLE model, Marketplace modules included, and reported
+  // only for the entities this view shows: a page in a hidden module still
+  // uses an entity, and leaving it out would report that entity as unused.
+  var accessUseCache = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function accessUseOf(model) {
+    if (!window.MxAccessUse) return null;
+    var whole = (state && state.detail && state.detail.rawModel) || model;
+    var visible = new Set((model.entities || []).map(function (e) { return e.qualifiedName; }));
+    var cached = accessUseCache && accessUseCache.get(model);
+    if (cached && cached.whole === whole) return cached.result;
+    var result = window.MxAccessUse.analyse(whole, { visible: visible });
+    // Per entity, not per user role: one entity read too widely by six user
+    // roles is one thing to look at, not six.
+    result.widerByEntity = byEntity(result.wider);
+    result.unusedByEntity = byEntity(result.unused);
+    if (accessUseCache) accessUseCache.set(model, { whole: whole, result: result });
+    return result;
+  }
+  function byEntity(items) {
+    var map = {}, order = [];
+    items.forEach(function (item) {
+      if (!map[item.entity]) { map[item.entity] = { entity: item.entity, name: item.name, module: item.module, items: [] }; order.push(item.entity); }
+      map[item.entity].items.push(item);
+    });
+    return order.sort().map(function (qn) { return map[qn]; });
+  }
+
+  var HOW_HEADING = {
+    xpath: 'With an XPath', association: 'Over an association', context: 'The object a page was given',
+    microflow: 'Handed over by a flow', parameter: 'As a flow parameter', mention: 'Named on a page or in a flow'
+  };
+  var VIA_SECTION = { page: 'pages', microflow: 'microflows', nanoflow: 'nanoflows' };
+
+  // One place a role meets an entity, as a badge: the page or flow, and the
+  // widget when there is one. The XPath, which is the narrowing itself, is
+  // the badge's title — kept exact, never paraphrased.
+  function placeBadge(model, use) {
+    var label = use.name + (use.widget ? ' · ' + use.widget : '') + (use.parameter ? ' · $' + use.parameter : '');
+    var title = [use.via + ' ' + use.name];
+    if (use.xpath) title.push(use.xpath);
+    if (use.path && use.path.length) title.push('over ' + use.path.join(' / '));
+    if (use.through) title.push('as ' + use.through + ', which this entity specializes');
+    var section = VIA_SECTION[use.via];
+    var target = section && (model[section] || []).find(function (x) { return x.qualifiedName === use.name; });
+    if (!target) return el('span', { class: 'badge badge-none au-place', text: label, title: title.join('\n') });
+    return el('button', {
+      class: 'badge badge-read au-place', text: label, title: title.join('\n'),
+      onclick: function () { peekObject(section, target); }
+    });
+  }
+
+  function usesBlock(model, uses) {
+    var groups = {}, seen = {};
+    uses.forEach(function (u) {
+      var key = u.how + '|' + u.via + '|' + u.name + '|' + (u.widget || '') + '|' + (u.parameter || '');
+      if (seen[key]) return;
+      seen[key] = true;
+      (groups[u.how] = groups[u.how] || []).push(u);
+    });
+    var hows = window.MxAccessUse.HOW.filter(function (h) { return groups[h]; });
+    // A mere mention is the weakest evidence there is, so it is listed only
+    // when it is all there is.
+    var shown = hows.filter(function (h) { return h !== 'mention'; });
+    if (!shown.length) shown = hows;
+    var kids = shown.map(function (h) {
+      var list = groups[h];
+      var LIMIT = 12;
+      return el('div', { class: 'au-group' }, [
+        el('div', { class: 'trig-kind', text: (HOW_HEADING[h] || h) + ' (' + list.length + ')' }),
+        el('div', { class: 'au-places' }, list.slice(0, LIMIT).map(function (u) { return placeBadge(model, u); })
+          .concat(list.length > LIMIT ? [el('span', { class: 'muted au-more', text: '+' + (list.length - LIMIT) + ' more' })] : []))
+      ]);
+    });
+    if (groups.mention && shown.indexOf('mention') === -1) {
+      kids.push(el('div', { class: 'muted au-more', text: 'Also named in ' + groups.mention.length + ' more place' + (groups.mention.length === 1 ? '' : 's') + ' on pages and in flows.' }));
+    }
+    return el('div', { class: 'au-uses' }, kids);
+  }
+
+  function roleBadges(names) {
+    return names.map(function (n) { return el('span', { class: 'badge badge-read', text: n }); });
+  }
+
+  function entityButton(group) {
+    return el('button', {
+      class: 'link-btn au-entity', text: group.entity, title: 'Open ' + group.entity + ' and its access rules',
+      onclick: function () {
+        // The rules of every role, since the one to change may not belong to
+        // the role the reader last filtered by.
+        state.detail.role = 'all';
+        peekObject('entities', { qualifiedName: group.entity, name: group.name });
+      }
+    });
+  }
+
+  function strictSentence(model) {
+    var strict = model.security ? model.security.strictMode : null;
+    if (strict === true) {
+      return 'Strict mode is on in this project, so the client cannot ask for data the pages do not define. The rule is still what holds the moment a new page, a nanoflow or a microflow with entity access reads this entity.';
+    }
+    if (strict === false) {
+      return 'Strict mode is off in this project, so anyone signed in with the role can ask the app directly for every row the rule allows, whatever the pages show.';
+    }
+    return 'Whether strict mode is on is not recorded in this model. With it off, anyone signed in with the role can ask the app directly for every row the rule allows, whatever the pages show.';
+  }
+
+  function accessUseBlock(model, au) {
+    if (!au) return null;
+    var kids = [
+      el('h3', { text: 'Entity access against what uses it' }),
+      el('p', { class: 'hint', text: 'For each user role, every rule it holds on an entity is set against everything the role can reach: the pages it may open and the snippets on them, the flows it may call and the flows those call, and the microflows behind the REST operations open to it. A page is not what protects data, the rule is. ' + strictSentence(model) })
+    ];
+
+    var wide = au.widerByEntity;
+    kids.push(el('h4', { class: 'sec-sub-h' }, [
+      el('span', { text: 'Reads every row, sees fewer (' + wide.length + ')' }),
+      markNote('worth knowing', 'Possibly deliberate: a role may need the whole table for something MxScout does not follow, such as a Java action')
+    ]));
+    if (!wide.length) {
+      kids.push(el('p', { class: 'muted', text: 'No role reads a whole table that it only ever sees part of.' }));
+    } else {
+      kids.push(el('p', { class: 'hint', text: 'The rule has no XPath, so the role may read every row. Nothing the role can reach lists them all: every page and flow narrows them, as listed under each one. An XPath on the rule that says the same thing would make the rule what the app already does.' }));
+      kids.push(el('div', { class: 'au-list' }, wide.map(function (group) {
+        // User roles that meet the entity in exactly the same places share
+        // one block, so six administrator flavours do not repeat one list.
+        var blocks = [], bySig = {};
+        group.items.forEach(function (item) {
+          var sig = item.openRoles.join(',') + '#' + item.uses.map(function (u) {
+            return u.how + u.via + u.name + (u.widget || '');
+          }).join(';');
+          if (!bySig[sig]) { bySig[sig] = { roles: [], item: item }; blocks.push(bySig[sig]); }
+          bySig[sig].roles.push(item.userRole);
+        });
+        var userRoles = group.items.map(function (i) { return i.userRole; });
+        return el('details', { class: 'au-item' }, [
+          el('summary', {}, [
+            el('span', { class: 'au-entity-name', text: group.entity }),
+            el('span', { class: 'muted au-count', text: userRoles.length + ' user role' + (userRoles.length === 1 ? '' : 's') })
+          ]),
+          el('div', { class: 'au-body' }, [
+            el('div', { class: 'au-open' }, [entityButton(group)])
+          ].concat(blocks.map(function (b) {
+            return el('div', { class: 'au-block' }, [
+              el('div', { class: 'au-roles' }, roleBadges(b.roles)),
+              el('p', { class: 'au-why', text: 'Rule without an XPath: ' + b.item.openRoles.join(', ') + '. Where the role meets ' + group.name + ': ' + window.MxAccessUse.summary(b.item.uses) + '.' }),
+              usesBlock(model, b.item.uses)
+            ]);
+          })))
+        ]);
+      })));
+    }
+
+    var idle = au.unusedByEntity;
+    kids.push(el('h4', { class: 'sec-sub-h' }, [
+      el('span', { text: 'Granted, never used (' + idle.length + ')' }),
+      markNote('worth knowing', 'Possibly deliberate: something MxScout does not follow, such as a Java action or a published OData service, may use it')
+    ]));
+    if (!idle.length) {
+      kids.push(el('p', { class: 'muted', text: 'Every rule a user role holds is used by something that role can reach.' }));
+    } else {
+      kids.push(el('p', { class: 'hint', text: 'The user role holds a rule on the entity, and nothing it can reach shows it, reads it, takes it or returns it. A rule nobody uses is access granted for nothing.' }));
+      kids.push(el('div', { class: 'au-list' }, idle.map(function (group) {
+        var rules = [];
+        group.items.forEach(function (i) { i.moduleRoles.forEach(function (mr) { if (rules.indexOf(mr) === -1) rules.push(mr); }); });
+        return el('div', { class: 'au-row' }, [
+          el('div', { class: 'au-row-head' }, [
+            entityButton(group),
+            el('span', { class: 'muted au-count', text: 'rule of ' + rules.sort().join(', ') })
+          ]),
+          el('div', { class: 'au-roles' }, roleBadges(group.items.map(function (i) { return i.userRole; })))
+        ]);
+      })));
+    }
+
+    if (au.setAside.length) {
+      kids.push(el('p', { class: 'au-aside' }, [
+        markUnchecked('not judged', 'MxScout cannot tell which entity a published OData entity set hands out'),
+        el('span', { text: ' ' + au.setAside.map(function (s) {
+          return s.userRole + ' (published OData: ' + s.services.join(', ') + ')';
+        }).join('; ') + ' — a published OData service is open to ' + (au.setAside.length === 1 ? 'this role' : 'these roles') + ', and which entity each of its sets hands out is not read here, so ' + (au.setAside.length === 1 ? 'it is' : 'they are') + ' left out rather than reported as unused.' })
+      ]));
+    }
+    return el('div', { class: 'card au-card' }, kids);
   }
 
   // ---------- the band ----------
@@ -280,6 +466,9 @@
     if (found.findings.length) counts.push(found.findings.length + ' to act on');
     if (found.noted.length) counts.push(found.noted.length + ' worth knowing');
     if (found.unchecked.length) counts.push(found.unchecked.length + ' rule' + (found.unchecked.length === 1 ? '' : 's') + ' MxScout could not follow');
+    var au = found.accessUse;
+    if (au && au.widerByEntity.length) counts.push(au.widerByEntity.length + ' entit' + (au.widerByEntity.length === 1 ? 'y' : 'ies') + ' read wider than used');
+    if (au && au.unusedByEntity.length) counts.push(au.unusedByEntity.length + ' with access nothing uses');
     if (counts.length) kids.push(el('div', { class: 'sec-counts', text: counts.join(' · ') }));
 
     if (found.findings.length) {
@@ -648,6 +837,7 @@
       bandBlock(model, found),
       model.security ? settingsBlock(model, found) : null,
       rolesBlock(model),
+      accessUseBlock(model, found.accessUse),
       publishedBlock(model),
       automationBlock(model)
     ].filter(Boolean));

@@ -17,6 +17,29 @@ claim a version it is not.
 
 ## Unreleased
 
+### Entity access, set against what actually uses it
+
+- **The Security section now compares every access rule with the pages and
+  flows that use it**, per user role and from the model alone. Two lists:
+  - *Reads every row, sees fewer* — the role's rule has no XPath, but every
+    page, snippet and flow the role can reach narrows the entity: over an
+    association, with an XPath, the object a page was given, or handed over
+    by a microflow. A page is not what protects data, so this is the real
+    extent of that role's access, and the card says whether strict mode is
+    on in this project.
+  - *Granted, never used* — the role holds a rule and nothing it can reach
+    shows the entity, reads it, takes it or returns it.
+
+  Each entity opens to the places, as badges, with the XPath kept exact on
+  each; a badge opens that page or flow. A user role a published OData
+  service is open to is named and left out rather than judged.
+- **MxScout now reads where every page's data comes from**, snippets
+  included, and how every retrieve in a flow reads. Replace a project's
+  model from its folder to get both.
+- **"Reached from" in a flow's popup is grouped by kind** — a heading per
+  kind and the names under it as badges, like "Can be triggered by" — and
+  the side column is wider.
+
 ### Documentation — the whole model, in one place and one encrypted file
 
 **Every project has a new Documentation section: everything the model says

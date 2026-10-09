@@ -1390,7 +1390,7 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
    than two tabs to flip between. */
 .flow-cols { display: flex; gap: 20px; align-items: flex-start; }
 .flow-col-run { flex: 1 1 auto; min-width: 0; }
-.flow-col-side { flex: 0 0 240px; border-left: 1px solid var(--border); padding-left: 18px; }
+.flow-col-side { flex: 0 0 312px; border-left: 1px solid var(--border); padding-left: 18px; }
 @media (max-width: 900px) {
   .flow-cols { flex-direction: column; }
   .flow-col-side { flex: 1 1 auto; border-left: none; padding-left: 0; border-top: 1px solid var(--border); padding-top: 12px; width: 100%; }
@@ -2555,14 +2555,21 @@ button.twist:hover { color: var(--text); }
 .act-loop { margin: 0; font-size: 12px; color: var(--alarm); line-height: 1.45; }
 
 /* ---------- "Reached from": what runs a flow nothing can trigger ---------- */
-.trig-list { display: flex; flex-direction: column; gap: 5px; }
-.trig-row { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; }
+/* A heading per kind, the names under it as the badges "Can be opened by"
+   uses, so the two panels in the side rail read the same way. */
+.trig-list { display: flex; flex-direction: column; gap: 12px; }
+.trig-group { display: flex; flex-direction: column; gap: 6px; }
 .trig-kind {
-  flex: none; width: 96px; color: var(--muted);
+  color: var(--muted);
   font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase;
 }
-.trig-name { flex: 1; min-width: 0; overflow-wrap: anywhere; text-align: left; }
-button.trig-name { padding: 0; font-size: 12.5px; }
+.trig-badges { margin-bottom: 0; }
+.trig-row { display: flex; max-width: 100%; }
+.trig-name { min-width: 0; overflow-wrap: anywhere; white-space: normal; text-align: left; line-height: 1.4; }
+button.trig-name { border: 0; cursor: pointer; font-family: inherit; }
+button.trig-name:hover, button.trig-name:focus-visible {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
 
 /* A flow nothing in the model reaches. Dashed, not alarmed: unreachable in
    the model is a strong hint and not a proof — a workflow, a widget MxScout
@@ -2787,3 +2794,37 @@ button.ex-row:hover { background: var(--panel-2); }
 .fd-swatch-data { background: var(--fd-data); } .fd-swatch-object { background: var(--fd-object); }
 .fd-swatch-call { background: var(--fd-call); } .fd-swatch-client { background: var(--fd-client); }
 .fd-swatch-integration { background: var(--fd-integration); } .fd-swatch-variable { background: var(--fd-variable); }
+
+/* ---------- Security: entity access against what uses it ----------
+   A list of entities, each one opened on demand: the evidence for one
+   entity can be a dozen pages and flows, and a hundred of those open at once
+   is the wall of text this card exists to avoid. The places are the same
+   badges the flow popup's "Reached from" uses. */
+.au-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.au-item { border: 1px solid var(--border); border-radius: 8px; padding: 0; }
+.au-item > summary {
+  display: flex; align-items: baseline; gap: 10px; cursor: pointer;
+  padding: 7px 12px; font-size: 13px; list-style: none;
+}
+.au-item > summary::-webkit-details-marker { display: none; }
+.au-item > summary::before { content: '▸'; color: var(--muted); font-size: 11px; }
+.au-item[open] > summary::before { content: '▾'; }
+.au-entity-name { font-weight: 600; overflow-wrap: anywhere; }
+.au-count { font-size: 12px; }
+.au-body { display: flex; flex-direction: column; gap: 12px; padding: 4px 12px 12px 30px; }
+.au-open .link-btn { font-size: 12.5px; padding: 0; }
+.au-block { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 10px; }
+.au-roles { display: flex; flex-wrap: wrap; gap: 5px; }
+.au-why { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.au-uses { display: flex; flex-direction: column; gap: 10px; }
+.au-group { display: flex; flex-direction: column; gap: 6px; }
+.au-places { display: flex; flex-wrap: wrap; gap: 5px; }
+.au-place { overflow-wrap: anywhere; white-space: normal; text-align: left; line-height: 1.4; }
+button.au-place { border: 0; cursor: pointer; font-family: inherit; }
+button.au-place:hover, button.au-place:focus-visible { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.au-more { font-size: 12px; align-self: center; }
+.au-row { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+.au-row-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.au-entity { font-size: 13px; font-weight: 600; padding: 0; overflow-wrap: anywhere; text-align: left; }
+.au-aside { margin: 12px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.sec-sub-h .mark { margin-left: 8px; }

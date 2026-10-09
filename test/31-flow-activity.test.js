@@ -107,8 +107,10 @@ module.exports = async function (t) {
   const side = await mx.waitFor(`document.querySelector('.trig-list') && document.querySelector('.flow-col-side').textContent`, 8000, 'reached-from');
   t.ok(/Reached from \(2\)/.test(side),
     'a flow no role can trigger still says what runs it: ' + side.slice(0, 140));
-  t.ok(/scheduled event/.test(side) && /Sales\.NightlyTotals/.test(side),
-    'including a source MxScout has no page for — a scheduled event is named, not hidden');
+  t.ok(/Scheduled event \(1\)/.test(side) && /Sales\.NightlyTotals/.test(side),
+    'including a source MxScout has no page for — a scheduled event is named, not hidden, under a heading of its own kind');
+  t.ok(await mx.evaluate(`Array.from(document.querySelectorAll('.trig-group .trig-kind')).map(function (n) { return n.textContent; }).join('|')`) === 'Microflow (1)|Scheduled event (1)',
+    'one heading per kind, flows first, and the names under it rather than the kind repeated on every row');
   t.ok(/runs because one of the above runs it/.test(side),
     'and the sentence that ties the two panels together is there');
 

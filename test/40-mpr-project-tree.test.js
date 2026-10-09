@@ -98,12 +98,12 @@ module.exports = async function (t) {
     'a team wrote down which version of a Marketplace module it took');
 
   // ---- documents: all of them, not only the three kinds MxScout models ----
-  t.ok(v1.documents.length === 10,
+  t.ok(v1.documents.length === 11,
     'every named document under a module gets a line: ' + v1.documents.length);
   const kinds = v1.documents.map(function (d) { return d.kind; }).sort();
   t.ok(JSON.stringify(kinds) === JSON.stringify(['Java action', 'constant', 'enumeration',
     'microflow', 'microflow', 'page', 'page', 'published REST service', 'scheduled event',
-    'view entity source document']),
+    'snippet', 'view entity source document']),
     'including the kinds MxScout models nothing else about: ' + JSON.stringify(kinds));
   t.ok(docOf(v1, 'SendMail').kind === 'Java action',
     'a kind that the type name alone would lowercase into a typo is spelled properly: ' +
@@ -143,7 +143,8 @@ module.exports = async function (t) {
   const order = v1.documents.map(function (d) { return d.path.concat([d.name]).join(' > '); });
   t.ok(JSON.stringify(order) === JSON.stringify([
     'MaxOrders', 'OpenOrders', 'orders', 'SendMail', 'Status', 'SweepOrders', 'SweepOrders',
-    'Orders > CreateOrder', 'Orders > CreateOrder', 'Orders > Export/Import > Order_Overview'
+    'Orders > CreateOrder', 'Orders > CreateOrder', 'Orders > OrderLines',
+    'Orders > Export/Import > Order_Overview'
   ]), 'documents come out in tree order: module, then folder path, then name: ' + JSON.stringify(order));
   t.ok(JSON.stringify(v1.documents.filter(function (d) { return d.name === 'CreateOrder'; })
     .map(function (d) { return d.kind; })) === JSON.stringify(['page', 'microflow']),

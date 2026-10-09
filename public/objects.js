@@ -592,7 +592,32 @@
       }
 
       var kids = [el('h4', { text: 'Reached from (' + rows.length + ')' })];
-      kids.push(el('div', { class: 'trig-list' }, rows.map(function (s) {
+      // Grouped by kind, a heading per kind and the names under it as the
+      // same badges "Can be opened by" uses. One row per source with the kind
+      // repeated in front of every name read as a wall of text once a flow
+      // had more than a handful of callers (Karol, 2026-10-09).
+      var groups = {};
+      rows.forEach(function (s) { (groups[s.kind || ''] = groups[s.kind || ''] || []).push(s); });
+      var ORDER = ['microflow', 'nanoflow', 'page'];
+      var kindKeys = Object.keys(groups).sort(function (a, b) {
+        var ia = ORDER.indexOf(a), ib = ORDER.indexOf(b);
+        if (ia === -1) ia = ORDER.length + (a ? 0 : 1);
+        if (ib === -1) ib = ORDER.length + (b ? 0 : 1);
+        return ia - ib || a.localeCompare(b);
+      });
+      function kindHeading(kind, count) {
+        if (!kind) return 'Names it (' + count + ')';
+        var label = kind.charAt(0).toUpperCase() + kind.slice(1);
+        if (count !== 1 && !/s$/.test(label)) label += 's';
+        return label + ' (' + count + ')';
+      }
+      kids.push(el('div', { class: 'trig-list' }, kindKeys.map(function (kind) {
+        return el('div', { class: 'trig-group' }, [
+          el('div', { class: 'trig-kind', text: kindHeading(kind, groups[kind].length) }),
+          el('div', { class: 'rule-badges trig-badges' }, groups[kind].map(sourceRow))
+        ]);
+      })));
+      function sourceRow(s) {
         // The kind first, then the fallback, because a qualified name does not
         // identify a document: 10 names in one measured project belong to both
         // a microflow and a page, and trying microflow first would open the
@@ -607,26 +632,23 @@
           });
         }
         var target = found ? found.item : null;
-        var kindLabel = el('span', { class: 'trig-kind', text: s.kind || 'names it' });
         if (!target) {
           // A scheduled event, a published service, a snippet: real, named,
           // and not something MxScout has a page for. Say it plainly rather
           // than offering a link that goes nowhere.
           return el('div', { class: 'trig-row' }, [
-            kindLabel,
-            el('span', { class: 'trig-name', text: s.name || '—' })
+            el('span', { class: 'badge badge-none trig-name', text: s.name || '—' })
           ]);
         }
         var sectionKey = FLOW_SECTION_OF[found.kind];
         return el('div', { class: 'trig-row' }, [
-          kindLabel,
           el('button', {
-            class: 'link-btn trig-name', text: s.name,
+            class: 'badge badge-read trig-name', text: s.name,
             title: 'Open ' + s.name + ' over this one',
             onclick: function () { peekObject(sectionKey, target); }
           })
         ]);
-      })));
+      }
       if (!allowed.length) {
         kids.push(el('p', { class: 'hint', text: 'No role can set this ' + noun + ' off from the client — it runs because one of the above runs it.' }));
       }
