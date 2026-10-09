@@ -65,6 +65,35 @@ module.exports = async function (t) {
   const stats = await mx.evaluate(`document.querySelector('.lg-stats').textContent`);
   t.ok(/Total:\s*42/.test(stats), 'the stats bar counts the log: ' + stats);
 
+  // ---- dragging a window off the records-over-time chart ----
+  // It used to filter the stream and leave the chart on the whole log, so the window chosen became a sliver
+  // of bars in an otherwise empty strip. The chart has to zoom to it and stay there until it is cleared.
+  const drag = (f0, f1) => mx.evaluate(`(function () {
+    var box = document.querySelector('.lg-tl-box'), r = box.getBoundingClientRect(), y = r.top + r.height / 2;
+    function fire(type, f) { box.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, clientX: r.left + r.width * f, clientY: y })); }
+    fire('pointerdown', ${f0}); fire('pointermove', ${(f0 + f1) / 2}); fire('pointermove', ${f1}); fire('pointerup', ${f1});
+  })()`);
+  const chartState = () => mx.evaluate(`(function () {
+    var xs = Array.from(document.querySelectorAll('.lg-tl-cur')).map(function (n) { return parseFloat(n.getAttribute('x')); });
+    return { left: document.querySelector('.lg-tl-axis').firstChild.textContent, right: document.querySelector('.lg-tl-axis').lastChild.textContent,
+      spread: xs.length ? Math.max.apply(null, xs) - Math.min.apply(null, xs) : 0, rows: document.querySelectorAll('.lg-row').length,
+      range: document.querySelector('.lg-tl-range').textContent, clear: !document.querySelector('.lg-tl-head .btn').hidden };
+  })()`);
+  const whole = await chartState();
+  await drag(0.25, 0.5);
+  const zoomed = await chartState();
+  t.ok(zoomed.rows > 0 && zoomed.rows < whole.rows, 'a dragged window narrows the stream: ' + whole.rows + ' → ' + zoomed.rows);
+  t.ok(zoomed.left !== whole.left && zoomed.right !== whole.right && zoomed.range.indexOf(zoomed.left) === 0,
+    'and the chart zooms to it — its axis is the window now: ' + JSON.stringify([whole.left, whole.right]) + ' → ' + JSON.stringify([zoomed.left, zoomed.right, zoomed.range]));
+  t.ok(zoomed.spread > 500, 'the window fills the strip instead of sitting in a quarter of it: bars span ' + Math.round(zoomed.spread) + ' of 1000');
+  t.ok(zoomed.clear, 'with a way back');
+  await drag(0.2, 0.8);
+  const nested = await chartState();
+  t.ok(nested.rows > 0 && nested.rows <= zoomed.rows && nested.left !== zoomed.left, 'dragging again inside it narrows further: ' + zoomed.rows + ' → ' + nested.rows);
+  await mx.evaluate(`document.querySelector('.lg-tl-head .btn').click()`);
+  const back = await chartState();
+  t.ok(back.rows === whole.rows && back.left === whole.left && back.right === whole.right && !back.clear, 'Clear range puts the whole log back, chart and stream');
+
   await tab(/^Insights/);
   t.ok(await count('.lg-insights-card') >= 5, 'insights found the patterns in the sample');
   t.ok(await mx.evaluate(`Array.from(document.querySelectorAll('.lg-insights-card')).some(c => /Slow queries/.test(c.textContent) && /3 slow queries/.test(c.textContent))`),

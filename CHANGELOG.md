@@ -33,6 +33,12 @@ claim a version it is not.
   counted together, ordered by the time it cost in total. Open one for its SQL,
   highlighted, the model objects its tables belong to, and each run; a run
   opens its own line in the stream. The Insights card leads to it.
+- **Dragging a window off the records-over-time chart zooms the chart to
+  it.** It used to narrow the stream and leave the chart on the whole log,
+  so the window you picked became a few bars in an empty strip — and the
+  next drag, measured against the whole log again, widened it. Now the window
+  fills the strip, a drag inside it narrows further, and Clear range goes
+  back to the whole log.
 
 ### Three more access checks, the signed-in user, and two Live fixes
 

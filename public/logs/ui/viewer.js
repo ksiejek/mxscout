@@ -163,7 +163,7 @@
   }
 
   function resetStreamFilters() {
-    S.sigKey = null; S.mechanisms = null; chart.range = null;
+    S.sigKey = null; S.mechanisms = null; showWindow(null);
     ui.banner.hidden = true;
     [ui.search, ui.from, ui.to, ui.node, ui.date].forEach(function (el) { el.value = ''; });
     toggleAllLevels(true);
@@ -370,13 +370,29 @@
   // ===================================================================================================
   // THE TIMELINE — records over time, above the stream
   // ===================================================================================================
-  // Answers "when did this log get loud", which nothing else here does. Two lanes, not one stack: INFO outnumbers ERROR by two or three orders of magnitude in a healthy
-  // runtime, so stacking them hides exactly the bars worth seeing. Background is the whole log, foreground
-  // the current filter — drawing only the filtered set would throw away the context the chart exists for.
+  // Answers "when did this log get loud", which nothing else here does. Two lanes, not one stack: INFO
+  // outnumbers ERROR by two or three orders of magnitude in a healthy runtime, so stacking them hides exactly
+  // the bars worth seeing. Background is the whole log, foreground the current filter — drawing only the
+  // filtered set would throw away the context the chart exists for.
+  //
+  // A window dragged off the chart is also where the chart goes: the axis becomes that window, so the hour
+  // you picked fills the strip instead of sitting in a sliver of it, and a second drag narrows it further.
+  // It used to filter the stream and keep the whole log on the axis — the chosen window shrank to a few bars
+  // in an empty strip, and the next drag, measured against the whole log again, widened it instead.
   var TL = { H_VOL: 42, H_SEV: 15, Y_SEV: 47, W: 1000, SEV_MIN: 3 };
-  var chart = { axis: null, bg: null, fg: null, buckets: 120, range: null, wired: false, bandRaf: 0 };
+  var chart = { full: null, axis: null, bg: null, fg: null, buckets: 120, range: null, wired: false, bandRaf: 0 };
+
+  // The axis the chart is drawn on: the whole log, or the window dragged off it.
+  function showWindow(range) {
+    chart.range = range;
+    var f = chart.full;
+    chart.axis = !f || !range ? f
+      : { t0: range.from, t1: range.to, span: Math.max(1, range.to - range.from), epoch: f.epoch, timed: f.timed, skipped: f.skipped };
+    chart.bg = chart.axis ? bucketize(S.all) : null;
+  }
 
   function buildChart() {
+    chart.full = null;
     chart.axis = null;
     chart.bg = null;
     var t0 = Infinity, t1 = -Infinity, timed = 0;
@@ -390,24 +406,26 @@
     // Under two timestamped lines, or a log that all happened in the same millisecond, there is no axis to
     // draw — the chart hides rather than render a single meaningless bar.
     if (timed < 2 || t1 <= t0) return;
-    chart.axis = {
+    chart.full = {
       t0: t0, t1: t1, span: t1 - t0,
       // Time-only logs carry ms since midnight plus a day carry, so they stay far below any real epoch
       // value. Anything larger came from a date.
       epoch: t0 > 86400000 * 400, timed: timed, skipped: S.all.length - timed
     };
-    chart.bg = bucketize(S.all);
+    showWindow(null);
   }
 
+  // Lines outside the axis are left out, not piled into the first or last bar: zoomed to a window, the
+  // rest of the log is not in view, and counting it at the edges would draw two walls that are not there.
   function bucketize(entries) {
     var n = chart.buckets, a = chart.axis;
     var vol = new Array(n).fill(0), warn = new Array(n).fill(0), err = new Array(n).fill(0);
     if (!a) return { vol: vol, warn: warn, err: err, max: 0, sevMax: 0 };
     for (var i = 0; i < entries.length; i++) {
       var e = entries[i];
-      if (typeof e.ms !== 'number' || isNaN(e.ms)) continue;
+      if (typeof e.ms !== 'number' || isNaN(e.ms) || e.ms < a.t0 || e.ms > a.t1) continue;
       var b = Math.floor(((e.ms - a.t0) / a.span) * n);
-      if (b < 0) b = 0; else if (b >= n) b = n - 1;
+      if (b >= n) b = n - 1;
       vol[b]++;
       if (e.level === 'ERROR' || e.level === 'CRITICAL') err[b]++;
       else if (e.level === 'WARN') warn[b]++;
@@ -454,10 +472,10 @@
   // so it filters on e.ms instead of borrowing those fields, which on a multi-day log would silently select
   // that clock hour on every day in it.
   function setChartRange(from, to) {
-    chart.range = { from: Math.min(from, to), to: Math.max(from, to) };
+    showWindow({ from: Math.min(from, to), to: Math.max(from, to) });
     applyFilters();
   }
-  function clearChartRange() { chart.range = null; applyFilters(); }
+  function clearChartRange() { showWindow(null); applyFilters(); }
 
   function rect(x, y, w, hgt, cls) {
     return L.svg('rect', { x: x, y: y.toFixed(2), width: w, height: hgt.toFixed(2), class: cls });
@@ -598,7 +616,9 @@
       if (!chart.axis) return;
       dragging = true;
       x0 = ev.clientX;
-      box.setPointerCapture(ev.pointerId);
+      // Keeps the drag when the pointer leaves the strip; a pointer the browser does not track (one made
+      // up by a script) cannot be captured, and the drag works without it.
+      try { box.setPointerCapture(ev.pointerId); } catch (e) { /* not a tracked pointer */ }
       var r = box.getBoundingClientRect();
       dragEl.hidden = false;
       dragEl.style.left = (x0 - r.left) + 'px';
@@ -939,7 +959,7 @@
     ui.tabs.setCount('insights', '');
     ui.tabs.setCount('slow', '');
     multiFile = false; fileBadgeCache.clear();
-    chart.range = null; chart.axis = null; chart.bg = null; chart.fg = null;
+    chart.range = null; chart.full = null; chart.axis = null; chart.bg = null; chart.fg = null;
     ui.tl.wrap.hidden = true;
     closeContextMenu();
     L.clear(ui.list);
@@ -1138,7 +1158,7 @@
     tl.a0 = h('span'); tl.a1 = h('span'); tl.a2 = h('span');
     tl.note = h('div', { class: 'lg-tl-note', hidden: true });
     tl.wrap = h('div', { class: 'lg-tl', hidden: true }, [
-      h('div', { class: 'lg-tl-head' }, [h('span', { class: 'lg-tl-title', text: 'Records over time' }), h('span', { class: 'lg-tl-hint', text: 'drag to select a time range · click to jump there' }), tl.range, tl.clear]),
+      h('div', { class: 'lg-tl-head' }, [h('span', { class: 'lg-tl-title', text: 'Records over time' }), h('span', { class: 'lg-tl-hint', text: 'drag to zoom into a time range · click to jump there' }), tl.range, tl.clear]),
       tl.box, h('div', { class: 'lg-tl-axis' }, [tl.a0, tl.a1, tl.a2]), tl.note
     ]);
 
