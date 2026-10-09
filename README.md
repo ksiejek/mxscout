@@ -34,9 +34,8 @@ needs no project of your own open to make sense.
 
 **Log analysis** in the sidebar is a second job MxScout does without any
 project open — and, when one is, a section of that project: reading a Mendix
-application's logs (Log Viewer, Query Extractor, Microflow Tracer, REST & WS
-Extractor, Error Decoder, Nginx analyzer, Anonymizer, Incident Report, all over
-one loaded file) against its model. A warning that names a microflow opens that
+application's log in one viewer — the stream with its filters, Insights, and
+the slow queries the runtime reported — against its model. A warning that names a microflow opens that
 microflow, and one click turns it into a comment on it. It is the work of
 Mikołaj (RealMecowhy), [MxDevSwissTool](https://github.com/RealMecowhy/MxDevSwissTool),
 used under its MIT licence — see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
@@ -424,7 +423,7 @@ No build step, no bundler, no dependencies — what runs is what you read. One
 subject per file. Each of the browser's own modules is reached through a single
 named object and given what it needs through `init()` rather than reaching for
 it; the `.mpr` decoding is the exception, because it runs in a Web Worker and
-so has no object on the page at all. Nothing here is over 2,500 lines:
+so has no object on the page at all. Nothing here is over 3,000 lines:
 
 | file | what it is |
 | --- | --- |
@@ -455,7 +454,7 @@ so has no object on the page at all. Nothing here is over 2,500 lines:
 | `public/about.js` | the About & security page — data, rendered by one function that only sets text |
 | `public/guide.js` | the Getting started walkthrough — same shape as About, but its mockups reuse the real screens' component classes |
 | `public/version.js` | which version is running and what is in it |
-| `public/logs/` | the log analysis, from MxDevSwissTool — `engine/` is the original's analysis code, `ui/` is the MxScout screen over it, plus three same-origin workers and `logs.css` (see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)) |
+| `public/logs/` | the log analysis, from MxDevSwissTool — `engine/` is the original's analysis code, `ui/` is the MxScout screen over it, plus one same-origin worker and `logs.css` (see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)) |
 | `public/index.html` · `public/styles.css` | the page every one of those renders into, and the stylesheet they all share |
 
 Two directories are deliberately not in that table, because nothing in them
@@ -551,7 +550,8 @@ calls `t.ok(condition, message)`. What it covers today:
   because the About page makes that claim to a security reviewer;
 - the log analysis: the original author's own assertions run against the
   ported engine, and the screen is driven in a real browser — one file loaded,
-  handed to every tool, nothing thrown, nothing requested beyond this server;
+  Insights and the slow queries read off it, the removed tools still gone,
+  nothing thrown, nothing requested beyond this server;
 - the flow drawing: every node at its place, loops as containers, branch values on
   the arrows, the whole text of a step on hover, and a call that opens the called flow;
 - the log analysis as a section of a project: a log read against the model — chips on

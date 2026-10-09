@@ -1,9 +1,8 @@
 /* MxScout — Log analysis: shared plumbing for the screens in this folder.
  *
- * What lives here is everything more than one tool needs and none of them owns: building elements,
- * reading a file (including the .gz a Mendix Cloud download arrives as), parsing it off the main
- * thread, the one-file-shared-by-every-tool bar (the Data Hub), moving between tools, and the three
- * little overlays — a progress veil, a toast with Undo, and a dialog.
+ * What lives here is everything the Log Viewer needs that is not about a log line itself: building
+ * elements, reading a file (including the .gz a Mendix Cloud download arrives as), parsing it off the
+ * main thread, and the three little overlays — a progress veil, a toast with Undo, and a dialog.
  *
  * Log analysis comes from MxDevSwissTool by Mikołaj (RealMecowhy), MIT — see THIRD-PARTY-NOTICES.md.
  * The analysis engines are in ../engine/ and are that project's code, carried over unchanged; the
@@ -224,12 +223,6 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   };
 
-  L.downloadCsv = function (fileName, header, rows) {
-    L.download(window.mtExportToCsv(header, rows), fileName, 'text/csv;charset=utf-8');
-  };
-  L.copyMarkdown = function (header, rows, btn) { L.copy(window.mtExportToMarkdown(header, rows), btn); };
-  L.downloadHtml = function (fileName, model) { L.download(window.mtExportToHtml(model), fileName, 'text/html;charset=utf-8'); };
-
   // ---------- reading a file ----------
   // A .gz carries no trustworthy size, and text compresses ~20:1, so a 30 MB download can be 600 MB of
   // log — past what one tab can hold as a string. The bytes are counted as they are inflated and the
@@ -313,147 +306,9 @@
     });
   };
 
-  // The Studio Pro CSV export and a live log are told apart by extension; a Grafana export only by
-  // content, so the parser is asked first.
-  L.detectSourceFormat = function (name, text) {
-    var fmt = window.createMendixLogParser().detectFormat(text);
-    if (fmt.indexOf('grafana-') === 0) return fmt;
-    return /\.csv$/i.test(name) ? 'csv' : 'live';
-  };
-
-  // The load path three tools share (Query Extractor, Microflow Tracer, REST & WS): read the file, parse it
-  // (off the main thread when it is big), hand the records to the tool, and offer the file to the Data Hub so
-  // the others do not need it dropped again. `apply(res, text)` is the tool's own view of the parse result.
-  // text that arrives from another tool or the Hub already has an owner, so it is never re-published.
-  L.makeLoader = function (toolId, opts) {
-    var raw = null;
-    function tick() { return new Promise(function (r) { setTimeout(r, 20); }); }
-    async function run(text, name, parsed, pending) {
-      raw = text;
-      L.loader.show(opts.parsing, 5);
-      var res = parsed || await L.parseText(text, toolId);
-      L.loader.show(opts.building, 99);
-      await tick();
-      opts.apply(res, text, name);
-      L.loader.hide();
-      L.hub.publishFromParse(pending, text, res, toolId);
-      return true;
-    }
-    return {
-      loadFiles: async function (files) {
-        var f = files[0];
-        if (!f) return;
-        try {
-          L.loader.show('Reading log file...');
-          var text = await L.readFileText(f);
-          await run(text, f.name, null, { name: f.name, size: L.isGz(f) ? text.length : f.size });
-        } catch (err) {
-          L.loader.hide();
-          console.error(toolId + ' load failed', err);
-          L.toast('Could not read "' + f.name + '": ' + err.message, 'error');
-        }
-      },
-      loadText: function (text, name, parsed) {
-        return run(text, name, parsed, null).catch(function (err) { L.loader.hide(); L.toast('Could not parse this log: ' + err.message, 'error'); return false; });
-      },
-      rawText: function () { return raw; },
-      forget: function () { raw = null; }
-    };
-  };
-
-  // ---------- the Data Hub: one loaded file, shared across the log tools ----------
-  // Every log tool used to be an island: the same 60 MB log had to be dropped into one tool and then
-  // again into the next. The Hub holds ONE active source — the file most recently parsed by any tool —
-  // and the bar above the tools offers it to the others. The raw text is already in memory, and so are
-  // the records the shared parser produced; handing both over costs a function call, not a re-read.
-  // (The pure summary/target builders are MxDevSwissTool's: ../engine/hub.js.)
-  var hubSource = null;
-  var hubListeners = [];
-  var HUB_TARGET_IDS = ['log-viewer', 'log-query-extractor', 'microflow-tracer', 'ws-rest-extractor'];
-
-  function hubNotify() { hubListeners.forEach(function (cb) { try { cb(hubSource); } catch (e) { /* a listener must not break the others */ } }); }
-
-  L.hub = {
-    onChange: function (cb) { hubListeners.push(cb); },
-    getSource: function () { return hubSource; },
-    summary: function () { return window.mtHubSummary(hubSource); },
-    targets: function (currentToolId) { return window.mtHubTargets(hubSource, currentToolId); },
-    // Called by every log tool right after it parses a file. `text` is kept by reference.
-    setSource: function (info) {
-      if (!info || !info.text) return;
-      hubSource = {
-        name: info.name || 'log',
-        size: typeof info.size === 'number' ? info.size : info.text.length,
-        format: info.format || null,
-        records: typeof info.records === 'number' ? info.records : null,
-        siblings: info.siblings || 0,
-        text: info.text,
-        // { format, records, skipped } from the shared parser, for exactly this text.
-        parsed: info.parsed && info.parsed.records ? info.parsed : null,
-        origin: info.origin || null,
-        loadedIn: info.origin ? [info.origin] : [],
-        loadedAt: Date.now()
-      };
-      hubNotify();
-    },
-    clear: function () { hubSource = null; hubNotify(); },
-    // `pending` is the {name,size} a tool recorded when a user dropped or picked a file; it is null when
-    // the text instead arrived from another tool or from the Hub itself, so a hand-off never re-publishes.
-    publishFromParse: function (pending, text, res, origin) {
-      if (!pending || !text) return;
-      L.hub.setSource({
-        name: pending.name, size: pending.size, text: text,
-        format: res && res.format, records: res && res.records ? res.records.length : null,
-        parsed: res, origin: origin
-      });
-    },
-    // Pushes the active source into another tool and goes there; the target parses it as if the reader
-    // had dropped the file in. When that tool already shows unrelated data of its own and has no Undo,
-    // a silent one-click replace is exactly the kind of thing that should be confirmed first.
-    openIn: function (toolId, stay) {
-      var target = L.tools[toolId];
-      if (!hubSource || !target || HUB_TARGET_IDS.indexOf(toolId) === -1) return Promise.resolve(false);
-      var needsAsk = hubSource.loadedIn.indexOf(toolId) === -1 && target.hasData && target.hasData() && !target.hasUndo;
-      var go = function () {
-        if (hubSource.loadedIn.indexOf(toolId) === -1) hubSource.loadedIn.push(toolId);
-        if (!stay) L.goto(toolId, { withReturn: true });
-        var out;
-        try { out = target.loadText(hubSource.text, hubSource.name, hubSource.parsed); }
-        catch (e) { console.error('Data Hub: ' + toolId + ' failed', e); return false; }
-        hubNotify();
-        return out === undefined ? true : out;
-      };
-      if (needsAsk) {
-        return L.confirm('This replaces what is currently loaded in ' + target.label + ' with ' + hubSource.name + '. ' + target.label + ' has no Undo.',
-          { title: 'Replace the data in ' + target.label + '?', confirmLabel: 'Replace' }).then(function (ok) { return ok ? go() : false; });
-      }
-      return Promise.resolve(go());
-    },
-    // Fills a tool that holds nothing yet without leaving the current one (the Incident Report).
-    loadInto: function (toolId) { return L.hub.openIn(toolId, true); }
-  };
-
-  // ---------- moving between tools ----------
-  // A tab click is plain navigation. A hand-off from one tool to another (a "Show in Log Viewer" button,
-  // a decoder check that points at another tool) is navigation WITH a way back: a pill that returns to
-  // where the reader was.
-  var navListeners = [];
-  L.nav = { current: 'log-viewer', back: null };
-
-  L.onNav = function (cb) { navListeners.push(cb); };
-  L.goto = function (id, opts) {
-    opts = opts || {};
-    if (!L.tools[id]) return;
-    var from = L.nav.current;
-    L.nav.back = (opts.withReturn && from !== id) ? from : null;
-    L.nav.current = id;
-    navListeners.forEach(function (cb) { cb(id, from); });
-  };
-  L.goBack = function () { if (L.nav.back) L.goto(L.nav.back); };
-
-  // ---------- registering a tool ----------
-  // A tool is { id, label, build() → element (once), onShow?(), hasData?(), hasUndo?, loadText?(text, name, parsed),
-  // reportSection?(fromMs, toMs) }. They register themselves; the shell decides the order.
+  // ---------- registering the screen ----------
+  // The Log Viewer is { id, label, build() → element (once), onShow?(), hasData?(), loadText?(text, name, parsed) }.
+  // It registers itself; the shell (index.js) mounts it.
   L.register = function (tool) { L.tools[tool.id] = tool; };
 
   // ---------- optional: resolving a table name to an entity of the open project ----------

@@ -1,8 +1,8 @@
 /* MxScout — Log analysis, Log Viewer: the analysis tabs.
  *
- * Insights (one card per problem that actually occurs), the Levels Matrix, Correlation Flow, the
- * Sequence Diagram, the Gantt chart, and the Aggregate Errors dialog. The numbers behind them come
- * from MxDevSwissTool's engine (../engine/insights.js, decoder.js); everything here is the screens.
+ * Insights (one card per problem that actually occurs), Slow queries (the statements the runtime
+ * reported as slow, grouped), In your model, and the Aggregate Errors dialog. The numbers behind them
+ * come from MxDevSwissTool's engine (../engine/insights.js, decoder.js); everything here is the screens.
  *
  * The state a tab reads — the loaded entries, the filtered stream — is shared with viewer.js through
  * MxLogs.lv, and a tab acts on the stream (filter it, jump to a line) through the callbacks viewer.js
@@ -22,7 +22,7 @@
     sigKey: null,          // Aggregate Errors: the signature the stream is narrowed to
     mechanisms: null,      // Insights: a Set of decoder rule ids the stream is narrowed to
     // — set by viewer.js:
-    filterInsight: null, openTool: null, explainEntry: null, filterByCorrId: null,
+    filterInsight: null, filterByCorrId: null, jumpToEntry: null, showSlow: null,
     applyFilters: null, showFilterBanner: null, clearSignatureFilter: null, showStream: null
   };
 
@@ -63,12 +63,14 @@
     else setTimeout(run, 0);
   };
 
-  // Cross-links an Insights card can offer. A card names the tool; the label and tooltip live here so the
-  // pure extractor stays free of UI copy.
-  var INSIGHT_TOOLS = {
+  // Cross-links an Insights card can offer. A card names where it leads; the label, tooltip and action live
+  // here so the pure extractor stays free of UI copy. The engine still names the original's Query Extractor
+  // on the slow-query card; in MxScout that card leads to the Slow queries tab, which reads the same warnings.
+  var INSIGHT_LINKS = {
     'log-query-extractor': {
-      label: 'Open in Query Extractor',
-      title: 'Open the Log Query Extractor on this log — it reads the same slow-query warnings and shows the full SQL, with a By-statement view for total cost'
+      label: 'Open Slow queries',
+      title: 'The same slow-query warnings, one row per statement with its full SQL, worst first',
+      go: function () { S.showSlow(); }
     }
   };
 
@@ -79,7 +81,7 @@
   S.renderInsights = function (out) {
     L.clear(out);
     if (!S.all.length) {
-      out.appendChild(emptyLog('Insights scans WARNING/ERROR patterns (permission violations, session-state bloat, TaskQueue failures, slow-query warnings, error mechanisms the Error Decoder recognizes, per-node error hotspots) and shows a card for each problem that actually appears — nothing more. It also states one fact about the log itself: which log nodes are running at TRACE/DEBUG.'));
+      out.appendChild(emptyLog('Insights scans WARNING/ERROR patterns (permission violations, session-state bloat, TaskQueue failures, slow-query warnings, error mechanisms its rules recognize, per-node error hotspots) and shows a card for each problem that actually appears — nothing more. It also states one fact about the log itself: which log nodes are running at TRACE/DEBUG.'));
       return;
     }
     var result = insightsFor(S.all);
@@ -141,11 +143,7 @@
             }, [
               h('span', { class: 'lg-insights-item-count', title: it.count + ' entries', text: window.logInsightsCount(it.count) + '×' }),
               h('span', { class: 'lg-insights-item-label', text: it.label })
-            ]),
-            it.mechanism ? h('button', {
-              class: 'btn btn-ghost btn-sm', type: 'button', text: 'Decode', title: 'Open the first of these entries in the Mendix Error Decoder',
-              onclick: function () { S.decodeMechanism(it.mechanism); }
-            }) : null
+            ])
           ]);
           list.appendChild(row);
           var ml = W.modelLinks(it.label, function (o) {
@@ -164,11 +162,9 @@
           onclick: function () { list.hidden = !list.hidden; }
         }));
       }
-      if (c.crossLink && INSIGHT_TOOLS[c.crossLink]) {
-        actions.push(h('button', {
-          class: 'btn btn-ghost btn-sm', type: 'button', text: INSIGHT_TOOLS[c.crossLink].label, title: INSIGHT_TOOLS[c.crossLink].title,
-          onclick: function () { S.openTool(c.crossLink); }
-        }));
+      var link = c.crossLink && INSIGHT_LINKS[c.crossLink];
+      if (link) {
+        actions.push(h('button', { class: 'btn btn-ghost btn-sm', type: 'button', text: link.label, title: link.title, onclick: link.go }));
       }
 
       grid.appendChild(h('div', { class: 'lg-insights-card lg-sev-' + sev }, [
@@ -178,77 +174,101 @@
     out.appendChild(grid);
   };
 
-  // "Decode" on a mechanism row: the first entry of that mechanism goes to the Error Decoder exactly as the
-  // stream's Explain chip would send it.
-  S.decodeMechanism = function (id) {
-    var e = S.all.find(function (x) { return x._edxMech === id; });
-    if (e) S.explainEntry(e);
+  // ---------- Slow queries ----------
+  // The one database signal a production log carries at default levels: the runtime writes a
+  // ConnectionBus_Queries warning, with the full statement and how long it took, for every query past its
+  // slow-query threshold. Read with the engine's own pattern and grouping (LOG_SLOW_QUERY, logSlowQuerySig —
+  // the same the Insights card counts with), so the tab and the card can never disagree. One row per
+  // statement, ordered by the time it cost in total: on a real log the expensive statement is usually the
+  // ordinary one run a thousand times, not the single worst execution.
+  var slowCache = null;
+  function slowFor(entries) {
+    if (slowCache && slowCache.entries === entries) return slowCache.result;
+    var groups = new Map(), count = 0, worst = 0;
+    entries.forEach(function (e) {
+      if (e.node !== 'ConnectionBus_Queries' || e.level !== 'WARN') return;
+      var m = String(e.msg).match(window.LOG_SLOW_QUERY);
+      if (!m) return;
+      var ms = (m[1] ? parseInt(m[1], 10) * 1000 : 0) + parseInt(m[2], 10);
+      var sql = String(m[3]).trim();
+      var key = window.logSlowQuerySig(sql);
+      var g = groups.get(key);
+      if (!g) { g = { key: key, sql: sql, runs: [], total: 0, worst: 0 }; groups.set(key, g); }
+      g.runs.push({ e: e, ms: ms });
+      g.total += ms;
+      if (ms > g.worst) { g.worst = ms; g.sql = sql; }
+      count++;
+      if (ms > worst) worst = ms;
+    });
+    var list = Array.from(groups.values()).sort(function (a, b) { return (b.total - a.total) || (b.worst - a.worst); });
+    slowCache = { entries: entries, result: { groups: list, count: count, worst: worst } };
+    return slowCache.result;
+  }
+  S.slowCountLabel = function () {
+    var n = S.all.length ? slowFor(S.all).count : 0;
+    return n ? ' · ' + n : '';
   };
 
-  // ---------- Levels Matrix ----------
-  // Every level × log node, ranked by error volume. Heat is per COLUMN, not per row or globally: the question
-  // is "for this severity, which node is responsible?", and only column scaling answers it — globally,
-  // MicroflowEngine's 76 204 TRACE entries would flatten every other cell to invisible, and per row every row
-  // would get one full-heat cell, which says nothing. Log scale, because the counts span 2 … 98 482.
-  S.renderMatrix = function (out) {
+  // Rounded on the integer, not by toFixed: 2150 ms is 2.2 s, and toFixed's binary halves would say 2.1.
+  function dur(ms) { return ms >= 10000 ? Math.round(ms / 1000) + ' s' : ms >= 1000 ? (Math.round(ms / 100) / 10).toFixed(1) + ' s' : ms + ' ms'; }
+
+  S.renderSlow = function (out) {
     L.clear(out);
     if (!S.all.length) {
-      out.appendChild(emptyLog('The Levels matrix pivots the loaded log by log node × severity so you can see, at a glance, which logger is producing the errors and which nodes are running at DEBUG/TRACE. Load a log in the Log Stream tab; then click any cell to filter the stream to exactly those entries.'));
+      out.appendChild(emptyLog('Slow queries lists the statements the runtime reported as slow. It needs no special log level: at default levels the runtime writes a ConnectionBus_Queries warning, with the full SQL and its duration, for every query past its slow-query threshold.'));
       return;
     }
-    var m = window.logBuildLevelMatrix(S.all);
-    if (m.grandTotal === 0) { out.appendChild(h('div', { class: 'lg-insights-empty' }, [h('p', { class: 'lg-empty-title', text: 'No leveled entries to pivot' })])); return; }
-
-    out.appendChild(h('div', { class: 'lg-summary' }, [
-      'Pivot of ', h('strong', { text: L.fmtInt(m.grandTotal) }), ' entr' + (m.grandTotal === 1 ? 'y' : 'ies') + ' · ',
-      h('strong', { text: String(m.nodeCount) }), ' log node' + (m.nodeCount === 1 ? '' : 's') + ' × ', h('strong', { text: String(m.levels.length) }),
-      ' level' + (m.levels.length === 1 ? '' : 's') + ' · ', h('span', { class: 'muted', text: 'click a cell to filter the stream' })
-    ]));
-
-    var cls = { TRACE: 'trace', DEBUG: 'debug', INFO: 'info', WARN: 'warn', ERROR: 'error', CRITICAL: 'critical' };
-    var colMax = {};
-    m.levels.forEach(function (l) { colMax[l] = m.nodes.reduce(function (mx, row) { return Math.max(mx, row.counts[l] || 0); }, 0); });
-    function heat(level, c) {
-      var mx = colMax[level] || 0;
-      if (c <= 0 || mx <= 0) return null;
-      var t = Math.log(c + 1) / Math.log(mx + 1);
-      // The token is named for the class, never built from the level: WARN's class is "warn" in every scale.
-      return 'background:color-mix(in srgb, var(--lg-' + cls[level] + ') ' + Math.round(8 + 42 * t) + '%, transparent)';
+    var res = slowFor(S.all);
+    if (!res.count) {
+      out.appendChild(h('div', { class: 'lg-insights-empty' }, [
+        h('p', { class: 'lg-empty-title', text: 'No slow queries in this log' }),
+        h('p', { class: 'muted', text: 'No ConnectionBus_Queries warning reports a query past the slow-query threshold. Either every query was fast, or the log does not include that node at WARNING level.' })
+      ]));
+      return;
     }
-
-    var headRow = h('tr', null, [h('th', { class: 'lm-node-th', text: 'Log node' })]);
-    m.levels.forEach(function (l) {
-      headRow.appendChild(h('th', {
-        class: 'lm-lvl-th lm-' + cls[l], title: 'Filter the stream to all ' + l + ' entries',
-        onclick: function () { S.filterInsight('', l, ''); }, text: l
-      }));
+    out.appendChild(h('div', { class: 'lg-summary' }, [
+      h('strong', { text: L.fmtInt(res.count) }), ' slow quer' + (res.count === 1 ? 'y' : 'ies') + ' · ',
+      h('strong', { text: String(res.groups.length) }), ' distinct statement' + (res.groups.length === 1 ? '' : 's') + ' · worst ',
+      h('strong', { text: dur(res.worst) }), ' · ', h('span', { class: 'muted', text: 'ordered by the time each statement cost in total' })
+    ]));
+    var list = h('div', { class: 'lg-slow-list' });
+    res.groups.forEach(function (g) {
+      var detail = h('div', { class: 'lg-slow-detail', hidden: true });
+      function open() {
+        if (!detail.hidden) { detail.hidden = true; return; }
+        if (!detail.firstChild) {
+          detail.appendChild(W.sqlBlock(g.sql));
+          var ml = W.modelLinks(g.sql, function (o) {
+            return { severity: 'medium', change: '',
+              problem: 'Loaded log — a slow query, ' + g.runs.length + '× in the log, worst ' + dur(g.worst) + ', total ' + dur(g.total) + ', touches this ' + o.kind + ':\n\n' + g.sql.slice(0, 1200) };
+          }, 4);
+          if (ml) detail.appendChild(ml);
+          var runs = g.runs.slice().sort(function (a, b) { return b.ms - a.ms; });
+          detail.appendChild(h('div', { class: 'lg-label', text: runs.length === 1 ? 'The execution' : 'Executions, slowest first' }));
+          var rl = h('div', { class: 'lg-slow-runs' });
+          runs.slice(0, 50).forEach(function (r) {
+            rl.appendChild(h('button', {
+              class: 'lg-slow-run', type: 'button', title: 'Show this line in the stream',
+              onclick: function () { S.jumpToEntry(r.e); }
+            }, [h('span', { class: 'lg-slow-ms', text: dur(r.ms) }), h('span', { class: 'lg-slow-ts', text: r.e.ts }), h('span', { class: 'muted', text: 'line ' + r.e.line })]));
+          });
+          if (runs.length > 50) rl.appendChild(h('div', { class: 'lg-insights-more', text: '…and ' + (runs.length - 50) + ' more' }));
+          detail.appendChild(rl);
+        }
+        detail.hidden = false;
+      }
+      list.appendChild(h('div', { class: 'lg-slow-card' }, [
+        h('button', { class: 'lg-slow-head', type: 'button', 'aria-expanded': 'false', onclick: function (ev) { open(); ev.currentTarget.setAttribute('aria-expanded', String(!detail.hidden)); } }, [
+          h('span', { class: 'lg-slow-num' }, [h('strong', { text: dur(g.total) }), h('span', { class: 'muted', text: 'total' })]),
+          h('span', { class: 'lg-slow-num' }, [h('strong', { text: String(g.runs.length) + '×' }), h('span', { class: 'muted', text: 'runs' })]),
+          h('span', { class: 'lg-slow-num' }, [h('strong', { text: dur(g.worst) }), h('span', { class: 'muted', text: 'worst' })]),
+          h('span', { class: 'lg-slow-num' }, [h('strong', { text: dur(Math.round(g.total / g.runs.length)) }), h('span', { class: 'muted', text: 'average' })]),
+          h('span', { class: 'lg-slow-sql', title: g.sql.slice(0, 600), text: g.sql.replace(/\s+/g, ' ') })
+        ]),
+        detail
+      ]));
     });
-    headRow.appendChild(h('th', { class: 'lm-total-th', text: 'Total' }));
-
-    var tbody = h('tbody');
-    m.nodes.forEach(function (row) {
-      var tr = h('tr', null, [h('td', {
-        class: 'lm-node', title: 'Filter the stream to node ' + row.node, text: row.node, onclick: function () { S.filterInsight(row.node, '', ''); }
-      })]);
-      m.levels.forEach(function (l) {
-        var c = row.counts[l] || 0;
-        if (c === 0) { tr.appendChild(h('td', { class: 'lm-cell lm-zero', text: '·' })); return; }
-        tr.appendChild(h('td', {
-          class: 'lm-cell lm-' + cls[l], style: heat(l, c), text: String(c),
-          title: 'Filter to ' + row.node + ' · ' + l + ' (' + c + ')', onclick: function () { S.filterInsight(row.node, l, ''); }
-        }));
-      });
-      tr.appendChild(h('td', { class: 'lm-cell lm-total', text: String(row.total), onclick: function () { S.filterInsight(row.node, '', ''); } }));
-      tbody.appendChild(tr);
-    });
-
-    var foot = h('tr', { class: 'lm-foot' }, [h('td', { class: 'lm-node', text: 'All nodes' })]);
-    m.levels.forEach(function (l) {
-      foot.appendChild(h('td', { class: 'lm-cell lm-' + cls[l], text: String(m.levelTotals[l] || 0), onclick: function () { S.filterInsight('', l, ''); } }));
-    });
-    foot.appendChild(h('td', { class: 'lm-cell lm-total', text: String(m.grandTotal) }));
-
-    out.appendChild(h('div', { class: 'lg-matrix-wrap' }, [h('table', { class: 'lg-matrix' }, [h('thead', null, [headRow]), tbody, h('tfoot', null, [foot])])]));
+    out.appendChild(list);
   };
 
   // ---------- In your model ----------
@@ -331,175 +351,6 @@
       ]));
     });
     out.appendChild(list);
-  };
-
-  // ---------- Correlation Flow ----------
-  // Correlation IDs you can discover, not ones you must already know. The runtime writes the ID as a
-  // bracketed token at the START of the message and repeats it on the Plan/OQL/XPath records emitted while
-  // that execution runs, so one ID stitches a microflow to the queries it triggered. Anchoring on that
-  // bracket rather than on a bare UUID is what keeps the list honest: an application log that carries SAML
-  // assertions is full of UUIDs which are not correlation IDs at all.
-  var LIST_CAP = 200;   // rows before the list asks to be narrowed — a 69 MB TRACE log holds tens of thousands
-  var FLOW_CAP = 500;   // entries rendered for one flow; the stream (virtualised) is one click away
-  var corrCache = null;
-  S.corrSelected = null;
-
-  S.correlations = function () {
-    if (!corrCache || corrCache.scanned !== S.all.length) corrCache = window.logExtractCorrelations(S.all);
-    return corrCache;
-  };
-  S.dropCorrelations = function () { corrCache = null; S.corrSelected = null; };
-
-  S.renderCorrelationList = function (listEl, inputEl, onSelect) {
-    L.clear(listEl);
-    if (!S.all.length) {
-      listEl.appendChild(emptyLog('This tab lists the correlation IDs the runtime recorded, ranked by errors and volume, so you can find the request that failed instead of having to know its ID first. Load a log in the Log Stream tab.'));
-      return;
-    }
-    var res = S.correlations();
-    if (!res.groups.length) {
-      listEl.appendChild(h('div', { class: 'lg-insights-empty' }, [
-        h('p', { class: 'lg-empty-title', text: 'No correlation IDs in this log' }),
-        h('p', { class: 'muted' }, ['The runtime stamps a correlation ID on ', h('strong', { text: 'MicroflowEngine' }), ' records at DEBUG level, and on the Plan/OQL/XPath records at TRACE. A log running at INFO carries none — raise MicroflowEngine to DEBUG and reproduce the scenario. The box above still works for any other token you have: paste a session ID, request ID or user name to see every line that mentions it.'])
-      ]));
-      return;
-    }
-    // The box doubles as the filter, but picking a row writes that ID into it — which would then narrow the
-    // list to the one row just clicked and strand the user there. A value that IS the current selection
-    // filters nothing.
-    var raw = (inputEl.value || '').trim();
-    var q = raw === S.corrSelected ? '' : raw.toLowerCase();
-    var matching = q ? res.groups.filter(function (g) { return g.id.toLowerCase().indexOf(q) !== -1 || (g.flow || '').toLowerCase().indexOf(q) !== -1; }) : res.groups;
-
-    listEl.appendChild(h('div', { class: 'lg-corr-head' }, [
-      res.groups.length + ' correlation ID' + (res.groups.length === 1 ? '' : 's') + ' · ' + res.withId + ' of ' + res.scanned + ' records carry one',
-      q ? [' · ', h('strong', { text: String(matching.length) }), ' match the filter'] : null
-    ]));
-    if (!matching.length) {
-      listEl.appendChild(h('div', { class: 'lg-corr-note' }, ['No correlation ID matches that text. Clear the filter to see all of them, or press ', h('strong', { text: 'Track' }), ' to scan every line for it as free text.']));
-      return;
-    }
-    var shown = matching.slice(0, LIST_CAP);
-    shown.forEach(function (g) {
-      var bdg = g.errors ? h('span', { class: 'lg-lvl lg-lvl-error', text: g.errors + ' ERR' })
-        : (g.warnings ? h('span', { class: 'lg-lvl lg-lvl-warn', text: g.warnings + ' WARN' }) : null);
-      var span = window.logCorrSpanLabel(g);
-      var meta = [g.count + ' record' + (g.count === 1 ? '' : 's')].concat(span ? [span] : [])
-        .concat([g.nodes.slice(0, 3).join(', ') + (g.nodes.length > 3 ? ' +' + (g.nodes.length - 3) : '')]);
-      listEl.appendChild(h('button', {
-        class: 'lg-corr-row' + (g.id === S.corrSelected ? ' is-selected' : ''), type: 'button', title: g.id, onclick: function () { onSelect(g.id); }
-      }, [
-        h('div', { class: 'lg-corr-row-head' }, [h('span', { class: 'lg-corr-row-title', text: g.flow || 'Correlation ID' }), bdg]),
-        h('div', { class: 'lg-corr-row-id', text: g.id }),
-        h('div', { class: 'lg-corr-row-meta', text: meta.join(' · ') })
-      ]));
-    });
-    if (matching.length > shown.length) listEl.appendChild(h('div', { class: 'lg-corr-note', text: (matching.length - shown.length) + ' more not shown — narrow the list with the filter above.' }));
-  };
-
-  // Every loaded line that mentions `cid`, in order, with the facts the ranking knows about it.
-  S.renderCorrelationFlow = function (outEl, streamBtn, cid) {
-    L.clear(outEl);
-    if (!cid) {
-      outEl.appendChild(h('span', { class: 'lg-tone-warn', text: 'Enter a correlation ID, or pick one from the list.' }));
-      S.corrSelected = null;
-      streamBtn.hidden = true;
-      return;
-    }
-    var matched = S.all.filter(function (e) { return e.raw.indexOf(cid) !== -1; });
-    S.corrSelected = cid;
-    if (!matched.length) {
-      outEl.appendChild(h('span', { class: 'muted', text: 'No logs found for this Correlation ID.' }));
-      streamBtn.hidden = true;
-      return;
-    }
-    streamBtn.hidden = false;
-
-    var g = S.all.length ? S.correlations().groups.find(function (x) { return x.id === cid; }) : null;
-    var facts = [[h('strong', { text: String(matched.length) }), ' log entries']];
-    if (g) {
-      var span = window.logCorrSpanLabel(g);
-      if (span) facts.push(['span ' + span]);
-      if (g.errors) facts.push([h('span', { class: 'lg-tone-error', text: g.errors + ' error' + (g.errors === 1 ? '' : 's') })]);
-      if (g.flow) facts.push(['microflow ', h('strong', { text: g.flow })]);
-    }
-    outEl.appendChild(h('div', { class: 'lg-flow-id' }, ['ID ', h('code', { text: cid })]));
-    var f = h('div', { class: 'lg-flow-facts' });
-    facts.forEach(function (x, i) { if (i) L.add(f, ' · '); L.add(f, x); });
-    outEl.appendChild(f);
-
-    var list = h('div', { class: 'lg-flow-list' });
-    matched.slice(0, FLOW_CAP).forEach(function (e) {
-      list.appendChild(h('div', { class: 'lg-flow-item' }, [
-        h('div', { class: 'lg-flow-meta' }, [e.ts + ' — Node: ', h('strong', { text: e.node }), ' — Level: ', badge(e.level)]),
-        h('div', { class: 'lg-flow-msg', text: e.msg })
-      ]));
-    });
-    outEl.appendChild(list);
-    if (matched.length > FLOW_CAP) {
-      outEl.appendChild(h('div', { class: 'lg-corr-note' }, ['Showing the first ' + FLOW_CAP + ' of ' + matched.length + ' entries. ', h('strong', { text: 'Show in Log Stream' }), ' opens the full, scrollable list.']));
-    }
-  };
-
-  // ---------- Sequence diagram ----------
-  S.renderSequence = function (out) {
-    L.clear(out);
-    if (!S.filtered.length) { out.appendChild(h('span', { class: 'lg-tone-warn', text: 'No logs in current filter.' })); return; }
-    var entries = S.filtered.slice(0, 100);
-    var nodes = [];
-    entries.forEach(function (e) { if (nodes.indexOf(e.node) === -1) nodes.push(e.node); });
-
-    var wrap = h('div', { class: 'lg-seq' });
-    wrap.appendChild(h('div', { class: 'lg-seq-note', text: 'Showing sequence flow for first ' + entries.length + ' visible logs' }));
-    var lanes = h('div', { class: 'lg-seq-lanes' });
-    nodes.forEach(function (n) { lanes.appendChild(h('div', { class: 'lg-seq-lane' }, [n, h('div', { class: 'lg-seq-line' })])); });
-    wrap.appendChild(lanes);
-    entries.forEach(function (e) {
-      var left = (nodes.indexOf(e.node) / nodes.length) * 100 + (100 / nodes.length / 2);
-      var first = e.msg.split('\n')[0];
-      wrap.appendChild(h('div', { class: 'lg-seq-row' }, [
-        h('div', { class: 'lg-seq-ts', text: e.ts.split(' ')[1] || e.ts }),
-        h('div', { class: 'lg-seq-track' }, [
-          h('div', { class: 'lg-seq-dot', style: 'left:' + left + '%' }),
-          h('div', { class: 'lg-seq-label', style: 'left:calc(' + left + '% + 15px)', title: first, text: first })
-        ])
-      ]));
-    });
-    out.appendChild(wrap);
-  };
-
-  // ---------- Gantt ----------
-  // The bar measures the gap to the NEXT log line, which is all a generic log can support — an arbitrary
-  // entry carries no duration of its own. Saying "gap" is the honest label: a wide bar means nothing was
-  // logged for that long, which is either a quiet period or one un-instrumented operation running. For real
-  // per-activity durations the log needs MicroflowEngine DEBUG/TRACE records — that is the Microflow Tracer's
-  // job, and the note points there.
-  S.renderGantt = function (out) {
-    L.clear(out);
-    if (S.filtered.length < 2) { out.appendChild(h('span', { class: 'lg-tone-warn', text: 'Not enough logs to generate timeline (need at least 2).' })); return; }
-    var entries = S.filtered.slice(0, 500);
-    var parsed = window.logGanttAxis(entries);
-    if (parsed.length < 2) { out.appendChild(h('span', { class: 'lg-tone-warn', text: 'Could not parse time from logs.' })); return; }
-    var t0 = parsed[0].ms, tEnd = parsed[parsed.length - 1].ms, total = tEnd - t0;
-    if (total <= 0) { out.appendChild(h('span', { class: 'lg-tone-warn', text: 'Total duration is zero (logs have same timestamp).' })); return; }
-
-    out.appendChild(h('div', { class: 'lg-seq-note' }, ['Timeline for ' + parsed.length + ' entries. Total span: ' + total + 'ms. Each bar is the gap until the next log line — a wide bar means the log went quiet, not that one operation took that long. For per-activity durations use the ', h('strong', { text: 'Microflow Tracer' }), '.']));
-    var rows = h('div', { class: 'lg-gantt' });
-    parsed.forEach(function (e, i) {
-      var perc = ((e.ms - t0) / total) * 100;
-      var gap = i < parsed.length - 1 ? parsed[i + 1].ms - e.ms : 0;
-      var width = Math.max((gap / total) * 100, 0.5);
-      var first = e.msg.split('\n')[0];
-      rows.appendChild(h('div', { class: 'lg-gantt-row' }, [
-        h('div', { class: 'lg-gantt-node', title: e.node + ': ' + first, text: e.node }),
-        h('div', { class: 'lg-gantt-track' }, [h('div', {
-          class: 'lg-gantt-bar', style: 'left:' + perc + '%;width:' + width + '%',
-          title: 'Time: ' + e.ts + '\nGap to next line: ' + gap + 'ms\nMsg: ' + first
-        })]),
-        h('div', { class: 'lg-gantt-gap', title: 'Gap to the next log line', text: gap + 'ms' })
-      ]));
-    });
-    out.appendChild(rows);
   };
 
   // ---------- Aggregate Errors ----------

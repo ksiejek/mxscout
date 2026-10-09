@@ -2,8 +2,8 @@
  *
  * Tail, search and filter a Mendix log: levels that behave like a Grafana legend, search that either
  * filters or highlights, a time range, a "records over time" strip you can drag a window off, line
- * bookmarks that survive every filter, and six tabs over the same log (stream, Insights, Levels Matrix,
- * Correlation Flow, Sequence, Gantt).
+ * bookmarks that survive every filter, and four tabs over the same log (stream, Insights, Slow queries,
+ * and — inside a project — what in the model it names).
  *
  * The behaviour is MxDevSwissTool's Log Viewer (Mikołaj / RealMecowhy, MIT) and the numbers come from its
  * engine (../engine/insights.js); this file is the screen, built the MxScout way. The analysis tabs are in
@@ -28,7 +28,6 @@
   var hitIndices = [];
   var hitCursor = 0;
   var undoGen = 0;
-  var pendingFile = null;                // what the reader just dropped, published to the Data Hub once parsed
 
   // ---------- the pieces of the screen the code below reaches back to ----------
   var ui = {};
@@ -193,7 +192,7 @@
       S.sigKey = null;
       S.mechanisms = new Set(ids);
       showFilterBanner('Filtering by mechanism:', ids.length === 1
-        ? (ids[0] === window.LOG_MECH_UNRECOGNIZED ? 'unrecognized by the Error Decoder' : (window.logMechTitles.get(ids[0]) || ids[0]))
+        ? (ids[0] === window.LOG_MECH_UNRECOGNIZED ? 'not recognised by any error rule' : (window.logMechTitles.get(ids[0]) || ids[0]))
         : 'all ' + ids.length + ' on the Error mechanisms card');
     } else if (S.mechanisms) {
       S.mechanisms = null;
@@ -235,14 +234,14 @@
     ui.stats.set('info', L.fmtInt(i));
   }
 
-  // Highlight mode takes the search out of the filtered set, which is also what Export Filtered, the Incident
-  // Report and the counts in the stats bar read. That is a real change of meaning, so it is stated on screen
-  // rather than left for the reader to discover from an export that is larger than expected.
+  // Highlight mode takes the search out of the filtered set, which is also what Export Filtered and the
+  // counts in the stats bar read. That is a real change of meaning, so it is stated on screen rather than
+  // left for the reader to discover from an export that is larger than expected.
   function updateScopeNote() {
     var searching = ui.search.value.trim() !== '';
     if (searchMode !== 'highlight' || !searching || !S.all.length) { ui.scopeNote.hidden = true; return; }
     ui.scopeNote.hidden = false;
-    L.replace(ui.scopeNote, ['Highlight mode keeps every line, so ', h('strong', { text: 'Export filtered' }), ', the ', h('strong', { text: 'Incident Report' }),
+    L.replace(ui.scopeNote, ['Highlight mode keeps every line, so ', h('strong', { text: 'Export filtered' }),
       ' and the counts above cover all ' + L.fmtInt(S.filtered.length) + ' line' + (S.filtered.length === 1 ? '' : 's') + ' — not just the ' +
       L.fmtInt(hitIndices.length) + ' match' + (hitIndices.length === 1 ? '' : 'es') + '. Switch to ', h('strong', { text: 'Filter' }), ' to narrow them.']);
   }
@@ -289,16 +288,6 @@
     updateHitNav();
   }
 
-  // What the decoder gets from a log row — and whether it will say anything. Memoised per entry (the message
-  // is stable) so filter re-renders stay cheap. The Explain chip is offered ONLY when the decoder recognises
-  // the signature: no chip means no dead-end guess.
-  function explainable(e) {
-    if (e.level !== 'ERROR' && e.level !== 'CRITICAL') return false;
-    if (typeof window.edxDecode !== 'function') return false;
-    if (e._edxHasMatch === undefined) e._edxHasMatch = window.edxDecode(window.logDecoderText(e)).matches.length > 0;
-    return e._edxHasMatch;
-  }
-
   function buildRow(e, idx, search, needle, curHit) {
     var parts = e.msg.split('\n');
     var mainLine = parts[0];
@@ -323,11 +312,7 @@
       h('span', { class: 'lg-row-ts' }, highlight(e.ts, search)),
       S.badge(e.level),
       h('span', { class: 'lg-row-node', title: e.node }, highlight(e.node, search)),
-      h('span', { class: 'lg-row-msg' }, highlight(mainLine, search)),
-      explainable(e) ? h('button', {
-        class: 'lg-explain', type: 'button', text: 'Explain', title: 'Decode this error’s mechanism in the Mendix Error Decoder',
-        onclick: function (ev) { ev.stopPropagation(); explainEntry(e); }
-      }) : null
+      h('span', { class: 'lg-row-msg' }, highlight(mainLine, search))
     ]);
 
     if (stackLines.length) {
@@ -385,9 +370,7 @@
   // ===================================================================================================
   // THE TIMELINE — records over time, above the stream
   // ===================================================================================================
-  // Answers "when did this log get loud", which nothing else here does: the Levels matrix pivots by node and
-  // severity with no time axis, and the Gantt measures the gap between consecutive lines for at most 500 of
-  // them. Two lanes, not one stack: INFO outnumbers ERROR by two or three orders of magnitude in a healthy
+  // Answers "when did this log get loud", which nothing else here does. Two lanes, not one stack: INFO outnumbers ERROR by two or three orders of magnitude in a healthy
   // runtime, so stacking them hides exactly the bars worth seeing. Background is the whole log, foreground
   // the current filter — drawing only the filtered set would throw away the context the chart exists for.
   var TL = { H_VOL: 42, H_SEV: 15, Y_SEV: 47, W: 1000, SEV_MIN: 3 };
@@ -743,9 +726,10 @@
     ui.bmList.hidden = !ui.bmList.hidden;
     if (!ui.bmList.hidden) renderBookmarkList();
   }
-  // Jumps to a bookmarked line: switch to the stream tab, reveal the row (clearing filters if the line is
-  // filtered out), page the list up to it, then centre and flash it.
-  function jumpToBookmark(key) {
+  // Jumps to one line of the log: switch to the stream tab, reveal the row (clearing filters if the line is
+  // filtered out), page the list up to it, then centre and flash it. Bookmarks and the Slow queries tab
+  // both land here.
+  function jumpToLine(key) {
     var idx = S.filtered.findIndex(function (e) { return bookmarkKey(e) === key; });
     if (idx < 0) {
       resetStreamFilters();
@@ -756,6 +740,8 @@
     var row = revealRow(idx);
     if (row) flashRow(row);
   }
+  function jumpToBookmark(key) { jumpToLine(key); }
+  S.jumpToEntry = function (e) { jumpToLine(bookmarkKey(e)); };
 
   // ===================================================================================================
   // ROW CONTEXT MENU — right-click a line → "Filter by this Correlation ID"
@@ -779,35 +765,16 @@
   }
 
   // ===================================================================================================
-  // HAND-OFFS TO OTHER TOOLS
+  // TAKING LINES OUT
   // ===================================================================================================
-  // "Explain" on an ERROR row hands the full message (headline + stack) to the Mendix Error Decoder. The
-  // timestamp and correlation ID travel with it, so a check reading "look for two commits around this
-  // timestamp" opens the other tools already narrowed instead of dropping the reader into an unfiltered
-  // 60 MB log.
-  function explainEntry(e) {
-    var corr = e.raw.match(window.LOG_CORRID_PAT);
-    L.goto('error-decoder', { withReturn: true });
-    L.tools['error-decoder'].decodeText(window.logDecoderText(e), { ts: e.ts, corrId: corr ? corr[0] : null });
-  }
-  S.explainEntry = explainEntry;
-
-  // Hands the loaded log over to another tool, with the same fallback every other cross-link uses: if the
-  // target has nothing, give it this file so one load powers both. The full log goes over, not the filtered
-  // view — the target needs the lines the current level filter happens to be hiding.
-  S.openTool = function (toolId) {
-    var tool = L.tools[toolId];
-    L.goto(toolId, { withReturn: true });
-    if (tool && tool.loadText && tool.hasData && !tool.hasData() && S.all.length) tool.loadText(S.all.map(function (e) { return e.raw; }).join('\n'));
-  };
-
   function exportFiltered() {
     if (!S.filtered.length) return;
     L.download(S.filtered.map(function (e) { return e.raw; }).join('\n'), 'filtered-logs.txt');
   }
 
-  // A quick scrub for the clipboard: the same four replacements the original ran. The Anonymizer tool does
-  // far more and has options; this is the one-click version.
+  // A quick scrub for the clipboard: the same four replacements the original's Log Viewer ran — UUIDs,
+  // IP addresses, e-mail addresses and Mendix object ids. It is a convenience, not a guarantee: names,
+  // tokens and anything else in a message stay as they are.
   function anonymizeAndCopy(btn) {
     if (!S.filtered.length) { L.toast('No logs to anonymize.', 'warn'); return; }
     var text = S.filtered.map(function (e) { return e.raw; }).join('\n');
@@ -820,53 +787,16 @@
     L.toast('Anonymized and copied ' + S.filtered.length + ' filtered log entries to the clipboard.', 'ok');
   }
 
-  function sendToAnonymizer() {
-    if (!S.filtered.length) { L.toast('No logs to send.', 'warn'); return; }
-    L.loader.show('Preparing logs for anonymization...');
-    // Defer the heavy join to let the browser paint the veil first.
-    setTimeout(function () {
-      var text = S.filtered.map(function (e) { return e.raw; }).join('\n');
-      L.loader.hide();
-      L.goto('log-anonymizer', { withReturn: true });
-      L.tools['log-anonymizer'].setInput(text);
-    }, 50);
-  }
-
-  // Incident Report source: the stream's current filtered entries (levels, search, node, time), optionally
-  // narrowed further to [fromMs, toMs]. Returns null when nothing qualifies so the report omits the section.
-  function reportSection(fromMs, toMs) {
-    if (!S.all.length) return null;
-    var rows = [];
-    var firstMs = Infinity, lastMs = -Infinity, total = 0;
-    for (var i = 0; i < S.filtered.length; i++) {
-      var e = S.filtered[i];
-      var ms = window.mtTsToMs(e.ts);
-      if (fromMs != null && !isNaN(ms) && ms < fromMs) continue;
-      if (toMs != null && !isNaN(ms) && ms > toMs) continue;
-      total++;
-      if (!isNaN(ms)) { if (ms < firstMs) firstMs = ms; if (ms > lastMs) lastMs = ms; }
-      if (rows.length < 1000) rows.push([e.ts, e.level, e.node, e.msg.split('\n')[0]]);
-    }
-    if (total === 0) return null;
-    return {
-      id: 'log-viewer', title: 'Log Viewer — log entries',
-      subtitle: total + ' entr' + (total === 1 ? 'y' : 'ies') + ' (current filter)' + (rows.length < total ? ' · showing first ' + rows.length : ''),
-      columns: ['Time', 'Level', 'Node', 'Message'], rows: rows, total: total,
-      firstMs: firstMs === Infinity ? null : firstMs, lastMs: lastMs === -Infinity ? null : lastMs
-    };
-  }
-
   // ===================================================================================================
   // LOADING A LOG — and taking it back
   // ===================================================================================================
-  // Loading over a log that is on screen REPLACES it: a second file used to join the first while the Data Hub
-  // described only the newcomer. The previous state is kept for Undo / Merge instead. Clear and replace are
-  // forgiven (Undo, 10 s) rather than questioned with a dialog on every deliberate use.
+  // Loading over a log that is on screen REPLACES it: a second file used to join the first without saying
+  // so. The previous state is kept for Undo / Merge instead. Clear and replace are forgiven (Undo, 10 s)
+  // rather than questioned with a dialog on every deliberate use.
   function snapshot() {
     return {
       entries: S.all, multi: multiFile, bookmarks: new Map(bookmarks), levels: new Set(S.levels),
-      search: ui.search.value, from: ui.from.value, to: ui.to.value, node: ui.node.value, date: ui.date.value, mode: searchMode,
-      hub: L.hub.getSource()
+      search: ui.search.value, from: ui.from.value, to: ui.to.value, node: ui.node.value, date: ui.date.value, mode: searchMode
     };
   }
 
@@ -884,9 +814,6 @@
     buildDateFilter();
     ui.date.value = s.date;
     showLoaded();
-    var now = L.hub.getSource();
-    if (s.hub) L.hub.setSource(s.hub);
-    else if (now && now.origin === 'log-viewer') L.hub.clear();
   }
 
   function filesLabel(entries) {
@@ -905,28 +832,16 @@
       actions.push({ label: 'Merge instead', onClick: function () {
         if (stale()) { expired(); return; }
         restore(snap);
-        loaded.reduce(function (p, l) { return p.then(function () { return parseContent(l.text, l.name, l.parsed); }); }, Promise.resolve())
-          .then(function () { shareMerged(loaded[loaded.length - 1]); });
+        loaded.reduce(function (p, l) { return p.then(function () { return parseContent(l.text, l.name, l.parsed); }); }, Promise.resolve());
       } });
     }
     L.toast(message, 'info', { actions: actions, duration: 10000 });
   }
 
-  // The Data Hub carries one file, so a merged timeline shares its newest file and says how many others stay
-  // here — the same honest wording as a multi-file drop.
-  function shareMerged(last) {
-    var files = new Set(S.all.map(function (e) { return e.file; }));
-    L.hub.setSource({
-      origin: 'log-viewer', name: last.name, size: last.text.length, text: last.text, parsed: last.parsed,
-      records: S.all.filter(function (e) { return e.file === last.name; }).length,
-      format: L.detectSourceFormat(last.name, last.text), siblings: files.size - 1
-    });
-  }
-
   function replacedMessage(prevEntries, newLabel) {
     var oldLabel = filesLabel(prevEntries);
-    // Re-opening the file already on screen (the Data Hub's "re-parse") loses none of the log, only its
-    // filters and bookmarks — say that, not "replaced X with X".
+    // Re-opening the file already on screen loses none of the log, only its filters and bookmarks — say
+    // that, not "replaced X with X".
     return oldLabel === newLabel ? 'Reloaded ' + newLabel + ' — filters and bookmarks were reset.' : 'Replaced ' + oldLabel + ' with ' + newLabel + '.';
   }
 
@@ -990,7 +905,6 @@
     undoGen++;
     window.logAssignMs(S.all);
     S.dropInsightsCache();
-    S.dropCorrelations();
     buildChart();
     ui.empty.hidden = true;
     ui.list.hidden = false;
@@ -999,6 +913,7 @@
     refreshActiveTab();
     updateBookmarkBar();
     S.updateInsightsCount(function (t) { ui.tabs.setCount('insights', t); });
+    ui.tabs.setCount('slow', S.slowCountLabel());
   }
 
   // Search, level chips, the time range, the node filter and the date select are all no-ops with nothing
@@ -1009,7 +924,6 @@
     ui.stats.visible(hasData);
     ui.btn.analyze.hidden = !hasData;
     ui.btn.anonCopy.hidden = !hasData;
-    ui.btn.anonSend.hidden = !hasData;
     ui.btn.export.disabled = !hasData;
     ui.btn.clear.disabled = !hasData;
     // With a log on screen another file replaces this one (with Undo), so the button says so. It is never the
@@ -1021,8 +935,9 @@
   // Back to the empty viewer: no log, no filters, no bookmarks.
   function clearState() {
     S.all = []; S.filtered = [];
-    S.dropInsightsCache(); S.dropCorrelations();
+    S.dropInsightsCache();
     ui.tabs.setCount('insights', '');
+    ui.tabs.setCount('slow', '');
     multiFile = false; fileBadgeCache.clear();
     chart.range = null; chart.axis = null; chart.bg = null; chart.fg = null;
     ui.tl.wrap.hidden = true;
@@ -1039,16 +954,10 @@
     [ui.search, ui.from, ui.to, ui.node].forEach(function (el) { el.value = ''; });
     S.levels = new Set(LEVELS);
     syncLevelChips();
-    ui.corrInput.value = '';
-    L.replace(ui.corrOut, [h('span', { class: 'muted', text: 'Pick a correlation ID from the list, or paste one above.' })]);
-    ui.corrStreamBtn.hidden = true;
-    S.renderCorrelationList(ui.corrList, ui.corrInput, selectCorrelation);
-    L.replace(ui.seqOut, [h('div', { class: 'lg-empty-output', text: 'Sequence diagram will appear here…' })]);
-    L.replace(ui.ganttOut, [h('div', { class: 'lg-empty-output', text: 'Gantt chart will appear here…' })]);
     S.renderInsights(ui.insightsOut);
+    S.renderSlow(ui.slowOut);
     bookmarks.clear();
     updateBookmarkBar();
-    S.renderMatrix(ui.matrixOut);
     S.renderModel(ui.modelOut);
     ui.scopeNote.hidden = true;
     ui.hitNav.hidden = true;
@@ -1065,9 +974,6 @@
     var prev = S.all.length ? snapshot() : null;
     if (prev) clearState();
     var loaded = [];
-    // The Data Hub carries ONE file; with a multi-file drop the last one that actually parsed is shared and
-    // the rest are reported as staying here.
-    var shareable = null;
     // Sequential to keep file order deterministic before the timestamp merge-sort.
     for (var i = 0; i < files.length; i++) {
       var f = files[i];
@@ -1076,33 +982,20 @@
         var text = L.lf(await L.readFileText(f));
         var before = S.all.length;
         var parsed = await parseContent(text, f.name);
-        var added = S.all.length - before;
-        if (added > 0) {
-          loaded.push({ text: text, name: f.name, parsed: parsed });
-          shareable = {
-            name: f.name,
-            // .gz reports its compressed size, which would misdescribe the text the other tools receive, so
-            // measure the decompressed string.
-            size: L.isGz(f) ? text.length : f.size, text: text, parsed: parsed, records: added, format: L.detectSourceFormat(f.name, text)
-          };
-        }
+        if (S.all.length > before) loaded.push({ text: text, name: f.name, parsed: parsed });
       } catch (err) {
         console.error('Failed to load ' + f.name, err);
         L.toast('Could not read "' + f.name + '": ' + err.message, 'error');
       }
     }
     // A file that failed to parse must not cost the log that was on screen.
-    if (prev && !shareable) { restore(prev); L.loader.hide(); return; }
-    // Sharing the decompressed text is what lets the other log tools consume a .gz download at all — only
-    // the Log Viewer knows how to unpack one.
-    if (shareable) L.hub.setSource(Object.assign({ origin: 'log-viewer', siblings: files.length - 1 }, shareable));
+    if (prev && !loaded.length) { restore(prev); L.loader.hide(); return; }
     L.loader.hide();
-    if (prev && shareable) offerUndo(prev, replacedMessage(prev.entries, filesLabel(S.all)), loaded);
+    if (prev) offerUndo(prev, replacedMessage(prev.entries, filesLabel(S.all)), loaded);
   }
 
-  // Data Hub / cross-link entry point: parse raw log text as if it were a dropped file. It replaces what is on
-  // screen: appending made the Hub's "re-parse the same file" double every record, although its own prompt
-  // promises a replace.
+  // Parse raw log text as if it were a dropped file (Paste log uses it). It replaces what is on screen, the
+  // same way a dropped file does.
   async function loadText(text, filename, parsed) {
     var prev = S.all.length ? snapshot() : null;
     if (prev) clearState();
@@ -1142,27 +1035,10 @@
   }
   function refreshActiveTab() {
     if (currentTab === 'insights') S.renderInsights(ui.insightsOut);
-    if (currentTab === 'matrix') S.renderMatrix(ui.matrixOut);
+    if (currentTab === 'slow') S.renderSlow(ui.slowOut);
     if (currentTab === 'model') S.renderModel(ui.modelOut);
-    if (currentTab === 'correlation') S.renderCorrelationList(ui.corrList, ui.corrInput, selectCorrelation);
   }
-
-  function selectCorrelation(id) { ui.corrInput.value = id; trackCorrelation(); }
-  // Typing filters the list. A value that is exactly a known correlation ID also renders its flow straight
-  // away, so pasting an ID still works in one step; anything else waits for Track, which scans every line as
-  // free text.
-  function onCorrelationInput() {
-    var v = ui.corrInput.value.trim();
-    var known = S.all.length && S.correlations().groups.some(function (g) { return g.id === v; });
-    if (known) { trackCorrelation(); return; }
-    S.corrSelected = null;
-    S.renderCorrelationList(ui.corrList, ui.corrInput, selectCorrelation);
-  }
-  function trackCorrelation() {
-    var cid = ui.corrInput.value.trim();
-    S.renderCorrelationFlow(ui.corrOut, ui.corrStreamBtn, cid);
-    S.renderCorrelationList(ui.corrList, ui.corrInput, selectCorrelation);
-  }
+  S.showSlow = function () { showTab('slow'); };
 
   // ===================================================================================================
   // BUILD
@@ -1186,12 +1062,11 @@
     ui.btn = {
       analyze: h('button', { class: 'btn btn-sm', type: 'button', text: 'Aggregate errors', hidden: true, title: 'Group identical errors and exceptions — useful for finding error loops', onclick: S.openSignatures }),
       anonCopy: h('button', { class: 'btn btn-sm', type: 'button', text: 'Copy anonymized', hidden: true, title: 'Copy the filtered lines with UUIDs, IPs, e-mail addresses and Mendix ids replaced', onclick: function () { anonymizeAndCopy(ui.btn.anonCopy); } }),
-      anonSend: h('button', { class: 'btn btn-sm', type: 'button', text: 'Anonymize in tool', hidden: true, title: 'Send the filtered lines to the Anonymizer, which has the full set of options', onclick: sendToAnonymizer }),
       export: h('button', { class: 'btn btn-sm', type: 'button', text: 'Export filtered', disabled: true, onclick: exportFiltered }),
       clear: h('button', { class: 'btn btn-sm btn-danger-outline', type: 'button', text: 'Clear', disabled: true, title: 'Unload the log — Undo is offered for 10 seconds', onclick: clearLog })
     };
     var actions = h('div', { class: 'lg-actions' }, [
-      ui.btn.analyze, ui.btn.anonCopy, ui.btn.anonSend, ui.btn.export, h('span', { class: 'lg-sep' }), ui.btn.clear, h('span', { class: 'lg-sep' }),
+      ui.btn.analyze, ui.btn.anonCopy, ui.btn.export, h('span', { class: 'lg-sep' }), ui.btn.clear, h('span', { class: 'lg-sep' }),
       h('button', { class: 'btn btn-sm', type: 'button', text: 'Paste log', onclick: openPasteModal }), picker.button, picker.input
     ]);
 
@@ -1206,7 +1081,7 @@
       gotoHit(ev.shiftKey ? -1 : 1);
     });
     ui.mode = W.segmented([
-      { id: 'filter', label: 'Filter', title: 'Hide the lines that do not match. Export filtered, the Incident Report and the counts all narrow to the matches.' },
+      { id: 'filter', label: 'Filter', title: 'Hide the lines that do not match. Export filtered and the counts narrow to the matches.' },
       { id: 'highlight', label: 'Highlight', title: 'Keep every line and mark the matches, so you can read what happened around them. Step between matches with the arrows or Enter / Shift+Enter.' }
     ], 'filter', setSearchMode);
     ui.hitCount = h('span', { text: '0 / 0' });
@@ -1300,66 +1175,40 @@
 
     // ---- the other tabs ----
     ui.insightsOut = L.keepScroll(h('div', { class: 'lg-scroll' }));
-    ui.matrixOut = L.keepScroll(h('div', { class: 'lg-scroll' }));
-    ui.corrInput = h('input', { type: 'text', class: 'lg-input lg-input-wide', placeholder: 'Filter the list, or paste any ID / token…', spellcheck: 'false' });
-    ui.corrInput.addEventListener('input', onCorrelationInput);
-    ui.corrStreamBtn = h('button', { class: 'btn btn-ghost btn-sm', type: 'button', text: 'Show in Log Stream', hidden: true, title: 'Open the full, scrollable list of these entries in the Log Stream', onclick: function () { S.filterByCorrId(ui.corrInput.value.trim()); } });
-    ui.corrList = L.keepScroll(h('div', { class: 'lg-corr-list' }));
+    ui.slowOut = L.keepScroll(h('div', { class: 'lg-scroll' }));
     ui.modelOut = L.keepScroll(h('div', { class: 'lg-scroll' }));
-    ui.corrOut = L.keepScroll(h('div', { class: 'lg-corr-out' }, [h('span', { class: 'muted', text: 'Pick a correlation ID from the list, or paste one above.' })]));
-    ui.seqOut = L.keepScroll(h('div', { class: 'lg-scroll' }, [h('div', { class: 'lg-empty-output', text: 'Sequence diagram will appear here…' })]));
-    ui.ganttOut = L.keepScroll(h('div', { class: 'lg-scroll' }, [h('div', { class: 'lg-empty-output', text: 'Gantt chart will appear here…' })]));
 
     ui.panes = {
       stream: streamPane,
       insights: h('div', { class: 'lg-pane', hidden: true }, [ui.insightsOut]),
-      matrix: h('div', { class: 'lg-pane', hidden: true }, [ui.matrixOut]),
-      model: h('div', { class: 'lg-pane', hidden: true }, [ui.modelOut]),
-      correlation: h('div', { class: 'lg-pane lg-corr', hidden: true }, [
-        h('div', { class: 'lg-corr-bar' }, [ui.corrInput,
-          h('button', { class: 'btn btn-primary btn-sm', type: 'button', text: 'Track', title: 'Scan every loaded line for this text — works for correlation IDs and for anything else you have, such as a session ID or user name', onclick: trackCorrelation }),
-          ui.corrStreamBtn]),
-        h('div', { class: 'lg-corr-split' }, [ui.corrList, ui.corrOut])
-      ]),
-      sequence: h('div', { class: 'lg-pane', hidden: true }, [
-        h('div', { class: 'lg-corr-bar' }, [h('button', { class: 'btn btn-primary btn-sm', type: 'button', text: 'Generate from current filter', onclick: function () { S.renderSequence(ui.seqOut); } }),
-          h('span', { class: 'muted', text: 'A basic sequence flow across log nodes (max 100 entries).' })]),
-        ui.seqOut
-      ]),
-      gantt: h('div', { class: 'lg-pane', hidden: true }, [
-        h('div', { class: 'lg-corr-bar' }, [h('button', { class: 'btn btn-primary btn-sm', type: 'button', text: 'Generate timeline', onclick: function () { S.renderGantt(ui.ganttOut); } }),
-          h('span', { class: 'muted', text: 'Time elapsed between consecutive log entries (max 500 entries).' })]),
-        ui.ganttOut
-      ])
+      slow: h('div', { class: 'lg-pane', hidden: true }, [ui.slowOut]),
+      model: h('div', { class: 'lg-pane', hidden: true }, [ui.modelOut])
     };
 
     ui.tabs = W.tabs([
-      { id: 'stream', label: 'Log Stream' }, { id: 'insights', label: 'Insights' }, { id: 'matrix', label: 'Levels Matrix' },
-      { id: 'model', label: 'In your model', title: 'Which microflows, pages and entities of the open project the warnings and errors name' },
-      { id: 'correlation', label: 'Correlation Flow' }, { id: 'sequence', label: 'Sequence Diagram' }, { id: 'gantt', label: 'Gantt Chart' }
+      { id: 'stream', label: 'Log Stream' }, { id: 'insights', label: 'Insights' },
+      { id: 'slow', label: 'Slow queries', title: 'The statements the runtime reported as slow, worst first — from the warnings it writes at default log levels' },
+      { id: 'model', label: 'In your model', title: 'Which microflows, pages and entities of the open project the warnings and errors name' }
     ], 'stream', showTab);
 
-    var root = h('div', { class: 'lg-tool lg-viewer' }, [actions, ui.tabs.el, h('div', { class: 'lg-panes' }, [ui.panes.stream, ui.panes.insights, ui.panes.matrix, ui.panes.model, ui.panes.correlation, ui.panes.sequence, ui.panes.gantt])]);
+    var root = h('div', { class: 'lg-tool lg-viewer' }, [actions, ui.tabs.el, h('div', { class: 'lg-panes' }, [ui.panes.stream, ui.panes.insights, ui.panes.slow, ui.panes.model])]);
     document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closeContextMenu(); });
 
     S.renderInsights(ui.insightsOut);
-    S.renderMatrix(ui.matrixOut);
+    S.renderSlow(ui.slowOut);
     S.renderModel(ui.modelOut);
     L.onModel(function () { S.renderModel(ui.modelOut); });
-    S.renderCorrelationList(ui.corrList, ui.corrInput, selectCorrelation);
     return root;
   }
 
   L.register({
     id: 'log-viewer', label: 'Log Viewer',
-    hint: 'Search, filter and chart a log; Insights, matrix, correlation, sequence and Gantt over it.',
+    hint: 'Search, filter and chart a log; Insights and the slow queries over it.',
     build: build,
     hasData: function () { return S.all.length > 0; },
-    hasUndo: true,
     loadText: loadText,
     loadFiles: loadFiles,
     filterInsight: filterInsight,
-    reportSection: reportSection,
     onShow: function () { scheduleBand(); }
   });
 })();

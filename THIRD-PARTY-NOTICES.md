@@ -21,28 +21,29 @@ and given MxScout's own interface. The analysis itself — every parser, rule,
 heuristic and aggregation — is theirs and was carried over unchanged, so
 MxScout reads a log the same way the original does.
 
+Since 2026-10-09 MxScout carries only part of it: the Log Viewer — the stream,
+Insights and the slow queries the runtime reports. The other tools that were
+brought over at first (Query Extractor, Microflow Tracer, REST & WS Extractor,
+Error Decoder screen, Nginx analyzer, Anonymizer, Incident Report and the Data
+Hub that linked them) were taken out again; they are listed under "What was
+deliberately left out" below. The Error Decoder's rules stay, because Insights
+groups errors by them.
+
 ### What was carried over
 
 | MxScout file | comes from (MxDevSwissTool `public/js/…`) | notes |
 | --- | --- | --- |
 | `public/logs/engine/parser.js` | `tools/mendix-log-parser.js` | verbatim — Studio Pro CSV, Mendix Cloud live logs, on-premises logs, Grafana exports |
 | `public/logs/engine/sql.js` | `tools/sql-engine.js`, `tools/sql.js`, `tools/format-view.js` | SQL/OQL tokenizer and prettifier; the highlighter returns tokens instead of an HTML string |
-| `public/logs/engine/insights.js` | `tools/log-viewer.js` | the pure functions: insights, levels matrix, correlation, signatures, timing |
-| `public/logs/engine/queries.js` | `tools/log-query-extractor.js` | Log Query Extractor |
-| `public/logs/engine/tracer.js` | `tools/microflow-tracer.js` | Microflow Tracer, N+1 detector |
-| `public/logs/engine/restws.js` | `tools/ws-rest-extractor.js` | REST & WS Extractor |
-| `public/logs/engine/decoder.js` | `tools/error-decoder.js` | Error Decoder rules |
-| `public/logs/engine/nginx.js` | `tools/nginx.js`, `tools/nginx-correlator.js` | parsers, 404 classifier, Timeline Correlator; aggregation written inline with the DOM was lifted out as functions |
-| `public/logs/engine/anonymizer.js` | `tools/log-anonymizer.js` | the masking rules |
-| `public/logs/engine/export.js` | `components/exporters.js` | CSV / Markdown / HTML builders and the incident-report model; branding changed to MxScout |
-| `public/logs/engine/hub.js` | `components/data-hub.js` | the Data Hub summary and hand-off rules |
-| `public/logs/parse-worker.js`, `anonymize-worker.js`, `nginx-worker.js` | the same tools' worker code | thin same-origin workers that load the engine files |
-| `test/logs/engine-parity.js` | `scripts/parser-test.js` | the original's assertions, pointed at the ported files — they are what says the port has not drifted |
+| `public/logs/engine/insights.js` | `tools/log-viewer.js` | the pure functions: insights (slow queries among them), levels matrix, correlation, signatures, timing — the file is carried whole, though the screen no longer shows the matrix or the correlation view |
+| `public/logs/engine/decoder.js` | `tools/error-decoder.js` | Error Decoder rules — read by Insights' error-mechanism card; the decoder's own screen is not carried |
+| `public/logs/parse-worker.js` | the same tool's worker code | a thin same-origin worker that loads the parser |
+| `test/logs/engine-parity.js` | `scripts/parser-test.js` | the original's assertions for the files above, pointed at the ported files — they are what says the port has not drifted |
 
 ### What is MxScout's own
 
 - All of `public/logs/ui/` and `public/logs/logs.css`: the screen, tabs, lists,
-  charts, dialogs and the Data Hub bar are written fresh in MxScout's
+  charts and dialogs, and the Slow queries tab, are written fresh in MxScout's
   interface, built with the DOM helpers (no markup strings, in line with the
   rule described on the About page).
 - The integration in `public/app.js` (the Logs section of a project, and the link from a log line to the model object it names), `public/comments.js` (a comment started with a draft), `public/index.html`, `public/palette.js`.
@@ -50,9 +51,15 @@ MxScout reads a log the same way the original does.
 
 ### What was deliberately left out
 
-- Anything that contacts the network. MxDevSwissTool's geolocation lookup in the
-  Nginx analyzer (a request to a third-party service) is not carried: MxScout
-  sends nothing anywhere.
+- Anything that contacts the network: MxScout sends nothing anywhere.
+- The other log tools, carried over at first and taken out on 2026-10-09 to keep
+  the section to the stream, Insights and the slow queries: the Query Extractor
+  (`tools/log-query-extractor.js`), Microflow Tracer (`tools/microflow-tracer.js`),
+  REST & WS Extractor (`tools/ws-rest-extractor.js`), the Error Decoder's screen,
+  Nginx analyzer and Timeline Correlator (`tools/nginx.js`, `tools/nginx-correlator.js`),
+  Anonymizer (`tools/log-anonymizer.js`), the export builders and Incident Report
+  (`components/exporters.js`) and the Data Hub (`components/data-hub.js`). Their
+  ports are in this repository's history.
 - Charting and diagram libraries (Chart.js, Mermaid): the charts are drawn
   directly as SVG/DOM, so MxScout still ships with no third-party code beyond
   the above.

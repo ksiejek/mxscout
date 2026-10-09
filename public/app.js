@@ -63,8 +63,8 @@
     // Same top-level-screen treatment as About: null when closed, truthy
     // while open, and mutually exclusive with it (see openGuide/openAbout).
     guide: null,
-    // Log analysis — the Log Viewer, Query Extractor, Microflow Tracer and the
-    // rest (see public/logs/). A top-level screen like About and Getting
+    // Log analysis — the Log Viewer: the stream, Insights and slow queries
+    // (see public/logs/). A top-level screen like About and Getting
     // started: it needs no project, so opening it leaves the open project
     // alone, and it is mutually exclusive with those two. The module keeps
     // its own state (a loaded log is large and lives in memory only), so
@@ -813,7 +813,7 @@
     var logsBtn = el('button', {
       class: 'tree-all' + (state.logs ? ' active' : ''),
       text: 'Log analysis',
-      title: 'Read a Mendix log: Log Viewer, Query Extractor, Microflow Tracer, REST & WS, Error Decoder, Nginx, Anonymizer, Incident Report',
+      title: 'Read a Mendix log: the stream, Insights and the slow queries',
       onclick: function () {
         if (state.logs) closeLogs(); else openLogs();
         render();
@@ -2268,13 +2268,13 @@
   // open project exactly as it was, and the module keeps its own state — a
   // loaded log is large, lives in memory only, and must survive this file
   // redrawing the page around it.
-  function openLogs(toolId) {
+  function openLogs() {
     state.logs = {};
     state.about = null;
     state.guide = null;
     state.newProject.open = false;
     setMessage(null);
-    window.MxLogs.open(toolId);
+    window.MxLogs.open();
   }
 
   function closeLogs() {

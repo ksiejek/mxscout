@@ -1,4 +1,6 @@
-// A small but realistic Mendix Cloud live log that exercises every log tool — used by test/44-logs.test.js.
+// A small but realistic Mendix Cloud live log that exercises the Log Viewer — used by test/44-logs.test.js.
+// Three slow-query warnings over two statements: "a$b" twice (2.15 s + 1.4 s, the larger total) and
+// "sales$order" once (3 s, the worst single run), so ordering by total and by worst disagree.
 const P = '[runtime-container/abc123]';
 const L = [];
 let t = Date.parse('2026-07-18T09:00:00Z');
@@ -11,6 +13,8 @@ add(ms += 200, 'WARNING', 'WebUI', "User 'b@ex.com' attempted to execute runtime
 add(ms += 200, 'WARNING', 'RequestStatistics', 'Request state size of 450 objects exceeds the threshold of 300 objects.');
 for (let i = 0; i < 6; i++) add(ms += 300, 'ERROR', 'TaskQueue', "Failed to execute task 'MDM.UPD_UserData(Account=X@" + i + ")' from task queue 'Queues.Schedule'.");
 add(ms += 100, 'WARNING', 'ConnectionBus_Queries', 'Query executed in 2 seconds and 150 milliseconds: SELECT "a$b"."id" FROM "a$b" WHERE "a$b"."x" = 5');
+add(ms += 100, 'WARNING', 'ConnectionBus_Queries', 'Query executed in 1 second and 400 milliseconds: SELECT "a$b"."id" FROM "a$b" WHERE "a$b"."x" = 7');
+add(ms += 100, 'WARNING', 'ConnectionBus_Queries', 'Query executed in 3 seconds and 0 milliseconds: SELECT "sales$order"."id" FROM "sales$order" WHERE "sales$order"."total" > 1000');
 add(ms += 100, 'ERROR', 'Connector', 'com.mendix.systemwideinterfaces.core.UserException: boom\n\tat com.mendix.A.run(A.java:10)\nCaused by: org.postgresql.util.PSQLException: ERROR: duplicate key value violates unique constraint "order_ordernumber_key"\n  Detail: Key (ordernumber)=(ORD-1) already exists.');
 add(ms += 100, 'DEBUG', 'MicroflowEngine', "[1784268324436-46] Starting execution of microflow 'Sales.ACT_Save'");
 add(ms += 10, 'TRACE', 'MicroflowEngine', '[1784268324436-46] Executing activity: {"current_activity":{"type":"RetrieveByXPath","caption":"Retrieve Orders"},"name":"Sales.ACT_Save"}');

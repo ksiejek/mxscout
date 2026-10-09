@@ -2,8 +2,11 @@
  *
  * Two layers. The ENGINE is the original's code, so it is checked with the original's own assertions
  * (test/logs/engine-parity.js, plain Node): if one fails, MxScout no longer reads a log the way the original
- * does. The SCREEN is MxScout's own, so it is driven in a real browser: one log loaded once, handed to the
- * other tools, nothing leaving the tab, nothing thrown. */
+ * does. The SCREEN is MxScout's own, so it is driven in a real browser: one log loaded, Insights and the
+ * slow queries read off it, nothing leaving the tab, nothing thrown.
+ *
+ * Since 2026-10-09 the section is the Log Viewer alone — the stream, Insights, Slow queries and, inside a
+ * project, In your model. The other seven tools were taken out, and this file checks that they stay out. */
 'use strict';
 const path = require('path');
 const fs = require('fs');
@@ -13,7 +16,7 @@ module.exports = async function (t) {
   // ---- the engine, against the original's assertions ----
   const parity = spawnSync(process.execPath, [path.join(__dirname, 'logs', 'engine-parity.js')], { encoding: 'utf8' });
   const summary = /(\d+) passed, (\d+) failed/.exec(parity.stdout || '') || [];
-  t.ok(parity.status === 0 && summary[2] === '0' && Number(summary[1]) > 800,
+  t.ok(parity.status === 0 && summary[2] === '0' && Number(summary[1]) > 400,
     'the log engine passes the original\'s assertions: ' + (summary[0] || (parity.stdout + parity.stderr).slice(-300)));
 
   // ---- the credit is where a reader of the repository looks for it ----
@@ -25,6 +28,8 @@ module.exports = async function (t) {
   const engineFiles = fs.readdirSync(path.join(root, 'public', 'logs', 'engine'));
   const uncredited = engineFiles.filter((f) => !/RealMecowhy/.test(fs.readFileSync(path.join(root, 'public', 'logs', 'engine', f), 'utf8').slice(0, 1500)));
   t.ok(uncredited.length === 0, 'every ported engine file carries the attribution header: ' + JSON.stringify(uncredited));
+  t.ok(engineFiles.sort().join(',') === 'decoder.js,insights.js,parser.js,sql.js',
+    'the engine is the parser, Insights with the rules its error card uses, and the SQL highlighter — nothing else: ' + engineFiles.join(', '));
 
   // ---- the screen ----
   const sample = require('./logs/sample-log.js');
@@ -47,62 +52,54 @@ module.exports = async function (t) {
   await mx.waitFor(`!!Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Log analysis')`, 5000, 'tools entry');
   await click(/^Log analysis$/);
   await mx.waitFor(`!!document.querySelector('.lg')`, 8000, 'log analysis screen');
-  const tabs = await mx.evaluate(`Array.from(document.querySelectorAll('.lg-tabs-main .lg-tab')).map(b => b.textContent)`);
-  t.ok(tabs.length === 8 && tabs[0] === 'Log Viewer' && tabs.indexOf('Incident Report') === 7, 'all eight tools are there: ' + tabs.join(' | '));
+  const tabs = await mx.evaluate(`Array.from(document.querySelectorAll('.lg-tab')).map(b => b.textContent.replace(/ ·.*$/, ''))`);
+  t.ok(tabs.join('|') === 'Log Stream|Insights|Slow queries|In your model', 'one viewer, four tabs: ' + tabs.join(' | '));
+  t.ok(await mx.evaluate(`Object.keys(MxLogs.tools).join(',') === 'log-viewer' && !MxLogs.hub && !MxLogs.goto`),
+    'the other tools, the bar that shared a file between them and the navigation between them are gone');
+  t.ok(await mx.evaluate(`!Array.from(document.querySelectorAll('.lg button')).some(b => /Explain|Decode|Anonymize in tool|Query Extractor/.test(b.textContent))`),
+    'and nothing on the screen still offers to send a line to one of them');
   t.ok(/MxDevSwissTool/.test(await mx.evaluate(`document.querySelector('.lg-credit').textContent`)), 'the screen says where it comes from');
-  t.ok(await mx.evaluate(`!document.querySelector('.lg-hub') || document.querySelector('.lg-hub').hidden`), 'nothing loaded, so no data bar');
 
   await mx.evaluate(`MxLogs.tools['log-viewer'].loadFiles([new File([${JSON.stringify(sample)}], 'sample.log')])`);
   await mx.waitFor(`document.querySelectorAll('.lg-row').length > 5`, 10000, 'rows');
-  t.ok(/40 records/.test(await mx.evaluate(`document.querySelector('.lg-hub').textContent`)), 'the data bar says what is loaded');
+  const stats = await mx.evaluate(`document.querySelector('.lg-stats').textContent`);
+  t.ok(/Total:\s*42/.test(stats), 'the stats bar counts the log: ' + stats);
 
   await tab(/^Insights/);
   t.ok(await count('.lg-insights-card') >= 5, 'insights found the patterns in the sample');
-  await tab(/Levels Matrix/);
-  t.ok(await count('.lg-matrix tbody tr') > 3, 'the levels matrix has rows');
-  await tab(/Sequence Diagram/);
-  await click(/Generate from current filter/);
-  t.ok(await count('.lg-seq-row') > 5, 'the sequence diagram draws');
-  await tab(/Gantt Chart/);
-  await click(/Generate timeline/);
-  t.ok(await count('.lg-gantt-row') > 5, 'the Gantt chart draws');
-  await tab(/Log Stream/);
+  t.ok(await mx.evaluate(`Array.from(document.querySelectorAll('.lg-insights-card')).some(c => /Slow queries/.test(c.textContent) && /3 slow queries/.test(c.textContent))`),
+    'the slow-query card counts all three warnings');
+
+  // The card's link leads to the tab, and the tab agrees with the card.
+  await click(/^Open Slow queries$/);
+  await mx.waitFor(`document.querySelectorAll('.lg-slow-card').length > 0`, 4000, 'slow queries');
+  t.ok(/Slow queries · 3/.test(await mx.evaluate(`Array.from(document.querySelectorAll('.lg-tab')).map(b => b.textContent).join('|')`)), 'the tab says how many there are');
+  const cards = await mx.evaluate(`Array.from(document.querySelectorAll('.lg-slow-card')).map(c => c.querySelector('.lg-slow-head').textContent)`);
+  t.ok(cards.length === 2, 'two statements, the two runs of one grouped together: ' + JSON.stringify(cards));
+  t.ok(/a\$b/.test(cards[0]) && /3\.6 s/.test(cards[0]) && /2×/.test(cards[0]) && /sales\$order/.test(cards[1]),
+    'ordered by the time each cost in total, not by the worst single run: ' + JSON.stringify(cards));
+  await mx.evaluate(`document.querySelector('.lg-slow-head').click()`);
+  t.ok(await count('.lg-slow-detail:not([hidden]) .lg-code-sql') === 1, 'opening a statement shows its SQL, highlighted');
+  t.ok(await count('.lg-slow-detail:not([hidden]) .lg-slow-run') === 2, 'and both of its executions');
+  const firstRun = await mx.evaluate(`document.querySelector('.lg-slow-run').textContent`);
+  t.ok(/^2\.2 s/.test(firstRun), 'slowest first, and 2150 ms reads as 2.2 s: ' + firstRun);
+  await mx.evaluate(`document.querySelector('.lg-slow-run').click()`);
+  await mx.waitFor(`!document.querySelector('.lg-pane-stream').hidden && !!document.querySelector('.lg-row.is-flash')`, 4000, 'jump to the line');
+  t.ok(/Query executed in 2 seconds and 150 milliseconds/.test(await mx.evaluate(`document.querySelector('.lg-row.is-flash').textContent`)),
+    'an execution opens its own line in the stream');
+
+  await tab(/^Log Stream/);
   await mx.evaluate(`document.querySelector('.lg-lvlchip-error').click()`);
-  t.ok(await count('.lg-row') > 0 && await count('.lg-row') < 40, 'filtering to errors narrows the stream');
+  t.ok(await count('.lg-row') > 0 && await count('.lg-row') < 42, 'filtering to errors narrows the stream');
   await click(/Aggregate errors/);
   await mx.waitFor(`document.querySelectorAll('.lg-sig-card').length > 0`, 4000, 'signatures');
   t.ok(await count('.lg-sig-card') >= 3, 'errors are grouped by signature');
   await mx.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
 
-  // The same file, handed to the other tools without reading it again.
-  for (const [id, probe] of [['log-query-extractor', /Queries: 2/], ['microflow-tracer', /Executions: 1/], ['ws-rest-extractor', /Calls: 1/]]) {
-    await mx.evaluate(`MxLogs.hub.openIn(${JSON.stringify(id)})`);
-    await new Promise((r) => setTimeout(r, 900));
-    const text = await mx.evaluate(`document.querySelector('.lg-toolhost[data-tool="${id}"]').textContent`);
-    t.ok(probe.test(text), id + ' read the shared file: ' + probe);
-  }
-
-  await mx.evaluate(`MxLogs.goto('error-decoder')`);
-  await mx.evaluate(`MxLogs.tools['error-decoder'].decodeText('org.postgresql.util.PSQLException: ERROR: duplicate key value violates unique constraint "a_pkey"')`);
-  await new Promise((r) => setTimeout(r, 400));
-  t.ok(/Unique constraint violation/.test(await mx.evaluate(`document.querySelector('.lg-toolhost[data-tool="error-decoder"]').textContent`)), 'the decoder explains a duplicate-key error');
-
-  await mx.evaluate(`MxLogs.goto('log-anonymizer')`);
-  await mx.evaluate(`MxLogs.tools['log-anonymizer'].setInput('mail bob@example.com from 10.1.2.3')`);
-  await new Promise((r) => setTimeout(r, 600));
-  await click(/^Anonymize$/);
-  await new Promise((r) => setTimeout(r, 600));
-  t.ok(await mx.evaluate(`Array.from(document.querySelectorAll('.lg-toolhost[data-tool="log-anonymizer"] textarea, .lg-toolhost[data-tool="log-anonymizer"] pre, .lg-toolhost[data-tool="log-anonymizer"] .lg-tv-line')).some(e => /\\[EMAIL/.test(e.value || e.textContent))`),
-    'the anonymizer masks an address in its output');
-
-  await mx.evaluate(`MxLogs.goto('incident-report')`);
-  await new Promise((r) => setTimeout(r, 400));
-  t.ok(/4 sources with data ready/.test(await mx.evaluate(`document.querySelector('.lg-toolhost[data-tool="incident-report"]').textContent`)), 'the incident report sees what the tools hold');
-
   // Leaving and coming back keeps the work.
   await click(/Getting started/);
   await click(/^Log analysis$/);
-  await mx.waitFor(`!!document.querySelector('.lg-hub') && !document.querySelector('.lg-hub').hidden`, 4000, 'state kept');
+  await mx.waitFor(`document.querySelectorAll('.lg-row').length > 0`, 4000, 'state kept');
   t.ok(true, 'the screen keeps its state while the rest of the app redraws');
 
   const errs = await mx.evaluate('window.__errs');
