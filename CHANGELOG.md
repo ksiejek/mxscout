@@ -39,6 +39,12 @@ claim a version it is not.
   next drag, measured against the whole log again, widened it. Now the window
   fills the strip, a drag inside it narrows further, and Clear range goes
   back to the whole log.
+- **⛶ Full screen** gives the log the whole window: the sidebar and the
+  header text step aside, the filters, the chart and the tabs stay on top —
+  the stream, Insights and Slow queries are all there — and the stream gets
+  the rest. Esc comes back; an object or a comment opened from a log line
+  still opens over it. The node filter and the date now share the time row,
+  so the filters take half the height they did.
 
 ### Three more access checks, the signed-in user, and two Live fixes
 

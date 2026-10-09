@@ -30,12 +30,36 @@
     L.replace(ui.project, [h('strong', { text: m.projectName }), ' is open — warnings and errors that name its microflows, pages or entities link into the model, and can be commented on from here.']);
   }
 
+  // ---------- full screen ----------
+  // The log is the main thing on this screen and the stream is where it is read, so the screen can take the
+  // whole window: the sidebar and the header text step aside, the filters, the chart and the tabs stay on top,
+  // and the stream gets the rest. It is the page laid out differently, not the browser's own full screen —
+  // a model object opened from a log line, or a comment started from one, still opens over it.
+  function setFull(on) {
+    root.classList.toggle('lg-full', on);
+    ui.full.textContent = on ? '✕ Exit full screen' : '⛶ Full screen';
+    ui.full.setAttribute('aria-pressed', on ? 'true' : 'false');
+    ui.full.title = on ? 'Back to the page (Esc)' : 'Give the log the whole window — Esc comes back';
+    L.restoreScroll();
+    var t = L.tools[VIEWER];
+    if (t && t.onShow) t.onShow();
+  }
+  // Esc leaves full screen only when nothing on top of it wants Esc for itself. Listening on window in the
+  // capture phase runs before a dialog's own handler, so an open dialog is still there to be seen — and is
+  // left to close itself.
+  function onKey(ev) {
+    if (ev.key !== 'Escape' || !root || !root.classList.contains('lg-full') || !root.isConnected) return;
+    if (document.querySelector('.modal-backdrop, .editor-backdrop, .lg-ctx')) return;
+    setFull(false);
+  }
+
   function build() {
     var viewer = L.tools[VIEWER];
     ui.project = h('p', { class: 'lg-head-project', hidden: true });
+    ui.full = h('button', { class: 'btn btn-ghost btn-sm lg-full-btn', type: 'button', 'aria-pressed': 'false', onclick: function () { setFull(!root.classList.contains('lg-full')); } });
     root = h('div', { class: 'lg' }, [
       h('header', { class: 'lg-head' }, [
-        h('div', { class: 'lg-head-row' }, [h('h2', { text: 'Log analysis' })]),
+        h('div', { class: 'lg-head-row' }, [h('h2', { text: 'Log analysis' }), ui.full]),
         h('p', { class: 'lg-head-hint', text: viewer.hint || '' }),
         ui.project,
         h('p', { class: 'lg-credit' }, ['Log analysis comes from ', h('strong', { text: 'MxDevSwissTool' }), ' by Mikołaj (RealMecowhy) — MIT licence — brought into MxScout as a module. Nothing you load leaves this tab.'])
@@ -45,6 +69,8 @@
     ]);
     L.onModel(renderProject);
     renderProject();
+    setFull(false);
+    window.addEventListener('keydown', onKey, true);
     return root;
   }
 

@@ -37,6 +37,15 @@
 /* ---------- header, tabs, hub ---------- */
 .lg-head h2 { font-size: 18px; margin: 0; letter-spacing: -0.01em; }
 .lg-head-row { display: flex; align-items: center; gap: 12px; }
+.lg-full-btn { margin-left: auto; }
+
+/* Full screen: the log over the whole window. Below the app's own dialogs (an object opened from a log line
+   at 50, the comment editor at 70), so those still open over it. Only the title row of the header stays. */
+.lg.lg-full { position: fixed; inset: 0; z-index: 45; height: auto; min-height: 0; padding: 10px 18px 14px; background: var(--bg); }
+.lg-full .lg-head-hint, .lg-full .lg-head-project, .lg-full .lg-credit { display: none; }
+.lg-full .lg-head h2 { font-size: 15px; }
+.lg-full .lg-actions { padding: 6px 0 4px; }
+.lg-full .lg-fbar { padding: 6px 0; gap: 6px; }
 .lg-head-hint, .lg-credit { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
 .lg-credit { font-size: 11px; }
 .lg-credit strong { color: var(--text); font-weight: 600; }
@@ -192,6 +201,10 @@
    =================================================================================================== */
 .lg-fbar { display: flex; flex-direction: column; gap: 8px; padding: 8px 0; flex: none; }
 .lg-frow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* The node filter and the date sit on the time row: left to the app's own input width they each took a row
+   of their own, and the filters took more height than the first ten lines of the log. */
+.lg .lg-frow > .lg-input:not(.lg-input-grow):not(.lg-input-time) { width: auto; flex: 0 1 240px; }
+.lg .lg-frow > select.lg-input { flex: 0 0 auto; }
 .lg-flabel { font-size: 12px; color: var(--muted); }
 .lg-hitnav { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
 .lg-hitnav button { font: inherit; font-size: 10px; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); border-radius: 5px; padding: 1px 6px; cursor: pointer; }

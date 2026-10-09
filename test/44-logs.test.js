@@ -125,6 +125,37 @@ module.exports = async function (t) {
   t.ok(await count('.lg-sig-card') >= 3, 'errors are grouped by signature');
   await mx.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
 
+  // ---- full screen: the log gets the whole window ----
+  // Measured in a desktop-sized window: headless Chrome opens at 800×600, where the app is in its narrow
+  // layout and the page, not the stream, is what scrolls.
+  await mx.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  const layout = () => mx.evaluate(`(function () {
+    var lg = document.querySelector('.lg'), s = document.querySelector('.lg-stream').getBoundingClientRect();
+    return { full: lg.classList.contains('lg-full'), pos: getComputedStyle(lg).position, streamH: Math.round(s.height), streamW: Math.round(s.width),
+      filters: !!document.querySelector('.lg-fbar') && document.querySelector('.lg-fbar').getBoundingClientRect().top < s.top,
+      credit: getComputedStyle(document.querySelector('.lg-credit')).display };
+  })()`);
+  const before = await layout();
+  await click(/^⛶ Full screen$/);
+  const full = await layout();
+  t.ok(full.full && full.pos === 'fixed', 'Full screen puts the log over the whole window');
+  t.ok(full.streamH > before.streamH && full.streamW > before.streamW, 'and the stream gets the room: ' + before.streamW + '×' + before.streamH + ' → ' + full.streamW + '×' + full.streamH);
+  t.ok(full.filters && full.credit === 'none', 'the filters stay on top of it, the header text steps aside');
+  await tab(/^Slow queries/);
+  t.ok(await mx.evaluate(`document.querySelectorAll('.lg-slow-card').length === 2 && document.querySelector('.lg').classList.contains('lg-full')`), 'Slow queries is there in full screen');
+  await tab(/^Insights/);
+  t.ok(await count('.lg-insights-card') >= 5, 'and so is Insights');
+  await tab(/^Log Stream/);
+  await click(/Aggregate errors/);
+  await mx.waitFor(`document.querySelectorAll('.lg-sig-card').length > 0`, 4000, 'signatures in full screen');
+  await mx.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+  t.ok(await mx.evaluate(`!document.querySelector('.lg-sig-card') && document.querySelector('.lg').classList.contains('lg-full')`),
+    'Esc over a dialog closes the dialog, not full screen');
+  await mx.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+  const after = await layout();
+  t.ok(!after.full && after.pos !== 'fixed' && after.streamH === before.streamH, 'and Esc again leaves full screen, back to the page as it was');
+  await mx.send('Emulation.clearDeviceMetricsOverride');
+
   // Leaving and coming back keeps the work.
   await click(/Getting started/);
   await click(/^Log analysis$/);
