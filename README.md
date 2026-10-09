@@ -498,7 +498,9 @@ an old description out of date instead of passing it off as current.
 `check-descriptions.js` lists what is left to describe (`todo`), checks a file
 against the pack before you import it (`check`), and joins per-module parts
 (`merge`). `test/48-describe.test.js` runs it over a pack built by the real
-exporter. Copy the folder into `~/.claude/skills/` to use it.
+exporter. Copy the folder into `~/.claude/skills/` to use it;
+[`skills/mendix-describe/README.md`](skills/mendix-describe/README.md) walks
+through it step by step, with a prompt to start from.
 
 ## Versions and updates
 
