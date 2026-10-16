@@ -4,7 +4,7 @@
  * project reads, reviews and documents the model; a project with Developer
  * tools on also shows what reaches beyond it — the Live app (its data,
  * running a flow), Performance, Logs, Comments with the review report,
- * deciding about risks, MxScaffold drawings, and Security (View as) — and
+ * deciding about risks, MxScaffold drawings, and the Security screen — and
  * their buttons in an entity's or a flow's window. Off by default.
  *
  * The switch is a flag on the project (project.devTools), kept with it like
@@ -60,7 +60,7 @@
     return el('div', { class: 'card dev-tools-card' }, [
       el('h3', { class: 'live-h', text: 'Developer tools' }),
       el('label', { class: 'ack-row' }, [box, el('span', { text: ' Show Developer tools for this project' })]),
-      el('p', { class: 'hint', text: 'Adds what goes beyond reading the model: the Live app — its data, and running a microflow or nanoflow in your own signed-in app tab — Performance recordings, Logs, Comments with the review report, deciding about risks, MxScaffold drawings, and Security (View as). '
+      el('p', { class: 'hint', text: 'Adds what goes beyond reading the model: the Live app — its data, and running a microflow or nanoflow in your own signed-in app tab — Performance recordings, Logs, Comments with the review report, deciding about risks, MxScaffold drawings, and the Security screen. View as on Entities, Microflows, Nanoflows and Pages works without them. '
         + 'The Live app and Performance talk to a running Mendix app: through the app tab you connect, and to its admin port on this machine when you record performance (About & security says exactly what). '
         + 'Off, none of it is shown; nothing it kept is deleted.' })
     ]);

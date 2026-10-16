@@ -1065,6 +1065,7 @@ button.ctx-name:hover { color: var(--acc); text-decoration: underline; }
   color: var(--accent);
 }
 .guide-step-title { margin: 4px 0 10px; font-size: 16px; }
+.guide-dev { margin: -4px 0 10px; font-size: 12px; font-weight: 600; color: var(--accent); }
 .guide-p { margin: 0 0 8px; color: var(--muted); font-size: 13px; max-width: 42ch; }
 .guide-p:last-child { margin-bottom: 0; }
 .guide-mock { display: flex; flex-direction: column; gap: 12px; }

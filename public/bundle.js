@@ -296,7 +296,7 @@
       input.addEventListener('input', function () { b.code = input.value; });
       input.addEventListener('keydown', function (e) { if (e.key === 'Enter') unlock(); });
       kids = [
-        el('h3', { text: 'Documentation of several projects' }),
+        el('h3', { text: 'Import documentation' }),
         el('p', { class: 'muted', text: b.fileName + ' is MxScout documentation, encrypted. It opens with the access code from whoever sent it; then you choose which projects to take.' }),
         el('label', { class: 'field' }, [el('span', { text: 'Access code' }), input]),
         b.error ? el('p', { class: 'warn-text', text: b.error }) : null,

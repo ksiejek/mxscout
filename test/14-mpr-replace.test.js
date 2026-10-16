@@ -2,7 +2,7 @@
  * project" (test/13, test/16): a project folder, or a file — one button and
  * one small modal instead of the two separate buttons this used to be split
  * across. The folder path re-reads a Mendix project folder, but — unlike
- * "Import Mendix project folder…" on a new project — stops at a diff summary
+ * "Import a Mendix project" on a new project — stops at a diff summary
  * (added/removed by name, per category) and only writes anything once the
  * user confirms. Seeds a project with a hand-built OLD model that partially
  * overlaps the same v2 fixture used by the other mpr tests, so the diff has
@@ -79,7 +79,7 @@ module.exports = async function (t) {
   // directly is what test/16 does for the same reason.
   await mx.evaluate(`window.MxMprImport.openReplace('replace-target')`);
   await mx.waitFor(`!!document.querySelector('.modal')`, 8000, 'replace modal');
-  t.ok(await mx.evaluate(`document.querySelector('.modal h3').textContent`) === 'Replace model from Mendix project folder',
+  t.ok(await mx.evaluate(`document.querySelector('.modal h3').textContent`) === 'Replace the model from the Mendix project',
     'the modal is clearly labelled as a replace, not a new import');
 
   await mx.evaluate(`(function(){

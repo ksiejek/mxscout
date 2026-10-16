@@ -809,7 +809,7 @@
     }
 
     var busy = imp.step === 'progress';
-    var title = isReplace ? 'Replace model from Mendix project folder' : 'Import Mendix project folder';
+    var title = isReplace ? 'Replace the model from the Mendix project' : 'Import a Mendix project';
     var kids = [el('h3', { text: title })].concat(body, [el('div', { class: 'modal-actions' }, actions)]);
     var backdrop = el('div', {
       class: 'modal-backdrop',

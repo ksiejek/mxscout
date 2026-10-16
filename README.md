@@ -5,26 +5,27 @@ the documentation, the AI descriptions, Assist, the solved cases — for every
 project. Per project, a switch on its **Settings**, **Developer tools**, adds
 what works with a running application: the **Live app** (reading its data,
 running a microflow), **Performance**, **Logs**, **Comments** with their
-review report, deciding about risks, MxScaffold drawings and **Security**
-(View as). Off by default; off, none of it is shown, and nothing it kept is
-deleted. Until 1.18.0 these were two apps, MxScout and MxScout Dev; they are
-one again (see the CHANGELOG).
+review report, deciding about risks, MxScaffold drawings and the **Security**
+screen. View as, which narrows Entities, Microflows, Nanoflows and Pages to one role,
+works without them. Off by default; off, none of it is shown, and nothing it kept is
+deleted.
 
-MxScout is a local app that helps you understand and test a Mendix
+MxScout is a local app that helps you understand, document and test a Mendix
 application. Point it at a project and it shows you what a given user role
 can actually see and do — which entities, which fields, which microflows —
-and lets you try a flow against a real, running app, without touching a
-database or writing any code.
+and, with Developer tools on, lets you try a flow against a real, running app,
+without touching a database or writing any code.
 
 It runs as a small Node.js server on your own machine and shows its UI in your
-browser. Nothing is installed system-wide, nothing is sent anywhere, and
-closing it leaves nothing behind.
+browser. Nothing is installed system-wide, nothing is sent anywhere, and the
+server writes nothing to disk — what you keep stays in the browser, or in a
+folder you choose.
 
 It is built to run on a **company machine, inside a company network**, which
 sets the bar for everything in it: only safe, non-invasive mechanisms, so a
 security team has nothing to object to. No npm dependencies at all, no
 installer, no administrator rights, no background service, nothing written to
-disk, no telemetry, no CDN, and a listener bound to loopback only. The server
+disk by the server, no telemetry, no CDN, and a listener bound to loopback only. The server
 opens exactly one kind of outbound connection — to the admin port of the app
 under test, at an address that passed the same non-production guard as the app
 itself, asking two read-only actions: once when you connect a performance
@@ -32,7 +33,7 @@ recording, to check its password against that port, and then while that
 recording runs. A feature that cannot be built inside those limits does not get
 built.
 
-**About & security** in the top bar is the page that explains all of it — the
+**About & security**, under **Help** at the foot of the sidebar, is the page that explains all of it — the
 technology inventory, every endpoint, where data lives, what MxScout refuses to
 do, and the honest limits of each guard. It is written to be handed to a
 security reviewer, and it prints to PDF if they want it as an attachment.
@@ -40,9 +41,11 @@ security reviewer, and it prints to PDF if they want it as an attachment.
 On the projects screen, **Getting started** walks through a project's life in MxScout in
 six steps — import, browse as a role, open an object, connect to a running
 app, run a flow, then write it up and send it — against a fictional app, so it
-needs no project of your own open to make sense.
+needs no project of your own open to make sense. Steps three to five, and the
+review in the sixth, are Developer tools, and the guide says so on each.
 
-**Log analysis** in the sidebar is a second job MxScout does without any
+**Log analysis** is a Developer tool. It appears in the sidebar once a project
+has Developer tools on, and is a second job MxScout does without any
 project open — and, when one is, a section of that project: reading a Mendix
 application's log in one viewer — the stream with its filters, Insights, and
 the slow queries the runtime reported — against its model. A warning that names a microflow opens that
@@ -79,9 +82,9 @@ From a terminal, on any system:
 ```
 
 Either way the address is http://127.0.0.1:4289 (override the port with
-`MXSCOUT_PORT`). Projects you kept in MxScout Dev before 1.18.0 are in the
-browser's database for `127.0.0.1:4288`: start with `MXSCOUT_PORT=4288` to
-see them, or move them once through a project folder or a package.
+`MXSCOUT_PORT`). The browser keeps projects per address, so a project made on
+one port is not listed on another: start on the same port to see it, or move
+it once through a project folder or a package.
 
 Both need **Node.js** on the machine — MxScout has no dependencies of its own,
 but it is a Node program. If it is missing, the launcher says so and offers two
@@ -912,7 +915,7 @@ which have changed since the copy someone else is holding.
 
 ## About & security
 
-Every screen has an **About & security** button in the top bar. It opens an
+**About & security**, under **Help** at the foot of the sidebar on every screen, opens an
 in-app document describing exactly what MxScout runs and touches:
 
 - the technology inventory — runtime, version (read from the running server, so
@@ -1153,7 +1156,7 @@ check with `/mxscout-project`, `/mendix-assist` or "use mendix-describe on <fold
 not tied to Claude. Newer Codex versions load skills in the same `SKILL.md`
 format from `~/.agents/skills/` (where Codex looks now) and from
 `~/.codex/skills/` (the older place, which it still reads);
-`skills/install.sh --codex` (Windows: `skills\install.ps1 -Codex`) installs both
+`skills/install.sh --codex` (Windows: `skills\install.ps1 -Codex`) installs all three
 skills into both, by the same rules, with a `skills-backup/` beside each for an
 old folder of that name, and `--codex-only` (`-CodexOnly`) installs them for
 Codex alone. `~/.codex` is `$CODEX_HOME` when `CODEX_HOME` is set, as Codex

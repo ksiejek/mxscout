@@ -201,7 +201,7 @@
     return el('div', { class: 'home-global' }, [
       el('span', { class: 'home-global-h', text: 'Global settings' }),
       canKeep ? el('span', {}, [txt('MxScout folder '), el('code', { text: home ? home.name : 'not set' })]) : null,
-      el('span', {}, [txt('Language '), el('b', { text: lang ? window.MxDescribe.languageName(lang) : 'English (not chosen)' })]),
+      el('span', {}, [txt('Language '), el('b', { text: lang ? window.MxDescribe.languageName(lang) : 'English (no default)' })]),
       el('button', { type: 'button', class: 'mf-btn home-global-go', text: 'Settings', onclick: function () { deps.openAppSettings(); } })
     ].filter(Boolean));
   }

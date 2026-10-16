@@ -459,7 +459,10 @@
   // ---------- the whole documentation ----------
   function build(model, project) {
     model = model || {};
-    var own = (model.modules || []).filter(function (m) { return !m.fromAppStore; }).map(function (m) { return m.name; });
+    // The System module and its entities are added by app.js (withBuiltinSystemModule), not read from the
+    // project: they are not the app's own, and the counts leave them out, as the projects page does.
+    var builtinOnly = function (m) { return (model.entities || []).some(function (en) { return en.module === m.name; }) && (model.entities || []).every(function (en) { return en.module !== m.name || en.builtin; }); };
+    var own = (model.modules || []).filter(function (m) { return !m.fromAppStore && !builtinOnly(m); }).map(function (m) { return m.name; });
     var marketplace = (model.modules || []).filter(function (m) { return m.fromAppStore; }).map(function (m) { return m.name; });
     var modules = {};
     (model.modules || []).forEach(function (m) {
@@ -476,7 +479,7 @@
     (model.entities || []).forEach(function (en) {
       var rules = en.accessRules || [];
       entities[en.qualifiedName] = {
-        qn: en.qualifiedName, module: en.module, name: en.name, persistable: en.persistable !== false,
+        qn: en.qualifiedName, module: en.module, name: en.name, persistable: en.persistable !== false, builtin: !!en.builtin,
         generalization: en.generalization || null, view: !!en.viewEntity, doc: en.documentation || null,
         attributes: (en.attributes || []).map(function (a) { return { name: a.name, type: a.enumerationQualifiedName ? 'Enumeration ' + a.enumerationQualifiedName : a.type + (a.length ? '(' + a.length + ')' : '') }; }),
         roles: rules.map(function (r) { return r.moduleRole; }).filter(function (v, i, all) { return v && all.indexOf(v) === i; }),
@@ -531,7 +534,7 @@
       kpi: {
         modules: own.length, marketplace: marketplace.length,
         microflows: (model.microflows || []).length, nanoflows: (model.nanoflows || []).length, pages: (model.pages || []).length,
-        entities: (model.entities || []).length, roles: (model.userRoles || []).length,
+        entities: (model.entities || []).filter(function (en) { return !en.builtin; }).length, roles: (model.userRoles || []).length,
         scheduled: automation.length, scheduledOn: automation.filter(function (a) { return a.enabled; }).length,
         services: (model.publishedServices || []).length
       },

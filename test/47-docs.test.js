@@ -48,7 +48,7 @@ module.exports = async function (t) {
       v: d.v, project: d.project, kpiMF: d.kpi.microflows, kpiEnt: d.kpi.entities,
       hasCreate: !!create, createHasWorkflow: !!(create && create.workflow && create.workflow.length),
       createCalls: (create ? create.calls : []).map(function (c) { return c.qn; }).join(','),
-      entityKeys: Object.keys(d.entities).length, hasOrder: !!d.entities['Sales.Order']
+      entityKeys: Object.keys(d.entities).filter(function (k) { return !d.entities[k].builtin; }).length, hasOrder: !!d.entities['Sales.Order']
     };
   })()`);
   t.ok(built.v === 1 && built.project === 'DocDemo', 'the section is a versioned bundle built from the model: v' + built.v);

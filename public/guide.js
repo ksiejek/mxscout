@@ -195,24 +195,25 @@
   function steps() {
     return [
       { num: '01', title: 'Start a project', mockup: mockStart, body: [
-        'Name it, choose where to keep it — a folder on disk, first and recommended, beside the Mendix project or in git; or this browser only — then point MxScout at a model: a JSON export from MxSonar, or the Mendix project folder itself. Either way the file is read in this browser, in a Web Worker; the server never sees it. A folder that already holds an MxScout project opens with Open a project folder….'
+        'Name it and choose where to keep it — in the Mendix project (mxscout/, for a team that wants the documentation in git), in your MxScout folder or another folder on disk, or this browser only — then point MxScout at the Mendix project folder, or drop its .mpr. A .mxscout package someone sent you opens the same way. The model is read in this browser, in a Web Worker; the server never sees it. A folder that already holds an MxScout project opens with Open a project folder…, on the projects page.'
       ] },
       { num: '02', title: 'Browse it as a role', mockup: mockBrowse, body: [
-        'Entities, Microflows, Nanoflows and Pages are grouped by module. Switch “View as” at the top and every list narrows to what that role can actually reach — the badges above say read, write, create or nothing at all.'
+        'Entities, Microflows, Nanoflows and Pages are grouped by module. Switch “View as” at the top and every list narrows to what that role can actually reach — the badges above say read, write, create or nothing at all.',
+        'Overview, Processes, Modules, Architecture and Risks read like a report. Their structure comes from the model; their words are written by an AI agent you choose — Claude Code or Codex with MxScout’s skills, set up under Documentation → Write with Claude — and every sentence an agent wrote says so.'
       ] },
-      { num: '03', title: 'Open an object', mockup: mockObject, body: [
+      { num: '03', title: 'Open an object', mockup: mockObject, dev: true, body: [
         'Click an entity and its popup opens on Attributes & access, Data and Comments. What it is and who may see which rows sit on one tab, together — the same question asked at the same time — attributes and the associations the entity owns, each with its access under every rule that applies — then what is in it right now, then what you have to say about it.',
         'In the rows that come back, a value shown in green is one this session may write. That is asked of the app per row, not per column: a rule’s XPath decides which rows it covers, so the same field can be writable on one row and read-only on the next.',
         'Data needs a running app to answer from — that is the next step.'
       ] },
-      { num: '04', title: 'Connect to a running app', mockup: mockConnect, body: [
+      { num: '04', title: 'Connect to a running app', mockup: mockConnect, dev: true, body: [
         'Type the app’s address. Production is refused outright, no override — only local, test and acceptance environments are accepted. Once approved, paste one snippet into that app tab’s console and MxScout can read what that session sees.'
       ] },
-      { num: '05', title: 'Run a flow', mockup: mockRun, body: [
+      { num: '05', title: 'Run a flow', mockup: mockRun, dev: true, body: [
         'A microflow or nanoflow gets a Run tab — behind a one-time acknowledgment — with its inputs and who may trigger it side by side, plus its own Comments tab. Choose each object from a picker that opens over the panel, and the confirmation names the exact flow and the exact object before anything happens. A page gets the same popup without the running: its inputs and who may open it, read-only — MxScout does not open pages in the app.'
       ] },
       { num: '06', title: 'Write it up, then send it', mockup: mockWriteUp, body: [
-        'Open any object and log what is wrong: severity, what to change, and a status you can come back to. Send a review out as an encrypted HTML report, or copy it for Word — or package the whole project as one encrypted ‘.mxscout’ file with an access code shown once — needed only the first time someone opens a package of that project. Each package says which version of the app it holds, read from the Mendix project’s git. Kept in a folder, the project — comments, risk decisions and an agent’s descriptions included — is plain files an agent reads directly and hands its results back to through inbox/.'
+        'With Developer tools on, open any object and log what is wrong: severity, what to change, and a status you can come back to, and send a review out as an encrypted HTML report, or copy it for Word. For every project: export the documentation as one HTML file, or package the whole project as one encrypted ‘.mxscout’ file with an access code shown once — needed only the first time someone opens a package of that project. Each package says which version of the app it holds, read from the Mendix project’s git. Kept in a folder, the project — comments, risk decisions and an agent’s descriptions included — is plain files an agent reads directly and hands its results back to through inbox/.'
       ] }
     ];
   }
@@ -220,8 +221,10 @@
   function renderStep(step) {
     var text = [
       el('div', { class: 'guide-num', text: step.num }),
-      el('h3', { class: 'guide-step-title', text: step.title })
-    ].concat(step.body.map(function (p) { return el('p', { class: 'guide-p', text: p }); }));
+      el('h3', { class: 'guide-step-title', text: step.title }),
+      // What needs Developer tools says so, at the top of the step — they are off until a project's Settings turns them on.
+      step.dev ? el('p', { class: 'guide-dev', text: 'Developer tools — switch them on in the project’s Settings' }) : null
+    ].filter(Boolean).concat(step.body.map(function (p) { return el('p', { class: 'guide-p', text: p }); }));
 
     return el('div', { class: 'guide-step' }, [
       el('div', { class: 'guide-step-text' }, text),
@@ -235,7 +238,7 @@
     var head = el('div', { class: 'guide-head' }, [
       back,
       el('h2', { class: 'guide-title', text: 'Getting started' }),
-      el('p', { class: 'muted', text: 'How a project moves through MxScout, start to finish. Every screen below shows a fictional app — Riverside Logistics — so nothing here is a real project.' }),
+      el('p', { class: 'muted', text: 'How a project moves through MxScout, start to finish. Every screen below shows a fictional app — Riverside Logistics — so nothing here is a real project. Steps 03 to 05, and the review in step 06, are Developer tools: off in every project until its Settings turns them on.' }),
       // How a team works with the documentation and Claude, with or without MxScout: the team guide, its own page.
       el('p', { class: 'muted guide-team-link' }, [document.createTextNode('Working on an app as a team, with Claude? '),
         el('a', { href: '/guide-team.html', target: '_blank', rel: 'noopener', text: 'The team guide ↗' }), document.createTextNode(' — English and Polish, also in each project as mxscout/GUIDE.html.')])

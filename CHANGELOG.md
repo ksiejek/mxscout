@@ -41,7 +41,8 @@ its About & security page, and the tests that check it ship beside it.
 for and who uses it, its business processes told case by case with a
 diagram where they branch, each module in two layers, and the C4 model
 adapted to Mendix — with how the modules depend on one another and which
-roles reach which module, read from the model.
+roles reach which module. The structure is read from the model; the words
+are written by the agent you choose (see AI on your terms), and say so.
 
 - **Every microflow and nanoflow, drawn.** Step by step in words, with a
   variable traced through the flow, or exactly as Studio Pro lays it out,
@@ -57,8 +58,8 @@ roles reach which module, read from the model.
 
 **Risks ranked P1 to P3**, grouped by pattern — missing access checks,
 secrets in the model, commits in loops, errors that vanish, switched-off
-events a process relies on — each with what happens, where and what to do.
-Mark one fixed or a false positive and it stays decided.
+events a process relies on — each with what happens, where and what to do — written
+by mendix-describe, the agent that writes the documentation.
 
 - **Model quality**: checks read straight from the model against Mendix's
   own guidelines, no AI needed. **For developers**: where things are, the
@@ -91,16 +92,19 @@ writes in once; nothing of yours goes into a Mendix project unless you put
 it there.
 
 - **Packages**: a project as one AES-256-GCM file for a colleague,
-  WebCrypto only, opened with an access code shown once; the documentation of
-  many projects in one file.
+  WebCrypto only, opened with an access code shown once.
+- **Export documentation**, on the projects page: the documentation of many
+  projects in one encrypted file — the model, the descriptions and the solved
+  cases of each, nothing else — and, on import, only the ones you tick.
 
 ### Developer tools, per project
 
 **Off by default, a switch in a project's Settings.** On, the project also
 shows the Live app (its data, and running a flow in your own signed-in app
 tab), Performance recordings through the admin port of a non-production
-app, Logs, Comments with the review report, deciding about risks,
-MxScaffold drawings, and Security with View as.
+app, Logs, Comments with the review report, deciding about risks (mark
+one fixed or a false positive and it stays decided), MxScaffold drawings,
+and the Security screen.
 
 ### Credits
 

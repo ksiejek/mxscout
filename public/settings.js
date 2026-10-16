@@ -87,14 +87,21 @@
       renameProject(project.id, value).then(render);
     });
     var info = store.folderInfo(project.id);
+    // What the model was read from, in words — the stored kind is a key, not a label.
+    function sourceLabel(src) {
+      var kind = src && src.kind, file = src && src.fileName;
+      var label = { 'mpr-folder': 'A Mendix project', 'legacy-json': 'An imported model JSON', 'package': 'A .mxscout package', 'documentation': 'Exported documentation' }[kind];
+      if (!label) return kind || 'Unknown';
+      return file ? label + ' (' + file + ')' : label;
+    }
     var facts = [
       ['Model version', window.MxModelVersion.label(project.summary && project.summary.version)],
-      ['Source', project.source && project.source.kind === 'legacy-json' ? 'Imported model JSON' : (project.source && project.source.kind) || 'unknown'],
+      ['Source', sourceLabel(project.source)],
       ['Model size', formatBytes(project.bytes)],
       ['Created', formatDate(project.createdAt)],
       ['Last updated', formatDate(project.updatedAt)],
       ['Eviction protection', state.settings.persisted === true ? 'Granted — this browser will not clear MxScout under disk pressure'
-        : state.settings.persisted === false ? 'Not granted — keep the project in a folder, or export it, this browser may clear MxScout under disk pressure' : 'Unknown']
+        : state.settings.persisted === false ? 'Not granted — this browser may clear MxScout under disk pressure, so keep the project in a folder, or export it' : 'Unknown']
     ];
     // Read from rawModel: what is hidden right now, which the filtered model cannot say.
     var market = (state.detail && state.detail.rawModel ? state.detail.rawModel.modules || [] : []).filter(function (m) { return m && m.fromAppStore; }).map(function (m) { return m.name; })

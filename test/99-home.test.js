@@ -41,7 +41,7 @@ module.exports = async function (t) {
   t.ok(page.kept === 'browser,browser,browser,browser' && /This browser only/.test(page.text) && /Claude:/.test(page.text) && /Share with an agent/.test(page.text),
     'every card says where the project is kept, and what that means for Claude: ' + page.text.slice(0, 90));
   t.ok(/modules/.test(page.stats) && /flows/.test(page.stats) && /entities/.test(page.stats), 'with its numbers: ' + page.stats);
-  t.ok(/Global settings/.test(page.global) && /English \(not chosen\)/.test(page.global), 'the global settings in one line at the foot: ' + page.global);
+  t.ok(/Global settings/.test(page.global) && /English \(no default\)/.test(page.global), 'the global settings in one line at the foot: ' + page.global);
 
   // ---- where kept, every way ----
   const kinds = JSON.parse(await mx.evaluate(`(async function () {
