@@ -1,0 +1,775 @@
+{
+ "risks": [
+  [
+   "P2",
+   "delete",
+   "Każdy z rolą User może usunąć zamówienie",
+   "Brak sprawdzenia.",
+   "Dodaj regułę.",
+   [
+    "Sales.ACT_CreateOrder|mf",
+    "Sales.Order|en"
+   ]
+  ],
+  [
+   "P1",
+   "secrets",
+   "Hasło zapisane jawnym tekstem w ustawieniach",
+   "Hasło.",
+   "Przenieś.",
+   [
+    "Admin.Setting|en"
+   ]
+  ],
+  [
+   "P3",
+   "naming",
+   "Literówka w komunikacie błędu",
+   "Drobne.",
+   "Popraw.",
+   [
+    "Sales.Order_Edit|pg"
+   ]
+  ],
+  [
+   "P3",
+   "schedule",
+   "Harmonogram wyłączony w modelu, a przetwarzanie na nim polega",
+   "x",
+   "y",
+   [
+    "Admin.SCH_Nightly|mf"
+   ]
+  ],
+  [
+   "P2",
+   "loops",
+   "Zamówienia zapisywane pojedynczo w pętli",
+   "x",
+   "y",
+   [
+    "Sales.Big|mf"
+   ]
+  ],
+  [
+   "P2",
+   "naming",
+   "Coś zupełnie innego",
+   "x",
+   "y",
+   [
+    "Sales.SUB_Total|mf"
+   ]
+  ],
+  [
+   "P3",
+   "logic",
+   "Nieznane miejsce",
+   "x",
+   "y",
+   [
+    "Sales.Nowhere|x"
+   ]
+  ]
+ ],
+ "arch": {
+  "ctx": {
+   "nodes": [
+    {
+     "id": "a",
+     "name": "Riverside"
+    }
+   ],
+   "links": []
+  },
+  "cont": {
+   "nodes": [],
+   "links": []
+  },
+  "open": [
+   "Gdzie jest kolejka?"
+  ],
+  "serv": [
+   [
+    "Sales.orders",
+    "REST"
+   ]
+  ],
+  "sched": [
+   [
+    "Admin.Nightly",
+    "every day",
+    false
+   ]
+  ],
+  "order": [
+   "Sales",
+   "Admin",
+   "Atlas_Core"
+  ],
+  "mat": {
+   "Sales": {
+    "Admin": [
+     1,
+     1
+    ],
+    "Atlas_Core": [
+     1,
+     0
+    ]
+   },
+   "Admin": {
+    "Sales": [
+     2,
+     1
+    ]
+   }
+  },
+  "roles": [
+   {
+    "n": "User",
+    "own": {
+     "Sales": [
+      "User"
+     ],
+     "Atlas_Core": [
+      "Reader"
+     ]
+    },
+    "other": []
+   },
+   {
+    "n": "Admin",
+    "own": {
+     "Admin": [
+      "Admin"
+     ],
+     "Sales": [
+      "User"
+     ]
+    },
+    "other": [
+     "System.Administrator"
+    ]
+   }
+  ],
+  "mods": [
+   "Admin",
+   "Atlas_Core",
+   "Sales"
+  ]
+ },
+ "quality": {
+  "unr": [
+   [
+    "mf",
+    "Sales.GET_Orders",
+    4,
+    "Data/Get",
+    "Pobiera zamówienia."
+   ],
+   [
+    "mf",
+    "Sales.Big",
+    31,
+    "",
+    ""
+   ]
+  ],
+  "large": [
+   [
+    "mf",
+    "Sales.Big",
+    31
+   ],
+   [
+    "mf",
+    "Admin.SCH_Nightly",
+    27
+   ],
+   [
+    "mf",
+    "Sales.ACT_CreateOrder",
+    12
+   ],
+   [
+    "mf",
+    "Admin.ACT_Setting",
+    6
+   ],
+   [
+    "mf",
+    "Sales.SUB_Total",
+    5
+   ],
+   [
+    "mf",
+    "Sales.GET_Orders",
+    4
+   ],
+   [
+    "mf",
+    "Sales.BCo_Order",
+    3
+   ],
+   [
+    "nf",
+    "Sales.NF_Refresh",
+    2
+   ],
+   [
+    "mf",
+    "Atlas_Core.Util",
+    2
+   ]
+  ],
+  "over": 2,
+  "overMod": [
+   [
+    "Sales",
+    1
+   ],
+   [
+    "Admin",
+    1
+   ]
+  ],
+  "pref": [
+   [
+    "GET",
+    1,
+    "no prefix, or SUB_ when called from other flows",
+    [
+     "Sales.GET_Orders"
+    ]
+   ],
+   [
+    "BCo",
+    1,
+    "BCO_ (before commit)",
+    [
+     "Sales.BCo_Order"
+    ]
+   ],
+   [
+    "NF",
+    1,
+    "",
+    [
+     "Sales.NF_Refresh"
+    ]
+   ],
+   [
+    "SCH",
+    1,
+    "SCE_ (scheduled event)",
+    [
+     "Admin.SCH_Nightly"
+    ]
+   ]
+  ],
+  "prefN": 4,
+  "ea": [
+   [
+    "Sales",
+    5,
+    2,
+    2
+   ],
+   [
+    "Admin",
+    2,
+    1,
+    1
+   ],
+   [
+    "Atlas_Core",
+    1,
+    0,
+    0
+   ]
+  ],
+  "eaApplied": 3,
+  "eaTotal": 8,
+  "eaRoleNo": 1,
+  "eaRole": 3,
+  "sched": [
+   [
+    "Admin.Nightly",
+    "every day",
+    false
+   ]
+  ],
+  "off": {
+   "flow": "Sales.ACT_CreateOrder",
+   "no": 4,
+   "kick": "Commit object(s)",
+   "title": "$Order"
+  },
+  "offAll": [
+   {
+    "flow": "Sales.ACT_CreateOrder",
+    "no": 4,
+    "kick": "Commit object(s)",
+    "title": "$Order"
+   }
+  ],
+  "flowsN": 9
+ },
+ "dev": {
+  "where": [
+   [
+    "Numeracja zamówień",
+    "Sales.ACT_CreateOrder i Admin.Setting",
+    [
+     "Sales",
+     "Admin"
+    ]
+   ],
+   [
+    "Uprawnienia",
+    "Moduł Sales",
+    []
+   ]
+  ],
+  "conv": [
+   [
+    "ACT_",
+    "akcja z przycisku w Sales.",
+    2,
+    []
+   ],
+   [
+    "BCo_<Entity> / BDe_<Entity>",
+    "zdarzenia encji",
+    1,
+    []
+   ],
+   [
+    "SUB_ (helper)",
+    "pomocnicze",
+    1,
+    []
+   ],
+   [
+    "Prefix with spaces",
+    "nie liczy się",
+    null,
+    []
+   ],
+   [
+    "*_Order",
+    "kończy się na Order",
+    1,
+    []
+   ]
+  ],
+  "pit": [
+   [
+    "Zapis poza Sales.ACT_CreateOrder pomija numer.",
+    [
+     "Sales"
+    ]
+   ],
+   [
+    "Admin.Setting trzyma klucze; Atlas_Core.Util jest z Marketplace.",
+    [
+     "Admin",
+     "Atlas_Core"
+    ]
+   ]
+  ]
+ },
+ "proc": {
+  "app": {
+   "sum": "Riverside obsługuje zamówienia.",
+   "aud": "Sprzedawcy i administratorzy.",
+   "story": "Dłuższa historia."
+  },
+  "procs": [
+   {
+    "name": "Złożenie zamówienia",
+    "sum": "Klient składa zamówienie.",
+    "story": null,
+    "steps": [
+     "Wybór",
+     "Zapis"
+    ],
+    "flows": [
+     [
+      "Sales.ACT_CreateOrder",
+      "mf",
+      12
+     ],
+     [
+      "Sales.SUB_Total",
+      "mf",
+      5
+     ],
+     [
+      "Sales.Nowhere",
+      "x",
+      0
+     ]
+    ],
+    "risks": [
+     [
+      "P2",
+      "Każdy z rolą User może usunąć zamówienie",
+      0
+     ],
+     [
+      "P2",
+      "Coś zupełnie innego",
+      5
+     ],
+     [
+      "P3",
+      "Nieznane miejsce",
+      6
+     ]
+    ]
+   },
+   {
+    "name": "Nocne przeliczenie",
+    "sum": "Co noc.",
+    "story": "Opis.",
+    "steps": [],
+    "flows": [
+     [
+      "Admin.SCH_Nightly",
+      "mf",
+      27
+     ]
+    ],
+    "risks": [
+     [
+      "P3",
+      "Harmonogram wyłączony w modelu, a przetwarzanie na nim polega",
+      3
+     ]
+    ]
+   }
+  ]
+ },
+ "modules": [
+  {
+   "n": "Sales",
+   "mp": false,
+   "sum": "Sprzedaż.",
+   "story": "Więcej.",
+   "notes": [
+    {
+     "title": "Statusy",
+     "text": "Opis",
+     "items": [
+      "a",
+      "b"
+     ],
+     "table": {
+      "columns": [
+       "K",
+       "V"
+      ],
+      "rows": [
+       [
+        "1",
+        "2"
+       ]
+      ]
+     }
+    }
+   ],
+   "items": [
+    [
+     "mf",
+     "ACT_CreateOrder",
+     12,
+     0,
+     1
+    ],
+    [
+     "mf",
+     "SUB_Total",
+     5,
+     1,
+     0
+    ],
+    [
+     "mf",
+     "GET_Orders",
+     4,
+     0,
+     0
+    ],
+    [
+     "mf",
+     "BCo_Order",
+     3,
+     1,
+     0
+    ],
+    [
+     "mf",
+     "Big",
+     31,
+     0,
+     1
+    ],
+    [
+     "nf",
+     "NF_Refresh",
+     2,
+     0,
+     1
+    ],
+    [
+     "pg",
+     "Order_Edit",
+     0,
+     1,
+     1
+    ]
+   ],
+   "ent": [
+    "Order",
+    "Line"
+   ],
+   "uses": {
+    "Admin": [
+     1,
+     1
+    ],
+    "Atlas_Core": [
+     1,
+     0
+    ]
+   },
+   "risk": [
+    0,
+    3,
+    2
+   ],
+   "sched": [],
+   "serv": [
+    [
+     "orders",
+     "REST"
+    ]
+   ]
+  },
+  {
+   "n": "Admin",
+   "mp": false,
+   "sum": "Ustawienia.",
+   "story": null,
+   "notes": [],
+   "items": [
+    [
+     "mf",
+     "SCH_Nightly",
+     27,
+     0,
+     0
+    ],
+    [
+     "mf",
+     "ACT_Setting",
+     6,
+     1,
+     1
+    ]
+   ],
+   "ent": [
+    "Setting"
+   ],
+   "uses": {
+    "Sales": [
+     2,
+     1
+    ]
+   },
+   "risk": [
+    1,
+    0,
+    1
+   ],
+   "sched": [
+    [
+     "Nightly",
+     "every day",
+     false
+    ]
+   ],
+   "serv": []
+  },
+  {
+   "n": "Atlas_Core",
+   "mp": true,
+   "sum": null,
+   "story": null,
+   "notes": [],
+   "items": [
+    [
+     "mf",
+     "Util",
+     2,
+     0,
+     0
+    ]
+   ],
+   "ent": [],
+   "uses": {},
+   "risk": [
+    0,
+    0,
+    0
+   ],
+   "sched": [],
+   "serv": []
+  }
+ ],
+ "domain": {
+  "Sales": {
+   "ents": {
+    "Order": {
+     "pers": true,
+     "view": false,
+     "gen": null,
+     "desc": "Zamówienie klienta.",
+     "attrs": [
+      [
+       "Number",
+       "String",
+       "String · 20"
+      ],
+      [
+       "Note",
+       "String",
+       "String · unlimited"
+      ],
+      [
+       "Status",
+       "Enum",
+       "Enumeration · Sales.Status"
+      ],
+      [
+       "Total",
+       "Dec",
+       "Decimal"
+      ],
+      [
+       "Paid",
+       "Bool",
+       "Boolean"
+      ],
+      [
+       "When",
+       "Date",
+       "Date and time"
+      ]
+     ],
+     "access": [
+      [
+       "User",
+       [
+        "User"
+       ],
+       6,
+       2,
+       true,
+       false,
+       "[Order_Owner = '[%CurrentUser%]' or\nOrder_Team/Team/Name = 'X']"
+      ]
+     ]
+    },
+    "Line": {
+     "pers": false,
+     "view": false,
+     "gen": null,
+     "desc": "A line.",
+     "attrs": [
+      [
+       "Qty",
+       "Int",
+       "Integer"
+      ]
+     ],
+     "access": []
+    }
+   },
+   "assoc": [
+    [
+     "Line_Order",
+     "Sales.Line",
+     "Sales.Order",
+     false
+    ],
+    [
+     "Order_Setting",
+     "Sales.Order",
+     "Admin.Setting",
+     true
+    ],
+    [
+     "Setting_Order",
+     "Admin.Setting",
+     "Sales.Order",
+     false
+    ]
+   ],
+   "mods": [
+    [
+     "Admin",
+     1
+    ],
+    [
+     "Sales",
+     2
+    ]
+   ]
+  },
+  "Admin": {
+   "ents": {
+    "Setting": {
+     "pers": true,
+     "view": false,
+     "gen": null,
+     "desc": null,
+     "attrs": [
+      [
+       "Key",
+       "String",
+       "String · 50"
+      ]
+     ],
+     "access": []
+    }
+   },
+   "assoc": [
+    [
+     "Order_Setting",
+     "Sales.Order",
+     "Admin.Setting",
+     true
+    ],
+    [
+     "Setting_Order",
+     "Admin.Setting",
+     "Sales.Order",
+     false
+    ]
+   ],
+   "mods": [
+    [
+     "Admin",
+     1
+    ],
+    [
+     "Sales",
+     2
+    ]
+   ]
+  }
+ }
+}

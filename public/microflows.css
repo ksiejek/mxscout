@@ -1,0 +1,285 @@
+/* MxScout — the Microflows screen (public/microflows.js).
+ *
+ * Spec 02 §2–§6: the list (256px, 320px wide), then the flow and, beside it,
+ * the step and the flow as a whole — on tabs at 1440, side by side at 2000px
+ * and wider. The header, the segments, the badges and the inspector's shared
+ * blocks (stats, links, risk cards) are the App Explorer's (explorer.css).
+ * Every colour is a token. */
+.mf-grid { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 306px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.mf-grid > section { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+
+/* the list */
+.mf-list { border-right: 1px solid var(--line); }
+.mf-list-top { display: flex; flex-direction: column; gap: 10px; padding: 12px 12px 10px; }
+.mf-list-row { display: flex; align-items: center; gap: 8px; }
+.mf-module {
+  position: relative; flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; height: 32px;
+  padding: 0 8px 0 10px; border: 1px solid var(--line); border-radius: 8px; box-sizing: border-box;
+}
+.mf-module-k { font-size: 12px; color: var(--muted); flex: none; }
+.mf-list-row .xe-sort { flex: none; white-space: nowrap; }
+.mf .mf-module-select {
+  flex: 1 1 auto; min-width: 0; appearance: none; -webkit-appearance: none; border: 0; background: transparent; box-shadow: none;
+  color: var(--ink); font: 600 13px var(--font-ui); padding: 0 16px 0 0; height: auto; outline: none; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mf-module .mf-caret { position: absolute; right: 8px; color: var(--muted); pointer-events: none; }
+.mf-rows { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 8px 12px; display: flex; flex-direction: column; gap: 1px; scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+.mf-row {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; flex: none; padding: 0 10px; border: 0;
+  border-radius: 7px; background: transparent; color: var(--ink2); font-size: 13px; text-align: left;
+}
+.mf-row:hover { background: color-mix(in srgb, var(--raised) 70%, transparent); }
+.mf-row.on { background: var(--acc-soft); color: var(--acc-text); }
+.mf-row.on .mf-row-name { font-weight: 600; }
+.mf-row-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mf-kind { flex: none; min-width: 24px; text-align: center; font: 600 10.5px/17px var(--font-mono); border-radius: 4px; border: 1px solid var(--line2); color: var(--ink2); }
+
+/* the detail */
+.mf-detail { position: relative; }
+.mf-head { padding: 14px 20px; border-bottom: 1px solid var(--line); display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; flex: none; }
+.mf-head-text { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1 1 260px; }
+.mf-name-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mf-name-row .xe-icon-btn.small { margin-left: 0; }
+.mf-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.mf-btn {
+  display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--raised); color: var(--ink); font-size: 13px; font-weight: 500;
+}
+.mf-btn:hover { border-color: var(--line2); }
+.mf-btn.primary { border: 0; background: var(--acc); color: var(--acc-on); font-weight: 600; }
+.mf-btn.done { border-color: var(--ok); color: var(--ok); }
+.mf-body { flex: 1 1 auto; min-height: 0; display: flex; }
+.mf-flow { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.mf-canvas {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 22px 12px 36px;
+  background-color: var(--sunken); background-image: radial-gradient(var(--dot) 1px, transparent 1.3px); background-size: 18px 18px;
+  scrollbar-width: thin; scrollbar-color: var(--line2) transparent;
+}
+
+/* a page: no drawing, its details and what opens it (spec 14) */
+.mf-page {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 22px; padding: 18px 20px 32px;
+  max-width: 760px; box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--line2) transparent;
+}
+
+/* the trace bar */
+.mf-trace { padding: 10px 16px 10px 20px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; flex: none; }
+.mf-trace-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mf-trace-row .xe-caps { margin-right: 4px; }
+.mf-clear { height: 24px; padding: 0 8px; border: 0; background: none; color: var(--muted); font-size: 12px; }
+.mf-trace-sum { margin: 0; font-size: 12.5px; color: var(--ink2); }
+.mf-trace-sum.muted { color: var(--muted); }
+.mf-trace-name { font-family: var(--font-mono); font-weight: 600; color: var(--acc-text); }
+.mf-chip {
+  display: inline-flex; align-items: center; height: 24px; padding: 0 7px; margin: 0 1px; border-radius: 5px;
+  border: 1px solid var(--line2); background: var(--raised); color: var(--ink); font: 500 11.5px/1 var(--font-mono); cursor: pointer; vertical-align: baseline;
+}
+.mf-chip.s20 { height: 20px; }
+.mf-chip.s26 { height: 26px; }
+.mf-chip.on { border-color: var(--acc); background: var(--acc); color: var(--acc-on); font-weight: 600; }
+
+/* beside the drawing: the step, and the flow as a whole */
+.mf-side { flex: 0 0 393px; width: 393px; box-sizing: border-box; border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.mf-tabs { padding: 10px 16px; border-bottom: 1px solid var(--line); flex: none; }
+.mf-panels { flex: 1 1 auto; min-height: 0; display: flex; }
+.mf-panel {
+  flex: 1 1 auto; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 22px; padding: 18px 20px 28px;
+  scrollbar-width: thin; scrollbar-color: var(--line2) transparent;
+}
+.mf-side.tab-step .mf-rail, .mf-side.tab-flow .mf-step { display: none; }
+@media (min-width: 2000px) {
+  .mf-grid { grid-template-columns: 370px minmax(0, 1fr); }
+  .mf-side { flex-basis: 1001px; width: 1001px; }
+  .mf-tabs { display: none; }
+  .mf-side .mf-step, .mf-side .mf-rail, .mf-side.tab-step .mf-rail, .mf-side.tab-flow .mf-step { display: flex; }
+  .mf-step { flex: 0 0 600px; box-sizing: border-box; }
+  .mf-rail { border-left: 1px solid var(--line); }
+  .mf-canvas { padding: 28px 24px 40px; }
+}
+
+/* the step inspector */
+.mf-step-head { display: flex; align-items: center; gap: 12px; }
+.mf-dec-tile { width: 36px; height: 36px; display: grid; place-items: center; flex: none; }
+.mf-dec-tile .fg-rhomb { width: 12px; height: 12px; }
+.fg-tile.s36 { width: 36px; height: 36px; border-radius: 8px; flex: none; }
+.mf-step-titles { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mf-step-kick { font-size: 12px; color: var(--muted); }
+.mf-step-title { font: 600 15px/1.35 var(--font-mono); color: var(--ink); overflow-wrap: anywhere; }
+.mf-step-sum { margin: 0; font-size: 13px; line-height: 1.55; color: var(--ink2); text-wrap: pretty; }
+.mf-kv { display: grid; grid-template-columns: minmax(56px, auto) minmax(0, 1fr); column-gap: 14px; row-gap: 8px; align-items: baseline; }
+.mf-k { font-size: 12.5px; color: var(--muted); }
+.mf-v { font: 12px/1.7 var(--font-mono); color: var(--ink); overflow-wrap: anywhere; }
+.mf-output { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mf-out-type { font: 12px var(--font-mono); color: var(--muted); }
+.mf-props {
+  display: grid; grid-template-columns: minmax(84px, auto) minmax(0, 1fr); column-gap: 14px; row-gap: 6px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--raised); font-size: 12.5px; color: var(--ink);
+}
+.mf-link {
+  border: 0; background: none; padding: 0; text-align: left; font: 12px var(--font-mono); color: var(--acc-text);
+  text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; cursor: pointer;
+}
+.mf-studio-link {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; height: 28px; border: 0; background: none; padding: 0;
+  color: var(--acc-text); font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+
+/* members */
+.mf-members-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mf-groups { display: flex; flex-direction: column; gap: 10px; }
+.mf-box { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.mf-box.hl { border-color: var(--acc); }
+.mf-group-head { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: var(--raised); border-bottom: 1px solid var(--line); min-width: 0; }
+.mf-box.hl .mf-group-head { background: var(--acc-soft); border-bottom-color: var(--acc); }
+.mf-group-name { font-size: 12.5px; font-weight: 600; color: var(--ink); flex: none; }
+.mf-group-note { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto; }
+.mf-group-n { font: 11px var(--font-mono); color: var(--muted); flex: none; }
+.mf-src-row { display: grid; grid-template-columns: minmax(0, .8fr) 14px minmax(0, 1.2fr); column-gap: 8px; align-items: baseline; padding: 7px 10px; }
+/* A long value goes under the member, as code, across the whole row. */
+.mf-src-row.long { grid-template-columns: auto 14px minmax(0, 1fr); }
+.mf-src-row.long > .mf-code-wrap, .mf-mo-row.long > .mf-code-wrap { grid-column: 1 / -1; margin-top: 6px; }
+.mf-src-row + .mf-src-row, .mf-mo-row + .mf-mo-row { border-top: 1px solid var(--line); }
+.mf-from { font: 11.5px var(--font-mono); color: var(--ink2); overflow-wrap: anywhere; display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline; }
+.mf-mark { font: 10.5px/15px var(--font-ui); color: var(--muted); border: 1px solid var(--line2); border-radius: 4px; padding: 0 5px; }
+.mf-arrow { font-size: 12px; color: var(--muted); }
+.mf-targets { display: flex; flex-wrap: wrap; gap: 3px 10px; }
+.mf-target { font: 600 11.5px var(--font-mono); color: var(--ink); }
+.mf-target.flagged { color: var(--p2); font-weight: 600; }
+.mf-target-wrap { display: inline-flex; align-items: center; gap: 4px; }
+.mf-mo-row { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); column-gap: 12px; padding: 6px 10px; }
+.mf-mo-left { display: flex; flex-direction: column; min-width: 0; }
+.mf-mo-type { font-size: 11px; color: var(--muted); }
+.mf-mo-value { font: 11.5px/1.7 var(--font-mono); color: var(--ink2); overflow-wrap: anywhere; }
+.mf-code-wrap { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.mf-code {
+  margin: 0; width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 7px; background: var(--raised); border: 1px solid var(--line);
+  font: 11.5px/1.6 var(--font-mono); color: var(--ink2); white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2;
+}
+
+/* Nothing picked yet: the modules first (flowview.js modulesOverview). */
+.mf-mods { padding: 22px 24px; overflow-y: auto; min-height: 0; height: 100%; box-sizing: border-box; }
+.mf-mods-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.mf-mods-title { margin: 0; font-size: 17px; font-weight: 600; color: var(--ink); }
+.mf-mods-sub { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); }
+.mf-mods-head .xe-filter { width: 280px; max-width: 100%; }
+.mf-mods-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.mf-mod-card {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 10px; text-align: left;
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); font: inherit; cursor: pointer;
+}
+.mf-mod-card:hover { border-color: var(--acc); }
+.mf-mod-card:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+.mf-mod-name { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.mf-mod-meta { grid-column: 1; font-size: 12px; color: var(--muted); }
+.mf-mod-card .xb { grid-column: 2; grid-row: 1 / span 2; }
+
+/* The Domain model screen (domain.js): the reader's page fills what is under the header. */
+.dm-screen .dm-host { flex: 1 1 auto; min-height: 0; display: flex; }
+.dm-screen .dm-embed { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; }
+.dm-screen .dm-embed > .dx { flex: 1 1 auto; height: auto; }
+
+/* Browse data (objects.js renderEntityData): the rows only, in the screen's style. */
+.dm-data-overlay { position: fixed; inset: 0; z-index: 60; background: var(--scrim); display: flex; align-items: flex-start; justify-content: center; padding: 8vh 24px 24px; }
+.dm-data {
+  width: min(1100px, 100%); max-height: calc(100vh - 8vh - 24px); display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--dlg-shadow); overflow: hidden; color: var(--ink);
+}
+.dm-data-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 20px 12px; border-bottom: 1px solid var(--line); }
+.dm-data-titles { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.dm-data-titles h2 { margin: 0; font: 600 20px var(--font-mono); letter-spacing: -0.01em; }
+.dm-data-close { flex: none; width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink2); font-size: 18px; line-height: 1; cursor: pointer; }
+.dm-data-close:hover { border-color: var(--acc); color: var(--ink); }
+.dm-data-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 16px 20px 20px; }
+
+/* MF blue, NF green, as Mendix colours them */
+.mf-kind.microflow { color: var(--f-db); border-color: color-mix(in srgb, var(--f-db) 45%, var(--line)); }
+.mf-kind.nanoflow { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+
+/* The other sections (app.js screenHeader): the same header, then the
+   section from the left edge, the whole width, scrolling under the header. */
+.xe-pagescreen .xe-page-controls { flex: none; padding: 16px 40px 0; }
+.xe-pagescreen .xe-page { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 30px 40px 64px; }
+.xe-pagescreen .xe-page > * { max-width: 1280px; }
+/* A documentation page with nothing to show yet (app.js renderDocPage): the same margins as every other page,
+   the card at reading width (Karol, 2026-10-14: it sat on the screen's edge). */
+.doc-screen > .xe-page { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 30px 40px 64px; }
+/* An empty page sits where the documentation's own pages start (docs.css .dx-pd), not against the header. */
+/* Sections drawn as pages (Security, Settings, and in Dev Comments, Live app, Logs) and the empty documentation
+   pages keep the documentation's own margins (docs.css .dx-pd), not a strip against the header. */
+@media (max-width: 720px) { .doc-screen > .xe-page, .xe-pagescreen .xe-page { padding: 20px 16px 40px; } .xe-pagescreen .xe-page-controls { padding: 12px 16px 0; } }
+.doc-screen > .xe-page > .doc-empty { max-width: 640px; }
+
+/* An object's comments, where the object is shown (comments.js panelFor) */
+.obj-comments { display: flex; flex-direction: column; gap: 4px; }
+.obj-comment {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 8px; width: 100%; text-align: left;
+  padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.obj-comment:hover { border-color: var(--acc); }
+.obj-comment-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.obj-comment-st { font-size: 11px; color: var(--acc-text); white-space: nowrap; }
+.obj-comment-st.done { color: var(--muted); }
+.obj-comments .comments-link { align-self: flex-start; margin-top: 2px; }
+.mf-cm { flex: none; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.dm-data-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line); }
+
+/* ---------- the flow as Studio Pro keeps it, the whole middle (flowview.js flowDetail) ----------
+   Karol, 2026-10-14: "only this drawing" — the step's details open in a window over it, what the
+   flow is as a whole behind About in the header. */
+.mf-body.board { display: flex; }
+.mf-board { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--mx-canvas); }
+.mf-board .sv-strip.inline { flex: 1 1 auto; min-height: 0; max-height: none; overflow: auto; border-bottom: 1px solid var(--line); padding: 0; }
+.mf-board .sv-strip.inline:not(.drawn) { padding: 6px 0 2px; }
+.mf-board-foot { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 14px; background: var(--panel); font-size: 12px; color: var(--muted); }
+.mf-board-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mf-about { flex: 0 0 380px; width: 380px; box-sizing: border-box; border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+.mf-about-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.mf-about .mf-rail { border: 0; }
+.mf-btn.mf-about-open.on { border-color: var(--acc); color: var(--acc-text); }
+.mf-x { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--ink2); font-size: 16px; line-height: 1; cursor: pointer; flex: none; }
+.mf-x:hover { color: var(--ink); border-color: var(--line2); }
+/* one step, in a window over the drawing */
+.mf-step-scrim { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 28px; background: var(--scrim); }
+.mf-step-win { width: min(1180px, 100%); max-height: 86vh; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line2); border-radius: 14px; box-shadow: var(--dlg-shadow); overflow: hidden; color: var(--ink); font-size: 13px; }
+.mf-step-win-head { flex: none; display: flex; align-items: center; gap: 10px; padding: 12px 14px 12px 20px; border-bottom: 1px solid var(--line); }
+.mf-step-win-head .xe-caps { flex: 1 1 auto; }
+.mf-step-win-body { flex: 1 1 auto; min-height: 0; overflow: auto; display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); }
+.mf-step-win-insp { border-right: 1px solid var(--line); min-width: 0; }
+.mf-step-win-insp .mf-step { border: 0; }
+.mf-step-win-props { padding: 16px 20px 20px; min-width: 0; }
+.mf-step-win-props > .xe-caps { margin: 0 0 12px; }
+/* In the window the groups stand one under another at the full width, each label beside its field:
+   side by side, a one-field Output sat next to a tall Input with nothing under it (Karol, 2026-10-14). */
+.mf-step-win-props .sv-groups { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 12px; }
+.mf-step-win-props .sv-fs, .mf-step-win-props .sv-fs.wide { flex: none; }
+.mf-step-win-props .sv-form { grid-template-columns: 150px minmax(0, 1fr); }
+.mf-step-win-props .sv-field.mono { white-space: pre-wrap; }
+@media (max-width: 900px) { .mf-step-win-body { grid-template-columns: minmax(0, 1fr); } .mf-step-win-insp { border-right: 0; border-bottom: 1px solid var(--line); } }
+
+/* ---------- narrower screens: the column beside goes under, it does not vanish ----------
+   Karol, 2026-10-14: "on smaller screens a column disappears; it could go under the column next
+   to it instead". Measured on the screen's own width, not the window's, because the sidebar takes
+   its share first. Where the drawing would be squeezed to a sliver, the step and the flow as a whole
+   (or About) go under the drawing, and the body scrolls as one; where even the list leaves no room,
+   the list goes on top. The wide layouts are untouched. */
+.mf { container: mfscreen / inline-size; }
+.mf-detail { container: mfdetail / inline-size; }
+@container mfdetail (max-width: 800px) {
+  .mf-body, .mf-body.board { flex-direction: column; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+  .mf-flow, .mf-board { flex: none; height: 64vh; min-height: 340px; }
+  .mf-side, .mf-about { flex: none; width: auto; border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+  .mf-panels { flex: none; flex-direction: column; }
+  .mf-panel { overflow: visible; }
+  /* Under the drawing there is room for both: the step, then the flow as a whole, without the tabs. */
+  .mf-tabs { display: none; }
+  .mf-side .mf-step, .mf-side .mf-rail, .mf-side.tab-step .mf-rail, .mf-side.tab-flow .mf-step { display: flex; }
+  .mf-side .mf-rail { border-top: 1px solid var(--line); }
+  .mf-board-foot { flex-wrap: wrap; }
+  .mf-board-note { white-space: normal; }
+}
+@container mfscreen (max-width: 680px) {
+  .mf-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .mf-list { border-right: 0; border-bottom: 1px solid var(--line); max-height: 42vh; }
+  .mf-detail { min-height: 70vh; }
+}

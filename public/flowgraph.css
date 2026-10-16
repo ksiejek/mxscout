@@ -1,0 +1,133 @@
+/* MxScout — a flow drawn as a graph (public/flowgraph.js).
+ *
+ * The redesign's DRAKON drawing (spec 02 §4): each node of the main path is a
+ * row of a three-column grid — the node, the line leading right, and the way
+ * out to the side. Rows are joined by a 22px line down the middle column.
+ * Its own file, because the drawing is meant to travel inside the exported
+ * documentation too. Every colour is a token. */
+/* The columns share the width the drawing has, up to a reading measure: the
+   main path a little wider than the side, the line between them fixed. */
+.fg { --fg-cols: minmax(0, 1.15fr) 26px minmax(0, 1fr); max-width: 880px; margin: 0 auto; color: var(--ink); font-size: 13px; line-height: 1.4; }
+.fg.compact { --fg-cols: minmax(0, 1fr) 18px minmax(0, 0.8fr); max-width: none; }
+@media (min-width: 2000px) { .fg { --fg-cols: minmax(0, 1.15fr) 32px minmax(0, 1fr); max-width: 1100px; } }
+.fg-grid { display: grid; grid-template-columns: var(--fg-cols); align-items: stretch; }
+/* Nothing to the side: one column, the path in the middle. */
+.fg.single { max-width: 480px; }
+.fg-grid.single { grid-template-columns: minmax(0, 1fr); }
+.fg-cell-main { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.fg-cell-link { position: relative; min-height: 34px; }
+.fg-cell-side { min-width: 0; height: 0; overflow: visible; align-self: start; }
+.fg-hline { position: absolute; left: 0; right: 0; top: 16px; height: 1.5px; background: var(--line2); }
+.fg-extend { flex: 1 1 auto; width: 1.5px; min-height: 8px; background: var(--line2); }
+.fg-cell-main.fg-gap { position: relative; min-height: 22px; }
+.fg-cell-main.fg-stretch { min-height: 0; height: 0; }
+.fg-vline { display: block; width: 1.5px; flex: 1 1 auto; background: var(--line2); }
+.fg-gap-label, .fg-label {
+  font: 10.5px/17px var(--font-mono); padding: 0 6px; border-radius: 4px; background: var(--raised);
+  border: 1px solid var(--line); color: var(--ink2); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+}
+.fg-gap-label { position: absolute; left: calc(50% + 8px); top: 2px; }
+.fg-mono { font-family: var(--font-mono); }
+.fg-muted { color: var(--muted); }
+.fg-icon { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.fg-note { font-size: 12px; color: var(--muted); margin: 0; }
+
+/* pills: start, end, decision */
+.fg-pill, .fg-decision {
+  display: inline-flex; align-items: center; gap: 9px; min-height: 30px; padding: 4px 12px 4px 10px; max-width: 100%;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink2); font: inherit; font-size: 12.5px;
+  box-sizing: border-box; text-align: left;
+}
+.fg-start-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--f-save); flex: none; }
+.fg-params { font: 11.5px var(--font-mono); color: var(--muted); overflow-wrap: anywhere; min-width: 0; }
+.fg-start-card {
+  width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 9px 12px 11px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink2); font-size: 12.5px;
+}
+.fg-start-head { display: flex; align-items: center; gap: 9px; }
+.fg-start-n { font-size: 11.5px; color: var(--muted); }
+.fg-start-head .fg-role { margin-left: auto; }
+.fg-start-params { display: flex; flex-wrap: wrap; gap: 4px; }
+.fg-param { font: 11px/18px var(--font-mono); color: var(--ink2); padding: 0 6px; border-radius: 4px; background: var(--raised); border: 1px solid var(--line); }
+.fg-ring { width: 12px; height: 12px; border-radius: 50%; border: 3px solid var(--ink2); box-sizing: border-box; flex: none; }
+.fg-ring.small { width: 11px; height: 11px; }
+.fg-end.error .fg-ring, .fg-side-end.error .fg-ring { border-color: var(--p1); }
+.fg-decision { min-height: 34px; border-radius: 10px; gap: 8px; flex-wrap: wrap; }
+button.fg-decision, button.fg-card { cursor: pointer; }
+.fg-rhomb { width: 11px; height: 11px; transform: rotate(45deg); border-radius: 2px; border: 1.5px solid var(--f-dec); background: var(--f-dec-bg); flex: none; box-sizing: border-box; }
+.fg-dec-title { font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+.fg-dec-cond {
+  font: 11.5px var(--font-mono); color: var(--muted); overflow-wrap: anywhere; min-width: 0;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+.fg-decision.small { min-height: 28px; padding: 2px 10px 2px 8px; align-self: flex-start; }
+.fg-decision.small .fg-dec-title { font-size: 12px; }
+
+/* step cards */
+.fg-card {
+  width: 100%; box-sizing: border-box; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; column-gap: 12px;
+  align-items: start; padding: 11px 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel);
+  color: var(--ink); font: inherit; text-align: left;
+}
+.fg-card.small { grid-template-columns: 24px minmax(0, 1fr) auto; column-gap: 9px; padding: 8px 10px; border-radius: 9px; }
+.fg-card.off { opacity: 0.55; border-style: dashed; }
+.fg-card.on, .fg-decision.on { border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-soft); }
+.fg .dim { opacity: 0.42; }
+.fg-tile { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font: 600 11px var(--font-mono); }
+.fg-tile.s24 { width: 24px; height: 24px; border-radius: 6px; font-size: 10px; }
+.fg-var { background: var(--f-var-bg); color: var(--f-var); }
+.fg-db { background: var(--f-db-bg); color: var(--f-db); }
+.fg-obj { background: var(--f-obj-bg); color: var(--f-obj); }
+.fg-save { background: var(--f-save-bg); color: var(--f-save); }
+.fg-call { background: var(--f-call-bg); color: var(--f-call); }
+.fg-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fg-kind { font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+.fg-main { font: 13px var(--font-mono); color: var(--ink); overflow-wrap: anywhere; }
+.fg-card.small .fg-kind { font-size: 11px; }
+.fg-card.small .fg-main { font-size: 12px; }
+.fg-right { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.fg-no { font: 11px var(--font-mono); color: var(--muted); }
+.fg-card.small .fg-no { font-size: 10.5px; }
+.fg-role { flex: none; font-size: 10.5px; font-weight: 600; line-height: 16px; padding: 0 6px; border-radius: 4px; white-space: nowrap; border: 1px solid; }
+.fg-role.strong { background: var(--acc); color: var(--acc-on); border-color: var(--acc); }
+.fg-role.mid { background: var(--acc-soft); color: var(--acc-text); border-color: var(--acc); }
+.fg-role.weak { background: var(--raised); color: var(--ink2); border-color: var(--line2); }
+
+/* the way out to the side */
+.fg-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+/* A way out to the side is one line down its left edge, from its label to
+   where it ends — the End ring sits on it — so its steps read as one path,
+   not loose pieces (Karol, 2026-10-13). */
+.fg-side-way { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; padding-left: 16px; }
+.fg-side-way::before { content: ""; position: absolute; left: 5px; top: 26px; bottom: 9px; width: 1.5px; background: var(--line2); }
+.fg-side-way > .fg-label { align-self: flex-start; margin-top: 7px; margin-left: -16px; position: relative; z-index: 1; }
+.fg-side-way > .fg-side-end, .fg-side-way > .fg-rejoin { margin-left: -16px; padding-left: 0; position: relative; z-index: 1; }
+.fg-side-way > .fg-side-end .fg-ring { background: var(--panel); }
+.fg-side-way > .fg-rejoin .fg-icon { background: var(--panel); border-radius: 50%; }
+.fg-side-nest { display: flex; flex-direction: column; gap: 8px; padding-left: 10px; border-left: 1.5px dashed var(--line2); }
+.fg-side-nest.loop > .fg-label { align-self: flex-start; }
+.fg-side-end { display: inline-flex; align-items: center; gap: 7px; padding-left: 4px; font-size: 12px; color: var(--muted); }
+.fg-rejoin { display: inline-flex; align-items: center; gap: 6px; padding-left: 4px; font-size: 12px; color: var(--muted); }
+
+/* a loop: a dashed frame with its header at the top left and the path inside */
+.fg-loop {
+  width: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: stretch; gap: 10px;
+  padding: 8px 10px 14px; border: 1.5px dashed var(--line2); border-radius: 12px;
+  background: color-mix(in srgb, var(--f-call-bg) 45%, transparent);
+}
+.fg-loop-head {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  font: 11px/18px var(--font-mono); color: var(--f-call); padding: 0 8px 0 6px; border-radius: 6px; background: var(--f-call-bg);
+}
+.fg-loop-head > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.fg-loop-head .fg-icon { flex: none; }
+.fg-loop > .fg-grid { width: 100%; }
+
+/* The line out to the side starts at the node, under it, so a node narrower than its column
+   (a decision) still meets it; the node sits over the line. */
+.fg-cell-main.with-side { position: relative; }
+.fg-cell-main.with-side::before { content: ""; position: absolute; left: 50%; right: 0; top: 16px; height: 1.5px; background: var(--line2); }
+.fg-cell-main > .fg-pill, .fg-cell-main > .fg-decision, .fg-cell-main > .fg-card { position: relative; z-index: 1; }
+
+/* A process's diagram: business steps in words, in the text font (flowgraph.js stepCard, biz). */
+.fg-card.biz .fg-main { font-family: inherit; }

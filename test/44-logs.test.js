@@ -1,0 +1,176 @@
+/* Log analysis — the module brought over from MxDevSwissTool (see THIRD-PARTY-NOTICES.md).
+ *
+ * Two layers. The ENGINE is the original's code, so it is checked with the original's own assertions
+ * (test/logs/engine-parity.js, plain Node): if one fails, MxScout no longer reads a log the way the original
+ * does. The SCREEN is MxScout's own, so it is driven in a real browser: one log loaded, Insights and the
+ * slow queries read off it, nothing leaving the tab, nothing thrown.
+ *
+ * Since 2026-10-09 the section is the Log Viewer alone — the stream, Insights and Slow queries. The other
+ * seven tools were taken out, and this file checks that they stay out. */
+'use strict';
+const { readText } = require('./helpers');
+const path = require('path');
+const fs = require('fs');
+const { spawnSync } = require('child_process');
+
+module.exports = async function (t) {
+  // ---- the engine, against the original's assertions ----
+  const parity = spawnSync(process.execPath, [path.join(__dirname, 'logs', 'engine-parity.js')], { encoding: 'utf8' });
+  const summary = /(\d+) passed, (\d+) failed/.exec(parity.stdout || '') || [];
+  t.ok(parity.status === 0 && summary[2] === '0' && Number(summary[1]) > 400,
+    'the log engine passes the original\'s assertions: ' + (summary[0] || (parity.stdout + parity.stderr).slice(-300)));
+
+  // ---- the credit is where a reader of the repository looks for it ----
+  const root = path.join(__dirname, '..');
+  const notices = readText(path.join(root, 'THIRD-PARTY-NOTICES.md'));
+  t.ok(/MxDevSwissTool/.test(notices) && /Permission is hereby granted, free of charge/.test(notices) && /RealMecowhy/.test(notices),
+    'THIRD-PARTY-NOTICES.md names the original, its author, and carries the MIT licence text');
+  t.ok(/MxDevSwissTool/.test(readText(path.join(root, 'CHANGELOG.md'))), 'the changelog credits it');
+  const engineFiles = fs.readdirSync(path.join(root, 'public', 'logs', 'engine'));
+  const uncredited = engineFiles.filter((f) => !/RealMecowhy/.test(readText(path.join(root, 'public', 'logs', 'engine', f)).slice(0, 1500)));
+  t.ok(uncredited.length === 0, 'every ported engine file carries the attribution header: ' + JSON.stringify(uncredited));
+  t.ok(engineFiles.sort().join(',') === 'decoder.js,insights.js,parser.js,sql.js',
+    'the engine is the parser, Insights with the rules its error card uses, and the SQL highlighter — nothing else: ' + engineFiles.join(', '));
+
+  // ---- the screen ----
+  const sample = require('./logs/sample-log.js');
+  const mx = await t.tab(t.MX);
+  await mx.waitFor('!!window.MxLogs', 15000, 'MxScout loaded');
+  // Log analysis is a Developer tool: offered with no project open once a project has them on.
+  await mx.evaluate(`MxStore.saveProjectWithModel({ id: 'logs-dev', name: 'LogsDev', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    source: { kind: 'test' }, bytes: 1, summary: null, appUrl: null, devTools: true }, { modules: [], entities: [], microflows: [], nanoflows: [], pages: [] }).then(function () { return true; })`);
+  await mx.navigate(t.MX);
+  await mx.waitFor('!!window.MxLogs', 15000, 'MxScout loaded again');
+  await mx.evaluate(`window.__errs = []; window.addEventListener('error', function (e) { window.__errs.push(e.message); });
+    window.addEventListener('unhandledrejection', function (e) { window.__errs.push(String(e.reason && e.reason.message || e.reason)); });
+    window.__requests = [];
+    var rf = window.fetch; window.fetch = function (i) { window.__requests.push(String(typeof i === 'string' ? i : i.url)); return rf.apply(this, arguments); };`);
+  const click = (re) => mx.evaluate(`Array.from(document.querySelectorAll('button')).find(b => ${re}.test(b.textContent)).click()`);
+  const tab = (re) => mx.evaluate(`Array.from(document.querySelectorAll('.lg-tab')).find(b => ${re}.test(b.textContent)).click()`);
+  const count = (sel) => mx.evaluate(`document.querySelectorAll(${JSON.stringify(sel)}).length`);
+
+  // Earlier tests leave a project open in this browser; the model-less entry is for when none is.
+  // The app reopens the last project on its own once storage answers; wait for that to have happened, or it
+  // can reopen it right after "All projects" and take the Tools entry away again.
+  await mx.waitFor(`!!document.querySelector('.switcher, .tree-project, .tree-empty')`, 10000, 'projects listed');
+  await new Promise((r) => setTimeout(r, 800));
+  await mx.evaluate(`(Array.from((function(q){var s=document.querySelector('.switcher[aria-expanded="false"]'); if (s) s.click(); return document.querySelectorAll(q);})('button')).find(b => b.textContent.trim() === 'All projects') || { click() {} }).click()`);
+  await mx.waitFor(`!!Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Log analysis')`, 5000, 'tools entry');
+  await click(/^Log analysis$/);
+  await mx.waitFor(`!!document.querySelector('.lg')`, 8000, 'log analysis screen');
+  const tabs = await mx.evaluate(`Array.from(document.querySelectorAll('.lg-tab')).map(b => b.textContent.replace(/ ·.*$/, ''))`);
+  t.ok(tabs.join('|') === 'Log Stream|Insights|Slow queries', 'one viewer, three tabs: ' + tabs.join(' | '));
+  t.ok(await mx.evaluate(`Object.keys(MxLogs.tools).join(',') === 'log-viewer' && !MxLogs.hub && !MxLogs.goto`),
+    'the other tools, the bar that shared a file between them and the navigation between them are gone');
+  t.ok(await mx.evaluate(`!Array.from(document.querySelectorAll('.lg button')).some(b => /Explain|Decode|Anonymize|Query Extractor|In your model/.test(b.textContent))`),
+    'and nothing on the screen still offers to send a line to one of them');
+  t.ok(/MxDevSwissTool/.test(await mx.evaluate(`document.querySelector('.lg-credit').textContent`)), 'the screen says where it comes from');
+
+  await mx.evaluate(`MxLogs.tools['log-viewer'].loadFiles([new File([${JSON.stringify(sample)}], 'sample.log')])`);
+  await mx.waitFor(`document.querySelectorAll('.lg-row').length > 5`, 10000, 'rows');
+  const stats = await mx.evaluate(`document.querySelector('.lg-stats').textContent`);
+  t.ok(/Total:\s*42/.test(stats), 'the stats bar counts the log: ' + stats);
+
+  // ---- dragging a window off the records-over-time chart ----
+  // It used to filter the stream and leave the chart on the whole log, so the window chosen became a sliver
+  // of bars in an otherwise empty strip. The chart has to zoom to it and stay there until it is cleared.
+  const drag = (f0, f1) => mx.evaluate(`(function () {
+    var box = document.querySelector('.lg-tl-box'), r = box.getBoundingClientRect(), y = r.top + r.height / 2;
+    function fire(type, f) { box.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, clientX: r.left + r.width * f, clientY: y })); }
+    fire('pointerdown', ${f0}); fire('pointermove', ${(f0 + f1) / 2}); fire('pointermove', ${f1}); fire('pointerup', ${f1});
+  })()`);
+  const chartState = () => mx.evaluate(`(function () {
+    var xs = Array.from(document.querySelectorAll('.lg-tl-cur')).map(function (n) { return parseFloat(n.getAttribute('x')); });
+    return { left: document.querySelector('.lg-tl-axis').firstChild.textContent, right: document.querySelector('.lg-tl-axis').lastChild.textContent,
+      spread: xs.length ? Math.max.apply(null, xs) - Math.min.apply(null, xs) : 0, rows: document.querySelectorAll('.lg-row').length,
+      range: document.querySelector('.lg-tl-range').textContent, clear: !document.querySelector('.lg-tl-head .btn').hidden };
+  })()`);
+  const whole = await chartState();
+  await drag(0.25, 0.5);
+  const zoomed = await chartState();
+  t.ok(zoomed.rows > 0 && zoomed.rows < whole.rows, 'a dragged window narrows the stream: ' + whole.rows + ' → ' + zoomed.rows);
+  t.ok(zoomed.left !== whole.left && zoomed.right !== whole.right && zoomed.range.indexOf(zoomed.left) === 0,
+    'and the chart zooms to it — its axis is the window now: ' + JSON.stringify([whole.left, whole.right]) + ' → ' + JSON.stringify([zoomed.left, zoomed.right, zoomed.range]));
+  t.ok(zoomed.spread > 500, 'the window fills the strip instead of sitting in a quarter of it: bars span ' + Math.round(zoomed.spread) + ' of 1000');
+  t.ok(zoomed.clear, 'with a way back');
+  await drag(0.2, 0.8);
+  const nested = await chartState();
+  t.ok(nested.rows > 0 && nested.rows <= zoomed.rows && nested.left !== zoomed.left, 'dragging again inside it narrows further: ' + zoomed.rows + ' → ' + nested.rows);
+  await mx.evaluate(`document.querySelector('.lg-tl-head .btn').click()`);
+  const back = await chartState();
+  t.ok(back.rows === whole.rows && back.left === whole.left && back.right === whole.right && !back.clear, 'Clear range puts the whole log back, chart and stream');
+
+  await tab(/^Insights/);
+  t.ok(await count('.lg-insights-card') >= 5, 'insights found the patterns in the sample');
+  t.ok(await mx.evaluate(`Array.from(document.querySelectorAll('.lg-insights-card')).some(c => /Slow queries/.test(c.textContent) && /3 slow queries/.test(c.textContent))`),
+    'the slow-query card counts all three warnings');
+
+  // The card's link leads to the tab, and the tab agrees with the card.
+  await click(/^Open Slow queries$/);
+  await mx.waitFor(`document.querySelectorAll('.lg-slow-card').length > 0`, 4000, 'slow queries');
+  t.ok(/Slow queries · 3/.test(await mx.evaluate(`Array.from(document.querySelectorAll('.lg-tab')).map(b => b.textContent).join('|')`)), 'the tab says how many there are');
+  const cards = await mx.evaluate(`Array.from(document.querySelectorAll('.lg-slow-card')).map(c => c.querySelector('.lg-slow-head').textContent)`);
+  t.ok(cards.length === 2, 'two statements, the two runs of one grouped together: ' + JSON.stringify(cards));
+  t.ok(/a\$b/.test(cards[0]) && /3\.6 s/.test(cards[0]) && /2×/.test(cards[0]) && /sales\$order/.test(cards[1]),
+    'ordered by the time each cost in total, not by the worst single run: ' + JSON.stringify(cards));
+  await mx.evaluate(`document.querySelector('.lg-slow-head').click()`);
+  t.ok(await count('.lg-slow-detail:not([hidden]) .lg-code-sql') === 1, 'opening a statement shows its SQL, highlighted');
+  t.ok(await count('.lg-slow-detail:not([hidden]) .lg-slow-run') === 2, 'and both of its executions');
+  const firstRun = await mx.evaluate(`document.querySelector('.lg-slow-run').textContent`);
+  t.ok(/^2\.2 s/.test(firstRun), 'slowest first, and 2150 ms reads as 2.2 s: ' + firstRun);
+  await mx.evaluate(`document.querySelector('.lg-slow-run').click()`);
+  await mx.waitFor(`!document.querySelector('.lg-pane-stream').hidden && !!document.querySelector('.lg-row.is-flash')`, 4000, 'jump to the line');
+  t.ok(/Query executed in 2 seconds and 150 milliseconds/.test(await mx.evaluate(`document.querySelector('.lg-row.is-flash').textContent`)),
+    'an execution opens its own line in the stream');
+
+  await tab(/^Log Stream/);
+  await mx.evaluate(`document.querySelector('.lg-lvlchip-error').click()`);
+  t.ok(await count('.lg-row') > 0 && await count('.lg-row') < 42, 'filtering to errors narrows the stream');
+  await click(/Aggregate errors/);
+  await mx.waitFor(`document.querySelectorAll('.lg-sig-card').length > 0`, 4000, 'signatures');
+  t.ok(await count('.lg-sig-card') >= 3, 'errors are grouped by signature');
+  await mx.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+
+  // ---- full screen: the log gets the whole window ----
+  // Measured in a desktop-sized window: headless Chrome opens at 800×600, where the app is in its narrow
+  // layout and the page, not the stream, is what scrolls.
+  await mx.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  const layout = () => mx.evaluate(`(function () {
+    var lg = document.querySelector('.lg'), s = document.querySelector('.lg-stream').getBoundingClientRect();
+    return { full: lg.classList.contains('lg-full'), pos: getComputedStyle(lg).position, streamH: Math.round(s.height), streamW: Math.round(s.width),
+      filters: !!document.querySelector('.lg-fbar') && document.querySelector('.lg-fbar').getBoundingClientRect().top < s.top,
+      credit: getComputedStyle(document.querySelector('.lg-credit')).display };
+  })()`);
+  const before = await layout();
+  await click(/^⛶ Full screen$/);
+  const full = await layout();
+  t.ok(full.full && full.pos === 'fixed', 'Full screen puts the log over the whole window');
+  t.ok(full.streamH > before.streamH && full.streamW > before.streamW, 'and the stream gets the room: ' + before.streamW + '×' + before.streamH + ' → ' + full.streamW + '×' + full.streamH);
+  t.ok(full.filters && full.credit === 'none', 'the filters stay on top of it, the header text steps aside');
+  await tab(/^Slow queries/);
+  t.ok(await mx.evaluate(`document.querySelectorAll('.lg-slow-card').length === 2 && document.querySelector('.lg').classList.contains('lg-full')`), 'Slow queries is there in full screen');
+  await tab(/^Insights/);
+  t.ok(await count('.lg-insights-card') >= 5, 'and so is Insights');
+  await tab(/^Log Stream/);
+  await click(/Aggregate errors/);
+  await mx.waitFor(`document.querySelectorAll('.lg-sig-card').length > 0`, 4000, 'signatures in full screen');
+  await mx.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+  t.ok(await mx.evaluate(`!document.querySelector('.lg-sig-card') && document.querySelector('.lg').classList.contains('lg-full')`),
+    'Esc over a dialog closes the dialog, not full screen');
+  await mx.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+  const after = await layout();
+  t.ok(!after.full && after.pos !== 'fixed' && after.streamH === before.streamH, 'and Esc again leaves full screen, back to the page as it was');
+  await mx.send('Emulation.clearDeviceMetricsOverride');
+
+  // Leaving and coming back keeps the work.
+  await click(/^About & security$/);
+  await click(/^Log analysis$/);
+  await mx.waitFor(`document.querySelectorAll('.lg-row').length > 0`, 4000, 'state kept');
+  t.ok(true, 'the screen keeps its state while the rest of the app redraws');
+
+  const errs = await mx.evaluate('window.__errs');
+  t.ok(errs.length === 0, 'nothing was thrown: ' + JSON.stringify(errs));
+  const reqs = await mx.evaluate('window.__requests');
+  t.ok(reqs.every((r) => r.startsWith('/') || r.startsWith(t.MX)), 'and nothing was requested beyond this server: ' + JSON.stringify(reqs));
+  await mx.close();
+};

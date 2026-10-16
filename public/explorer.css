@@ -1,0 +1,275 @@
+/* MxScout — the App Explorer (public/explorer.js).
+ *
+   The redesign's main screen, spec 01: a header, then three columns — the
+   modules, one module's documents, the inspector. At 1440 the documents and
+   the inspector are the same width (Karol's call, kept); at 2000px and wider
+   a fourth column holds the flow beside the inspector's details. Every value
+   here is the spec's, every colour a token. Its own file, like the screen. */
+.xe { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; font-size: 13px; line-height: 1.45; color: var(--ink); }
+.xe .mono { font-family: var(--font-mono); color: var(--ink2); }
+.xe button { font: inherit; cursor: pointer; }
+.xe-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.xe-i { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.xe-i.filled { fill: currentColor; stroke: none; }
+.xe-caps { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+.xe-caps-n { font-family: var(--font-mono); letter-spacing: 0; }
+.xe-caps.second { margin-top: 10px; }
+.xe-empty { font-size: 13px; color: var(--muted); margin: 6px 10px; }
+.xe-empty.indent { padding-left: 24px; }
+.xe-empty.pad { margin: 20px; }
+.xe ::placeholder { color: var(--muted); }
+.xe-mod-list, .xe-tree, .xi-body, .xi-details, .xi-flow-body { scrollbar-width: thin; scrollbar-color: var(--line2) transparent; }
+
+/* header */
+.xe-head {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap; flex: none;
+  padding: 12px 14px 12px 20px; border-bottom: 1px solid var(--line); min-height: 60px; box-sizing: border-box;
+}
+.xe-title { display: flex; align-items: baseline; gap: 14px; min-width: 0; flex: 1 1 320px; }
+.xe-title h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.015em; white-space: nowrap; margin: 0; }
+.xe-sub { font-size: 12.5px; color: var(--muted); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* Narrower, the line under the title wraps instead of losing its end. */
+@media (max-width: 1279px) { .xe-sub { white-space: normal; } }
+.xe-search {
+  display: flex; align-items: center; gap: 8px; flex: 0 1 400px; min-width: 200px; height: 34px;
+  padding: 0 6px 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--raised); color: var(--muted); box-sizing: border-box;
+}
+.xe .xe-search-input, .xe .xe-filter-input {
+  flex: 1 1 auto; min-width: 0; height: auto; border: 0; border-radius: 0; box-shadow: none; background: transparent;
+  color: var(--ink); font: 13px var(--font-ui); padding: 0; margin: 0; outline: none;
+}
+.xe-search kbd {
+  font: 11px/18px var(--font-mono); padding: 0 6px; border: 1px solid var(--line2); border-bottom-width: 2px;
+  border-radius: 5px; color: var(--muted); background: var(--panel); white-space: nowrap;
+}
+.xe-head-right { display: flex; align-items: center; gap: 8px; flex: none; }
+.xe-head .role-inline { position: relative; gap: 8px; }
+.xe-head .role-select-label { font-size: 12.5px; color: var(--muted); }
+.xe-head .role-select {
+  appearance: none; -webkit-appearance: none; height: 34px; padding: 0 32px 0 11px; border: 1px solid var(--line);
+  border-radius: 9px; background: var(--raised); color: var(--ink); font: 500 13px var(--font-ui);
+  /* Wide enough for a usual role name, never so wide it pushes the header apart; a longer name is cut
+     with an ellipsis and read in full in the select's title and its list. */
+  min-width: 150px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The select's arrow: drawn by CSS, so it takes the token's colour. */
+.xe-head .role-inline::after {
+  content: ''; position: absolute; right: 13px; top: 50%; width: 6px; height: 6px; margin-top: -5px;
+  border-right: 1.6px solid var(--muted); border-bottom: 1.6px solid var(--muted); transform: rotate(45deg); pointer-events: none;
+}
+.xe-more { position: relative; }
+.xe-icon-btn {
+  width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 9px;
+  background: transparent; color: var(--ink2);
+}
+.xe-icon-btn.small { width: 28px; height: 28px; border: 0; border-radius: 7px; color: var(--muted); margin-left: auto; flex: none; }
+.xe-icon-btn:hover { color: var(--ink); background: var(--raised); }
+.xe-menu {
+  position: absolute; z-index: 40; right: 0; top: calc(100% + 6px); min-width: 200px; padding: 6px;
+  display: flex; flex-direction: column; gap: 1px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: var(--box-shadow);
+}
+.xe-menu button { border: 0; background: none; text-align: left; padding: 7px 10px; border-radius: 7px; color: var(--ink); font-size: 13px; }
+.xe-menu button:hover { background: var(--raised); }
+.xe-menu button.danger { color: var(--p1); }
+
+/* the three columns */
+.xe-grid { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 264px minmax(0, 1fr) minmax(0, 1fr); }
+.xe-grid > section { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+
+/* segmented controls, shared by the module scope and the document type */
+.xe-segs { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--raised); border: 1px solid var(--line); }
+.xe-segs.wrap { flex-wrap: wrap; align-self: flex-start; max-width: 100%; }
+.xe-seg {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 500; white-space: nowrap;
+}
+.xe-segs.wrap .xe-seg { padding: 0 10px; }
+.xe-seg.on { background: var(--seg-on); box-shadow: var(--seg-shadow); color: var(--ink); font-weight: 600; }
+.xe-seg-n { font: 400 11px var(--font-mono); color: var(--muted); }
+
+/* column 1: modules */
+.xe-modules { border-right: 1px solid var(--line); }
+.xe-modules-top { display: flex; flex-direction: column; gap: 10px; padding: 12px 12px 10px; }
+.xe-filter {
+  display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--raised); color: var(--muted); box-sizing: border-box;
+}
+.xe-modules-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.xe-sort {
+  display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 8px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--ink2); font-size: 12.5px; font-weight: 500;
+}
+.xe-mod-cols { display: none; }
+.xe-mod-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 8px 12px; display: flex; flex-direction: column; gap: 1px; }
+.xe-mod {
+  display: grid; grid-template-columns: minmax(0, 1fr) 34px; column-gap: 10px; align-items: center;
+  width: 100%; height: 30px; flex: none; padding: 0 10px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--ink2); font-size: 13px; text-align: left;
+}
+.xe-mod:hover { background: color-mix(in srgb, var(--raised) 70%, transparent); }
+.xe-mod.on { background: var(--acc-soft); color: var(--acc-text); }
+.xe-mod.on .xe-mod-name { font-weight: 600; }
+.xe-mod-name { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.xe-p1dot { width: 6px; height: 6px; border-radius: 50%; background: var(--p1); flex: none; }
+.xe-count { font: 11.5px var(--font-mono); color: var(--muted); }
+.xe-mod .xe-count { text-align: right; }
+.xe-mod.on .xe-count { color: var(--acc-text); }
+.xe-mod-risk { display: none; font: 11.5px var(--font-mono); color: var(--muted); text-align: right; }
+.xe-mod-risk.p1 { color: var(--p1); }
+
+/* column 2: one module's documents */
+.xe-docs-head { padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 12px; border-bottom: 1px solid var(--line); }
+.xe-docs-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.xe-mod-tile { width: 34px; height: 34px; border-radius: 9px; background: var(--acc-soft); color: var(--acc-text); display: grid; place-items: center; flex: none; }
+.xe-docs-name { min-width: 0; }
+.xe-docs-name h2 { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; margin: 0; overflow-wrap: anywhere; }
+.xe-meta { font-size: 12px; color: var(--muted); margin: 0; }
+.xe-btn {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px;
+  border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink2);
+  font-size: 12.5px; font-weight: 500; white-space: nowrap; flex: none;
+}
+.xe-btn:hover { color: var(--ink); background: var(--raised); }
+.xe-mod-desc { display: none; font-size: 13px; line-height: 1.6; color: var(--ink2); max-width: 84ch; text-wrap: pretty; margin: 0; }
+.xe-tree { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px 8px 16px; display: flex; flex-direction: column; gap: 1px; }
+.xe-folder {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; flex: none; padding: 0 10px;
+  border: 0; border-radius: 7px; background: transparent; color: var(--ink); font-size: 13px; text-align: left;
+}
+.xe-folder:hover, .xe-doc:hover { background: color-mix(in srgb, var(--raised) 70%, transparent); }
+.xe-folder-name { font-weight: 600; }
+.xe-folder .xe-count { margin-left: auto; }
+.xe-folder-icon { color: var(--muted); }
+.xe-chev { color: var(--muted); stroke-width: 1.7; transition: transform 0.12s ease; }
+.xe-chev.open { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .xe-chev { transition: none; } }
+.xe-doc {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 14px; align-items: center;
+  width: 100%; min-height: 30px; flex: none; padding: 0 10px 0 34px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--ink2); font-size: 13px; text-align: left;
+}
+.xe-doc.on { background: var(--acc-soft); }
+.xe-doc-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.xe-doc-icon { color: var(--muted); }
+.xe-doc-name { color: var(--ink); }
+.xe-doc.on .xe-doc-icon, .xe-doc.on .xe-doc-name { color: var(--acc-text); }
+.xe-doc.on .xe-doc-name { font-weight: 600; }
+.xe-tag { flex: none; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line2); font-size: 11px; line-height: 16px; color: var(--muted); }
+.xe-doc-risks { display: flex; justify-content: flex-end; gap: 4px; }
+.xb { font: 600 10.5px/17px var(--font-mono); padding: 0 5px; border-radius: 4px; }
+.xb-p1 { color: var(--p1); background: var(--p1bg); }
+.xb-p2 { color: var(--p2); background: var(--p2bg); }
+.xb-p3 { color: var(--p3); background: var(--p3bg); }
+
+/* column 3: the inspector */
+.xi-none { align-items: center; justify-content: center; text-align: center; border-left: 1px solid var(--line); padding: 24px; }
+section.xi { border-left: 1px solid var(--line); }
+.xi-head { padding: 14px 20px 16px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; flex: none; }
+.xi-crumb { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); min-width: 0; }
+.xi-name { font-size: 20px; font-weight: 600; letter-spacing: -0.015em; line-height: 1.25; margin: 0; overflow-wrap: anywhere; }
+.xi-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.xi-primary {
+  display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 13px; border: 0; border-radius: 8px;
+  background: var(--acc); color: var(--acc-on); font-size: 13px; font-weight: 600;
+}
+.xi-primary .xe-i { stroke-width: 1.7; }
+.xi-secondary {
+  display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--raised); color: var(--ink); font-size: 13px; font-weight: 500;
+}
+.xi-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.xi-details { padding: 18px 20px 4px; display: flex; flex-direction: column; gap: 24px; }
+.xi-sec { display: flex; flex-direction: column; gap: 8px; }
+.xi-desc { font-size: 13.5px; line-height: 1.6; color: var(--ink2); margin: 0; text-wrap: pretty; }
+.xi-prov { font-size: 11.5px; color: var(--muted); margin: 0; }
+.xi-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.xi-stat { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-right: 1px solid var(--line); min-width: 0; }
+.xi-stat:last-child { border-right: 0; }
+.xi-stat-v { font: 500 18px/1.2 var(--font-mono); color: var(--ink); }
+.xi-stat-v.lv-p1 { color: var(--p1); }
+.xi-stat-v.lv-p2 { color: var(--p2); }
+.xi-stat-v.lv-p3 { color: var(--p3); }
+.xi-stat-l { font-size: 11.5px; color: var(--muted); }
+.xi-sig { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 14px; row-gap: 7px; font: 12.5px var(--font-mono); align-items: baseline; }
+.xi-sig-name { color: var(--ink); }
+.xi-sig-type { color: var(--muted); overflow-wrap: anywhere; }
+.xi-sig-ret { font: 12.5px var(--font-ui); color: var(--muted); padding-top: 6px; border-top: 1px solid var(--line); }
+.xi-sig-ret-v { color: var(--ink); padding-top: 6px; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.xi-muted { color: var(--muted); }
+.xi-muted.small { font-family: var(--font-ui); font-size: 11.5px; white-space: nowrap; }
+.xi-note { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; line-height: 1.5; color: var(--ink2); margin: 0; }
+.xi-note .xe-i { color: var(--muted); margin-top: 1px; }
+.xi-link {
+  display: flex; align-items: center; gap: 9px; min-height: 30px; padding: 0 8px; margin: 0 -8px; border: 0;
+  border-radius: 7px; background: transparent; color: var(--ink); text-align: left; min-width: 0; width: calc(100% + 16px);
+}
+.xi-link:hover { background: var(--raised); }
+.xi-link.static { cursor: default; }
+.xi-link.static:hover { background: transparent; }
+.xi-link .xe-i { color: var(--muted); }
+.xi-link .xe-i.call { color: var(--f-call); }
+.xi-qn { font: 12.5px var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.xi-qn-mod { color: var(--muted); }
+.xi-link-extra { margin-left: auto; font-size: 11.5px; color: var(--muted); white-space: nowrap; flex: none; }
+.xi-data { display: grid; grid-template-columns: 58px minmax(0, 1fr); column-gap: 10px; row-gap: 8px; align-items: center; font-size: 12.5px; }
+.xi-data-label { color: var(--muted); }
+.xi-data-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.xi-chip-wrap { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.xi-chip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border-radius: 6px; font: 12px var(--font-mono); color: var(--ink); white-space: nowrap; }
+.xi-chip-sq { width: 6px; height: 6px; border-radius: 2px; flex: none; }
+.xi-chip.reads { background: var(--f-db-bg); }
+.xi-chip.reads .xi-chip-sq { background: var(--f-db); }
+.xi-chip.writes { background: var(--f-obj-bg); }
+.xi-chip.writes .xi-chip-sq { background: var(--f-obj); }
+.xi-risk { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--raised); }
+.xi-risk-head { display: flex; align-items: flex-start; gap: 9px; }
+.xi-risk-badge { padding: 0 6px; margin-top: 1px; flex: none; }
+.xi-risk-title { font-size: 13px; font-weight: 600; line-height: 1.4; color: var(--ink); }
+.xi-risk-text { font-size: 12.5px; line-height: 1.55; color: var(--ink2); margin: 0; text-wrap: pretty; }
+.xi-risk-by { font-size: 11.5px; color: var(--muted); margin: 0; }
+.xi-risk-fix { font-size: 12.5px; line-height: 1.55; color: var(--muted); margin: 0; }
+.xi-risk-fix b { font-weight: 600; color: var(--ink2); }
+.xi-rule { display: flex; flex-direction: column; gap: 3px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
+.xi-rule:first-of-type { border-top: 0; padding-top: 0; }
+.xi-xpath { font: 11.5px var(--font-mono); color: var(--ink2); overflow-wrap: anywhere; }
+
+/* the flow: a card under the details at 1440, a column of its own when wide */
+.xi-flow { margin: 20px 20px 28px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.xi-flow-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; min-height: 52px;
+  box-sizing: border-box; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.xi-flow-head h3 { font-size: 15px; font-weight: 600; margin: 0; }
+.xi-flow-sub { font-size: 12px; color: var(--muted); }
+.xi-open-in { display: none; }
+.xi-flow-body {
+  background-color: var(--sunken);
+  background-image: radial-gradient(var(--dot) 1px, transparent 1.3px);
+  background-size: 18px 18px;
+  padding: 22px 14px 26px;
+}
+
+@media (min-width: 2000px) {
+  .xe-grid { grid-template-columns: 300px minmax(0, 1fr) minmax(0, 1fr) 640px; }
+  .xe-grid > section.xi { grid-column: span 2; }
+  .xe-mod-cols {
+    display: grid; grid-template-columns: minmax(0, 1fr) 40px 30px; column-gap: 10px; padding: 0 20px 6px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+  }
+  .xe-mod-cols span:nth-child(2), .xe-mod-cols span:nth-child(3) { text-align: right; }
+  .xe-mod { grid-template-columns: minmax(0, 1fr) 40px 30px; }
+  .xe-mod-risk { display: block; }
+  .xe-mod-desc { display: block; }
+  .xi.has-flow .xi-body { display: grid; grid-template-columns: minmax(0, 1fr) 640px; overflow: hidden; }
+  .xi.has-flow .xi-details { padding: 18px 20px 28px; overflow-y: auto; }
+  .xi.has-flow .xi-flow { margin: 0; border: 0; border-left: 1px solid var(--line); border-radius: 0; display: flex; flex-direction: column; min-height: 0; }
+  .xi.has-flow .xi-flow-head { padding: 14px 20px; min-height: 60px; }
+  .xi.has-flow .xi-open-in { display: inline-flex; }
+  .xi.has-flow .xi-flow-body { flex: 1 1 auto; overflow-y: auto; padding: 28px 28px 40px; }
+}
+
+/* A flow's icon in Mendix's own colours (Karol, 2026-10-13): a microflow
+   blue, a nanoflow green — wherever one is named, in any list or link. */
+svg.xe-i.ic-microflow { color: var(--f-db); }
+svg.xe-i.ic-nanoflow { color: var(--ok); }

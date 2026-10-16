@@ -1,0 +1,41 @@
+# The test suite on GitHub's machines: Windows, Linux and macOS, Node 22.
+#
+# What it runs is what anyone runs by hand — `npm test` (with its stand-in Mendix app, test/fake-app.js)
+# and the mendix-assist skill's self-test — with nothing installed first: there are no dependencies to
+# install, and the browser the suite drives is the Google Chrome each of these runners already has
+# (test/cdp.js finds it, as it does on any machine).
+# Two actions, both GitHub's own — checkout and setup-node — and nothing else; no secrets; it may read
+# the repository and nothing more. It runs on GitHub, never on the machine MxScout runs on, and is not
+# part of the app.
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: npm test on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      # Windows runners check out with core.autocrlf=true, as the audit's machine did: .gitattributes
+      # is what keeps the files the suite compares byte for byte in LF there.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: The mendix-assist skill's self-test
+        run: node skills/mendix-assist/selftest.js
+      - name: The suite, in the browser already on the runner
+        run: npm test

@@ -1,0 +1,266 @@
+'use strict';
+
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const { URL } = require('url');
+
+const pkg = require('../package.json');
+const { sendJson, sendError } = require('./http-util');
+const sessionRoutes = require('./routes/session');
+const agentRoutes = require('./routes/agent');
+const skillRoutes = require('./routes/skills');
+
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+const HOST = '127.0.0.1'; // never bind wider than loopback — same rule as MxSonar
+const PORT = Number(process.env.MXSCOUT_PORT) || 4289;
+
+// MxScout has no database and no filesystem browsing — the model lives in the
+// browser's own storage, and reaches this server only as the AI pack the person
+// chose to share with an agent (routes/agent.js), in memory. It makes exactly ONE kind of outbound connection: to
+// a Mendix Runtime admin port on this same machine, over loopback, asking two
+// read-only actions and nothing else — once when a performance recording is
+// connected, to check its password against that port, and then on a loop
+// while that recording runs. That is the whole of it, it is enforced in code
+// rather than by convention, and server/admin-port.js is the only file that
+// can open a socket — see its header for why it exists and what bounds it.
+//
+// The other piece of server state is the current live session (see state.js):
+// the browser mints a token, the snippet pasted into the TARGET app answers
+// requests cross-origin, and the browser collects the answers.
+//
+// The Origin gate below is why that is safe. Binding to loopback stops the
+// rest of the network, but NOT another browser tab on the same machine — any
+// site the user has open can still send requests here. So every route is
+// same-origin only UNLESS it carries crossOrigin:true, and the only routes
+// that do are the ones the bridge itself must reach — each gated by the
+// session token instead (see routes/session.js). A new route must never be
+// added to the crossOrigin list as a shortcut around same-origin.
+const ALLOWED_ORIGINS = new Set([`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`]);
+function originAllowed(req) {
+  const origin = req.headers.origin;
+  return !origin || ALLOWED_ORIGINS.has(origin);
+}
+
+const MIME_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.txt': 'text/plain; charset=utf-8'
+};
+
+// The team guide (public/guide-team.html, made from public/guide-team.md by tools/build-guide.js) is a
+// document, not part of the app: one self-contained page, meant to be opened from a file or a repository
+// too, so its stylesheet, its one script (the language switch) and its two fonts are inside it. It is served
+// with a policy of its own, narrower than the app's: it may load nothing from anywhere, this server
+// included, and run exactly that one script — named by its SHA-256, which the suite checks against the page
+// (test/94-guide-html.test.js) — with its inline style and its data: fonts. Nothing else.
+const GUIDE_FILE = path.join(PUBLIC_DIR, 'guide-team.html');
+const GUIDE_CSP = "default-src 'none'; script-src 'sha256-o0TraBLIp0amjHcUnqJsRDi7ltaEl0myP7SM3nWDObQ='; " +
+  "style-src 'unsafe-inline'; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
+function serveStatic(req, res, pathname) {
+  const relPath = pathname === '/' ? '/index.html' : pathname;
+  const safePath = path.normalize(relPath).replace(/^(\.\.[/\\])+/, '');
+  const filePath = path.join(PUBLIC_DIR, safePath);
+
+  // Guard against path traversal escaping PUBLIC_DIR entirely.
+  if (!filePath.startsWith(PUBLIC_DIR)) {
+    res.writeHead(403);
+    res.end('Forbidden');
+    return;
+  }
+
+  fs.readFile(filePath, (err, data) => {
+    if (err) {
+      // This was two words of plain text, which is the one screen somebody
+      // reaches by mistyping an address — in a tool whose whole argument is
+      // "read me". It is held to the same bar as the rest now: MxScout's own
+      // stylesheet, a sentence saying what happened, and the way back.
+      //
+      // It deliberately does NOT echo the path that was asked for. Reflecting
+      // a request back into an error page is how error pages become an XSS,
+      // and a 404 has nothing to gain by repeating what the reader just typed.
+      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end('<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+        '<title>Not found · MxScout</title><link rel="stylesheet" href="/styles.css">' +
+        '<style>body{display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}' +
+        '.nf{max-width:34rem;padding:2rem;text-align:center}.nf h1{margin:0 0 .5rem;font-size:20px}' +
+        '.nf p{margin:0 0 1.5rem}.nf .btn{text-decoration:none}</style></head><body><div class="nf">' +
+        '<h1>There is nothing at that address</h1>' +
+        '<p class="muted">MxScout serves a single page and its own API. A link or a typed address ' +
+        'brought you somewhere it does not have.</p>' +
+        '<a class="btn btn-primary" href="/">Back to MxScout</a>' +
+        '</div></body></html>');
+      return;
+    }
+    const ext = path.extname(filePath).toLowerCase();
+    // no-cache: a browser asks again every time instead of keeping last week's
+    // copy of a script, which after an update drew a screen from old code.
+    const headers = { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream', 'Cache-Control': 'no-cache' };
+    if (filePath === GUIDE_FILE) {
+      headers['Content-Security-Policy'] = GUIDE_CSP;
+      // With LF, whatever the checkout did to the file: the hash above is of the script as it is made, with
+      // LF, and a clone that turned it into CRLF would otherwise have its one script refused.
+      data = Buffer.from(data.toString('utf8').replace(/\r\n?/g, '\n'), 'utf8');
+    }
+    res.writeHead(200, headers);
+    res.end(data);
+  });
+}
+
+// The changelog ships INSIDE the application, which is the whole point: the
+// copy you are running is the copy that tells you what is in it. MxScout never
+// asks anyone whether a newer version exists — see the About page — so this
+// file is the only thing it has to say on the subject, and it must therefore
+// come from disk rather than from a constant that could go stale.
+//
+// One fixed path, read fresh on each request so `git pull` is reflected
+// without a restart, and bounded so a mistake in the repository cannot turn
+// into an unbounded response.
+const CHANGELOG_PATH = path.join(__dirname, '..', 'CHANGELOG.md');
+const CHANGELOG_MAX_BYTES = 256 * 1024;
+
+const routes = [
+  // The Claude skills that ship with this copy, read-only, for the tab to write into a Mendix project's
+  // .claude/skills/ — a fixed allowlist of files in skills/ (routes/skills.js). Same-origin like the rest.
+  { method: 'GET', pattern: /^\/api\/skills$/, handler: skillRoutes.handleSkills },
+  {
+    method: 'GET', pattern: /^\/api\/health$/,
+    handler: (req, res) => sendJson(res, 200, { ok: true, name: pkg.name, version: pkg.version })
+  },
+  {
+    method: 'GET', pattern: /^\/api\/changelog$/,
+    handler: (req, res) => new Promise((resolve) => {
+      fs.readFile(CHANGELOG_PATH, 'utf8', (err, text) => {
+        if (err) { sendJson(res, 200, { version: pkg.version, text: null }); resolve(); return; }
+        sendJson(res, 200, { version: pkg.version, text: text.slice(0, CHANGELOG_MAX_BYTES) });
+        resolve();
+      });
+    })
+  },
+  // The live session. Minting the token is same-origin only (the MxScout UI
+  // itself).
+  { method: 'POST', pattern: /^\/api\/session\/start$/, handler: sessionRoutes.handleStartSession },
+  // Arming / cancelling / checking is same-origin only (the MxScout UI). Only
+  // the bridge's poll and result are cross-origin — the bridge runs on the
+  // TARGET app's tab — and both are token-gated.
+  { method: 'POST', pattern: /^\/api\/session\/exec$/, handler: sessionRoutes.handleSetCommand },
+  { method: 'DELETE', pattern: /^\/api\/session\/exec$/, handler: sessionRoutes.handleClearCommand },
+  { method: 'GET', pattern: /^\/api\/session\/exec$/, handler: sessionRoutes.handleGetCommandStatus },
+  { method: 'OPTIONS', pattern: /^\/api\/session\/exec\/poll$/, handler: sessionRoutes.handlePreflight, crossOrigin: true },
+  { method: 'GET', pattern: /^\/api\/session\/exec\/poll$/, handler: sessionRoutes.handleCommandPoll, crossOrigin: true },
+  { method: 'OPTIONS', pattern: /^\/api\/session\/exec\/result$/, handler: sessionRoutes.handlePreflight, crossOrigin: true },
+  { method: 'POST', pattern: /^\/api\/session\/exec\/result$/, handler: sessionRoutes.handleReportCommandResult, crossOrigin: true },
+  // The bridge's reachability probe. Cross-origin and token-gated: a failure
+  // here is what tells the pasted snippet the app's CSP blocks us, so it can
+  // fall back to rendering its panel inside the app page.
+  { method: 'OPTIONS', pattern: /^\/api\/session\/ping$/, handler: sessionRoutes.handlePreflight, crossOrigin: true },
+  { method: 'GET', pattern: /^\/api\/session\/ping$/, handler: sessionRoutes.handleBridgePing, crossOrigin: true },
+  // One page of rows read out of the live app. The POST comes from the bridge
+  // (cross-origin, token-gated); the GET is the MxScout UI collecting the
+  // answer to the query it armed, same-origin like every other UI route.
+  { method: 'OPTIONS', pattern: /^\/api\/session\/data$/, handler: sessionRoutes.handlePreflight, crossOrigin: true },
+  { method: 'POST', pattern: /^\/api\/session\/data$/, handler: sessionRoutes.handleReportQueryResult, crossOrigin: true },
+  { method: 'GET', pattern: /^\/api\/session\/data$/, handler: sessionRoutes.handleGetQueryResult },
+  // The performance recorder (see routes/session.js and admin-port.js). The
+  // recorder has no bridge tab of its own — the server reads the admin port
+  // itself — so these are same-origin, with one exception below: the record
+  // button on the APP tab's badge, which necessarily calls from the app's
+  // origin and is token-gated like the rest of that bridge. `connect` is the
+  // one route in MxScout that receives a password, and the one that triggers
+  // this server's only outbound connection.
+  { method: 'POST', pattern: /^\/api\/session\/perf\/probe$/, handler: sessionRoutes.handlePerfProbe },
+  { method: 'POST', pattern: /^\/api\/session\/perf\/connect$/, handler: sessionRoutes.handlePerfConnect },
+  { method: 'POST', pattern: /^\/api\/session\/perf\/disconnect$/, handler: sessionRoutes.handlePerfDisconnect },
+  { method: 'GET', pattern: /^\/api\/session\/perf\/status$/, handler: sessionRoutes.handlePerfStatus },
+  { method: 'POST', pattern: /^\/api\/session\/perf\/start$/, handler: sessionRoutes.handlePerfStart },
+  { method: 'POST', pattern: /^\/api\/session\/perf\/stop$/, handler: sessionRoutes.handlePerfStop },
+  // The app tab's own record button: reads what the recorder is doing, and
+  // asks it to start or stop. Cross-origin and token-gated — the badge runs
+  // on the app's origin, same as the exec bridge beside it.
+  { method: 'OPTIONS', pattern: /^\/api\/session\/perf\/poll$/, handler: sessionRoutes.handlePreflight, crossOrigin: true },
+  { method: 'GET', pattern: /^\/api\/session\/perf\/poll$/, handler: sessionRoutes.handlePerfPoll, crossOrigin: true },
+  { method: 'OPTIONS', pattern: /^\/api\/session\/perf\/request$/, handler: sessionRoutes.handlePreflight, crossOrigin: true },
+  { method: 'POST', pattern: /^\/api\/session\/perf\/request$/, handler: sessionRoutes.handlePerfRequest, crossOrigin: true },
+  // The agent channel: an AI pack the person chose to share — and, beside it,
+  // the documentation as Markdown when the project has descriptions — held in
+  // memory and read by an agent on this machine with a token — see routes/agent.js.
+  // Same-origin like everything else; none of it is crossOrigin.
+  { method: 'POST', pattern: /^\/api\/agent\/share$/, handler: agentRoutes.handleShare },
+  { method: 'DELETE', pattern: /^\/api\/agent\/share$/, handler: agentRoutes.handleStopShare },
+  { method: 'GET', pattern: /^\/api\/agent\/status$/, handler: agentRoutes.handleStatus },
+  { method: 'GET', pattern: /^\/api\/agent\/module$/, handler: agentRoutes.handleModule },
+  { method: 'GET', pattern: /^\/api\/agent\/pack$/, handler: agentRoutes.handlePack },
+  { method: 'GET', pattern: /^\/api\/agent\/docs$/, handler: agentRoutes.handleDocs },
+  { method: 'POST', pattern: /^\/api\/agent\/descriptions$/, handler: agentRoutes.handleDescriptionsIn },
+  { method: 'GET', pattern: /^\/api\/agent\/inbox$/, handler: agentRoutes.handleInboxGet },
+  { method: 'DELETE', pattern: /^\/api\/agent\/inbox$/, handler: agentRoutes.handleInboxClear }
+];
+
+const server = http.createServer((req, res) => {
+  try {
+    const url = new URL(req.url, `http://${HOST}`);
+
+    res.setHeader('Content-Security-Policy',
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+      "img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+
+    const route = routes.find((r) => r.method === req.method && r.pattern.test(url.pathname));
+
+    if (route && !route.crossOrigin && !originAllowed(req)) {
+      console.log('✗ blocked cross-origin request from', req.headers.origin, '—', req.method, url.pathname);
+      sendJson(res, 403, { error: 'Cross-origin requests are not allowed on this endpoint.' });
+      return;
+    }
+
+    if (route) {
+      req.query = url.searchParams;
+      Promise.resolve(route.handler(req, res)).catch((err) => {
+        // sendError honours err.statusCode, so a 415 (wrong Content-Type) or
+        // 413 (body too large) from readJsonBody surfaces correctly instead of
+        // being flattened to a 500.
+        if (err && err.statusCode && err.statusCode !== 500) console.log('✗', req.method, url.pathname, '→', err.statusCode, err.message);
+        else console.error('✗ handler error for', req.method, url.pathname, err);
+        sendError(res, err);
+      });
+      return;
+    }
+
+    if (url.pathname.startsWith('/api/')) {
+      sendJson(res, 404, { error: 'Not found' });
+      return;
+    }
+
+    if (req.method === 'GET') {
+      serveStatic(req, res, url.pathname);
+      return;
+    }
+
+    sendJson(res, 404, { error: 'Not found' });
+  } catch (err) {
+    console.error('✗ FATAL — request handler crashed synchronously:', err);
+    try { sendJson(res, 500, { error: 'Internal error' }); } catch (e2) { /* response already gone */ }
+  }
+});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`✗ Port ${PORT} is already in use — another copy of MxScout is probably still running.`);
+  } else {
+    console.error('✗ Server failed to start:', err);
+  }
+  process.exit(1);
+});
+
+server.listen(PORT, HOST, () => {
+  console.log(`MxScout running at http://${HOST}:${PORT}`);
+});

@@ -1,0 +1,380 @@
+/* MxMpr.buildModel — turning a decoded .mpr Unit table into MxScout's
+ * canonical model shape. Exercised against two small, committed synthetic
+ * fixtures (see test/fixtures/README.md and the generator next to them)
+ * encoding the SAME tiny fake app — one module ("Sales"), two entities
+ * ("Customer"/"Order") linked by an association, a view entity ("OpenOrders")
+ * whose OQL lives in its own source document, validation rules, an access rule (including
+ * the marker-prefixed array shape that once silently emptied a one-role
+ * AllowedModuleRoles list), a microflow nested two levels deep under a
+ * Folder (exercising resolveOwningModule's walk-up) — once in v1 shape
+ * (Contents inline in the Unit table) and once in v2 shape (Contents in
+ * separate mprcontents-style files, read here through an in-memory map
+ * instead of real files — the real-file path is exercised end-to-end by
+ * test/13-mpr-import-ui.test.js).
+ *
+ * Both must produce the identical model, with ONE deliberate exception:
+ * their _MetaData tables have the two different column shapes a Mendix 9 and
+ * a Mendix 11 project really have, so the reader's tolerance for both is
+ * tested rather than assumed. */
+'use strict';
+const { readText } = require('./helpers');
+const fs = require('fs');
+const path = require('path');
+
+module.exports = async function (t) {
+  const v1b64 = fs.readFileSync(path.join(__dirname, 'fixtures', 'mpr-v1.db')).toString('base64');
+  const v2b64 = fs.readFileSync(path.join(__dirname, 'fixtures', 'mpr-v2.db')).toString('base64');
+  const sidecar = JSON.parse(readText(path.join(__dirname, 'fixtures', 'mpr-v2-contents.json')));
+
+  const mx = await t.tab(t.MX);
+  await mx.waitFor('!!window.MxStore', 15000, 'app loaded');
+
+  async function loadScript(src) {
+    await mx.evaluate(`new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = '${src}';
+      s.onload = function () { resolve(true); };
+      s.onerror = function () { reject(new Error('failed to load ${src}')); };
+      document.head.appendChild(s);
+    })`);
+  }
+  await loadScript('/sqlite.js');
+  await loadScript('/bson.js');
+  await loadScript('/mpr.js');
+  t.ok(await mx.evaluate('!!window.MxMpr && !!window.MxMpr.buildModel'), 'MxMpr loaded onto the page');
+
+  // ---- v1: Contents inline, no readContentsFile needed at all ----
+  const v1 = await mx.evaluate(`(async function () {
+    var bytes = Uint8Array.from(atob("${v1b64}"), function (c) { return c.charCodeAt(0); }).buffer;
+    var model = await window.MxMpr.buildModel({ mprBytes: bytes, appName: 'Sales', readContentsFile: function () { throw new Error('v1 must not read content files'); } });
+    delete model.meta.generatedAt;
+    return model;
+  })()`);
+
+  // ---- v2: no Contents column, bytes come from a relativePath -> bytes map ----
+  const v2 = await mx.evaluate(`(async function () {
+    var sidecar = ${JSON.stringify(sidecar)};
+    function b64ToBuffer(b64) {
+      var bin = atob(b64);
+      var u8 = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      return u8.buffer;
+    }
+    var bytes = Uint8Array.from(atob("${v2b64}"), function (c) { return c.charCodeAt(0); }).buffer;
+    var seen = [];
+    var model = await window.MxMpr.buildModel({
+      mprBytes: bytes,
+      appName: 'Sales',
+      readContentsFile: function (relPath) {
+        seen.push(relPath);
+        return Promise.resolve(Object.prototype.hasOwnProperty.call(sidecar, relPath) ? b64ToBuffer(sidecar[relPath]) : null);
+      }
+    });
+    delete model.meta.generatedAt;
+    return { model: model, filesRead: seen.length };
+  })()`);
+
+  // All of them, nineteen now that a snippet is read for what its widgets
+  // show. It used to be fourteen of fifteen, with the Folder units
+  // skipped because nothing the walk needed was inside one — until the folder
+  // names BECAME something it needs: they are the project tree. A folder unit
+  // holds one field, its Name, so this is three more BSON documents of a few
+  // dozen bytes; on a real project it is 435 more out of 3,879.
+  t.ok(v2.filesRead === 19, 'v2 opens only the units the walk actually needs: ' + v2.filesRead);
+
+  // ---- the two formats are the same app, and say so in the same words ----
+  // Everything except meta must come out byte-identical from both shapes.
+  // Meta is the ONE deliberate difference: the v1 fixture carries the
+  // three-column _MetaData a Mendix 9 project has, the v2 fixture the
+  // four-column one an 11.12 project has, so both shapes get exercised.
+  function withoutMeta(m) {
+    var copy = JSON.parse(JSON.stringify(m));
+    delete copy.meta;
+    return copy;
+  }
+  t.ok(JSON.stringify(withoutMeta(v1)) === JSON.stringify(withoutMeta(v2.model)),
+    'v1 (Contents inline) and v2 (Contents in per-unit files) build the identical model');
+
+  // ---- project metadata off the _MetaData table ----
+  t.ok(v1.meta.mendixVersion === '9.24.33.59499',
+    'the Mendix 9 shape of _MetaData — three columns, no _FormatVersion — is read: ' + v1.meta.mendixVersion);
+  t.ok(v2.model.meta.mendixVersion === '11.12.0',
+    'and so is the four-column Mendix 11 shape: ' + v2.model.meta.mendixVersion);
+  t.ok(v1.meta.mprFormat === 1 && v2.model.meta.mprFormat === 2,
+    'the on-disk format is decided by the Unit table’s own columns, not by that version number: ' +
+    v1.meta.mprFormat + ' / ' + v2.model.meta.mprFormat);
+  t.ok(/^\{SHA256\}/.test(v1.meta.schemaHash) && /^\{SHA256\}/.test(v2.model.meta.schemaHash),
+    'the schema hash comes through as written, prefix and all');
+  t.ok(v1.meta.appName === 'Sales' && v2.model.meta.appName === 'Sales',
+    'the app name is the .mpr’s own file name — nothing inside the file carries it');
+
+  const expected = {
+    modules: [{ name: 'Sales', fromAppStore: false }],
+    entities: [
+      {
+        module: 'Sales', name: 'Customer', qualifiedName: 'Sales.Customer',
+        tableName: null, generalization: null, persistable: true,
+        attributes: [
+          { name: 'Name', type: 'String', length: 200, defaultValue: null, enumerationQualifiedName: null },
+          { name: 'Age', type: 'Integer', length: null, defaultValue: null, enumerationQualifiedName: null },
+          { name: 'Status', type: 'Enumeration', length: null, defaultValue: null, enumerationQualifiedName: 'Sales.Status' }
+        ],
+        accessRules: [
+          {
+            moduleRole: 'Sales.User', defaultAccess: 'r', attrAccess: { Name: 'rw', Age: 'r', Status: 'r' }, assocAccess: {},
+            xpathConstraint: '[Age > 0]', xpathReferencedEntities: [], allowCreate: true, allowDelete: false
+          }
+        ],
+        // What refuses a save, for the AI pack: the range keeps only the
+        // bound its type uses, a rule with no message says so, and a kind the
+        // reader does not know is left out.
+        validations: [
+          { attribute: 'Name', kind: 'required', message: 'A customer needs a name' },
+          { attribute: 'Age', kind: 'range', message: 'Age cannot be negative', min: { value: '0' }, max: null },
+          { attribute: 'Name', kind: 'maxLength', message: null, max: 200 }
+        ]
+      },
+      // A view entity says so, and carries its query — read from its own
+      // source document, not from the entity (Mendix 11 keeps it only there).
+      {
+        module: 'Sales', name: 'OpenOrders', qualifiedName: 'Sales.OpenOrders',
+        tableName: null, generalization: null, persistable: true,
+        attributes: [{ name: 'Number', type: 'String', length: 50, defaultValue: null, enumerationQualifiedName: null }],
+        accessRules: [],
+        viewEntity: { sourceDocument: 'Sales.OpenOrders', oql: 'SELECT o.Number AS Number FROM Sales.Order AS o' }
+      },
+      {
+        module: 'Sales', name: 'Order', qualifiedName: 'Sales.Order',
+        tableName: null, generalization: null, persistable: true,
+        attributes: [{ name: 'Number', type: 'String', length: 50, defaultValue: null, enumerationQualifiedName: null }],
+        accessRules: [],
+        validations: [
+          { attribute: 'Number', kind: 'unique', message: 'That order number is taken' },
+          { attribute: 'Number', kind: 'regex', message: 'An order number is ORD- and six digits', regex: 'Sales.OrderNumberFormat' }
+        ]
+      }
+    ],
+    associations: [
+      { name: 'Order_Customer', module: 'Sales', owner: 'Sales.Order', ownerMultiplicity: null, other: 'Sales.Customer', otherMultiplicity: null, type: 'Reference' }
+    ]
+  };
+
+  // The domain model is the part of this shape everything else in MxScout
+  // renders, so it is pinned exactly rather than sampled.
+  const core = JSON.stringify({
+    modules: v1.modules, entities: v1.entities, associations: v1.associations
+  });
+  const expectedCore = JSON.stringify({
+    modules: expected.modules, entities: expected.entities, associations: expected.associations
+  });
+  t.ok(core === expectedCore,
+    'modules, entities and associations come out exactly as expected:\n  got:      ' + core + '\n  expected: ' + expectedCore);
+
+  const flow = v1.microflows.filter(function (f) { return f.qualifiedName === 'Sales.CreateOrder'; })[0];
+  t.ok(!!flow && flow.applyEntityAccess === true &&
+    JSON.stringify(flow.allowedModuleRoles) === JSON.stringify(['Sales.User']),
+    'a microflow two folders deep is found, attributed to its module, and carries its roles: ' + JSON.stringify(flow && flow.allowedModuleRoles));
+  t.ok(!!flow && JSON.stringify(flow.parameters) === JSON.stringify(
+    [{ name: 'Customer', type: 'Object', entityQualifiedName: 'Sales.Customer', enumerationQualifiedName: null, isList: false }]),
+    'and its object parameter resolves to the entity it points at: ' + JSON.stringify(flow && flow.parameters));
+  t.ok(v1.pages.length === 2 && JSON.stringify(v1.pages.map(function (p) { return p.qualifiedName; })) ===
+    JSON.stringify(['Sales.CreateOrder', 'Sales.Order_Overview']),
+    'pages are read the same way, including the one whose qualified name a microflow also has: ' +
+    JSON.stringify(v1.pages.map(function (p) { return p.qualifiedName; })));
+
+  // ---- the two references that sit one level below where they look ----
+  // Both were read from the wrong place until 2026-10-01, and both failed
+  // silently: the summary simply said less than the truth. An association
+  // retrieve names its association by QUALIFIED NAME (measured: 3109 of them
+  // across a Mendix 9 and two Mendix 11 projects, every one a string, never
+  // an id), and a nanoflow call keeps the nanoflow inside NanoflowCall rather
+  // than on the action.
+  t.ok(!!flow.activity && flow.activity.reads.indexOf('Sales.Order') !== -1,
+    'a retrieve over an association resolves to the entity at the far end: ' +
+    JSON.stringify(flow.activity && flow.activity.reads));
+  t.ok(!!flow.activity && flow.activity.calls.indexOf('Sales.RefreshOrders') !== -1,
+    'and a nanoflow call is counted as a call: ' + JSON.stringify(flow.activity && flow.activity.calls));
+
+  // ---- how much of an entity each read can reach ----
+  // What an access rule is measured against (accessuse.js): a retrieve over
+  // an association from an object in hand, or from the database with or
+  // without an XPath. A flow body spells the field "XpathConstraint".
+  t.ok(JSON.stringify(flow.activity.retrieves) === JSON.stringify([{ entity: 'Sales.Order', over: 'association', xpath: null }]),
+    'a retrieve over an association says so: ' + JSON.stringify(flow.activity.retrieves));
+  const sweep = v1.microflows.filter(function (f) { return f.qualifiedName === 'Sales.SweepOrders'; })[0];
+  t.ok(JSON.stringify(sweep.activity.retrieves) === JSON.stringify([{ entity: 'Sales.Order', over: 'database', xpath: '[Sales.Order_Customer/Sales.Customer/Age > 18]' }]),
+    'and a database retrieve keeps its XPath, exactly: ' + JSON.stringify(sweep.activity.retrieves));
+
+  // ---- where a page's data comes from ----
+  const overview = v1.pages.filter(function (p) { return p.qualifiedName === 'Sales.Order_Overview'; })[0];
+  t.ok(JSON.stringify(overview.dataSources) === JSON.stringify([
+    { kind: 'database', entity: 'Sales.Order', path: [], xpath: null, widget: 'allOrders' },
+    { kind: 'database', entity: 'Sales.Customer', path: [], xpath: '[Age >= 18]', widget: 'adults' },
+    { kind: 'context', entity: 'Sales.Order', path: [], xpath: null, widget: 'theOrder' }
+  ]), 'a page names where its lists come from: the database with no XPath, and a pluggable widget with one, trimmed and found one level down inside its property value: ' + JSON.stringify(overview.dataSources));
+  // What the page lets a person change — what a write, create or delete
+  // right is measured against.
+  t.ok(JSON.stringify(overview.edits) === JSON.stringify(['Sales.Order.Number']),
+    'an input that edits is collected, one set to Editable: Never is not: ' + JSON.stringify(overview.edits));
+  t.ok(JSON.stringify(overview.creates) === JSON.stringify(['Sales.Customer']) && JSON.stringify(overview.deletes) === JSON.stringify(['Sales.Order']),
+    'a New button names what it creates, and a Delete button inside a data view deletes that data view’s object: ' +
+    JSON.stringify({ creates: overview.creates, deletes: overview.deletes }));
+  t.ok(JSON.stringify(flow.activity.writes) === JSON.stringify({ 'Sales.Order': ['Number'] }),
+    'and a flow records the attributes its create and change actions set: ' + JSON.stringify(flow.activity.writes));
+  t.ok(JSON.stringify(overview.snippets) === JSON.stringify(['Sales.OrderLines']) &&
+    JSON.stringify(overview.flowRefs) === JSON.stringify([]),
+    'the snippet it places is named, so what the snippet reads counts for this page: ' + JSON.stringify(overview.snippets));
+  t.ok(JSON.stringify(overview.mentions) === JSON.stringify(['Sales.Customer', 'Sales.Order']),
+    'and every entity its widgets name is collected: ' + JSON.stringify(overview.mentions));
+  const lines = (v1.snippets || []).filter(function (s) { return s.qualifiedName === 'Sales.OrderLines'; })[0];
+  t.ok(!!lines && JSON.stringify(lines.dataSources) === JSON.stringify([
+    { kind: 'association', entity: 'Sales.Customer', path: ['Sales.Order_Customer'], xpath: null, widget: 'customerOfOrder' }
+  ]), 'a snippet is read the same way: a data view over an association from the object in context, with the path it follows: ' + JSON.stringify(lines && lines.dataSources));
+  // ---- what a page LOOKS LIKE: its widgets, in order, with what each is about ----
+  const st = overview.structure || {};
+  const top = (st.regions && st.regions[0] && st.regions[0].widgets) || [];
+  t.ok(st.layout === null && st.regions.length === 1 && st.regions[0].name === 'Page' && st.widgets === 12,
+    'a page is read down to its widgets: a page with no layout is one region, and every widget is counted: ' + JSON.stringify({ layout: st.layout, regions: (st.regions || []).map(function (r) { return r.name; }), widgets: st.widgets }));
+  t.ok(JSON.stringify(top.map(function (w) { return w.kind; })) === JSON.stringify(['button', 'listview', 'datalist', 'snippet', 'input', 'input', 'button', 'dataview']),
+    'each widget has a kind, in the order the page places them: ' + JSON.stringify(top.map(function (w) { return w.kind; })));
+  t.ok(JSON.stringify(top[0].actions) === JSON.stringify([{ kind: 'page', page: 'Sales.CreateOrder', on: 'click' }]) &&
+    JSON.stringify(top[6].actions) === JSON.stringify([{ kind: 'create', entity: 'Sales.Customer', page: null, on: 'click' }]),
+    'a button says what it does — the page it opens, the object it creates: ' + JSON.stringify([top[0].actions, top[6].actions]));
+  t.ok(JSON.stringify(top[1].source) === JSON.stringify({ kind: 'database', entity: 'Sales.Order' }) &&
+    JSON.stringify(top[2].source) === JSON.stringify({ kind: 'database', entity: 'Sales.Customer', xpath: '[Age >= 18]' }),
+    'a list says where its rows come from, a pluggable one too, even without its type definition: ' + JSON.stringify([top[1].source, top[2].source]));
+  t.ok(top[3].snippet === 'Sales.OrderLines' && top[4].attribute === 'Sales.Order.Number' && !top[4].readOnly &&
+    top[5].attribute === 'Sales.Customer.Name' && top[5].readOnly === true,
+    'a snippet is named where it sits, and an input carries the attribute it is bound to and whether it is read-only: ' + JSON.stringify(top.slice(3, 6)));
+  t.ok(top[7].source && top[7].source.kind === 'context' && top[7].widgets && top[7].widgets[0].kind === 'button' &&
+    top[7].widgets[0].actions[0].kind === 'delete',
+    'a data view holds its own widgets: the Delete button inside it is under it, not beside it: ' + JSON.stringify(top[7]));
+  // Shown or editable only on a condition: the condition itself, not a flag — an expression, the module
+  // roles, an input's editability expression — which the AI pack writes out (test 48).
+  const inView = top[7].widgets || [], cancel = inView[1] || {}, panel = inView[2] || {}, auditNo = (panel.widgets || [])[0] || {};
+  t.ok(cancel.caption === 'Cancel order' && JSON.stringify(cancel.visible) === JSON.stringify({ expression: '$currentObject/Number != empty' }) &&
+    JSON.stringify(panel.visible) === JSON.stringify({ roles: ['Sales.Auditor'] }) && panel.kind === 'container' &&
+    auditNo.caption === 'Order number' && !auditNo.readOnly &&
+    JSON.stringify(auditNo.editableIf) === JSON.stringify({ expression: "$currentObject/Number = empty or startsWith($currentObject/Number, 'DRAFT')" }),
+    'a widget shown on an expression or for some module roles, and an input editable on an expression, carry the condition: ' + JSON.stringify(inView.slice(1)));
+  const lineTop = lines && lines.structure && lines.structure.regions[0].widgets[0];
+  t.ok(!!lineTop && lineTop.kind === 'dataview' && JSON.stringify(lineTop.source) === JSON.stringify({ kind: 'association', entity: 'Sales.Customer', path: ['Sales.Order_Customer'] }),
+    'and a snippet is read the same way, so a page that places it can draw it in place: ' + JSON.stringify(lineTop));
+  t.ok(v2.model.snippets && JSON.stringify(v2.model.snippets) === JSON.stringify(v1.snippets) &&
+    JSON.stringify(v2.model.pages) === JSON.stringify(v1.pages),
+    'and a v2 project, one file per document, reads to exactly the same thing');
+
+  // ---- the project's Security screen ----
+  const sec = v1.security;
+  t.ok(!!sec && sec.level === 'CheckEverything',
+    'the security level is read — it decides whether everything else MxScout shows about roles is enforced at all: ' + (sec && sec.level));
+  t.ok(sec.guestAccess === true && sec.guestUserRole === 'Guest',
+    'anonymous access, and which role a visitor who has not signed in gets: ' + JSON.stringify([sec.guestAccess, sec.guestUserRole]));
+  t.ok(sec.strictMode === false && sec.strictPageUrlCheck === true,
+    'strict mode and the page URL check come through as the two separate settings they are');
+  t.ok(!!sec.passwordPolicy && sec.passwordPolicy.minimumLength === 6 &&
+    sec.passwordPolicy.requireDigit === true && sec.passwordPolicy.requireSymbol === false,
+    'the password policy is read field by field: ' + JSON.stringify(sec.passwordPolicy));
+  t.ok(sec.adminUserName === 'MxAdmin' && sec.adminUserRole === 'User',
+    'the administrator account is named: ' + JSON.stringify([sec.adminUserName, sec.adminUserRole]));
+
+  // ---- secrets are JUDGED, and the judgement is all that survives ----
+  // The fixture's passwords are "abc" (admin), "letmein" and "Xk7#pQ2mL9vT"
+  // (demo users). Each is read in the Worker, measured against this project's
+  // own policy, and dropped — the verdict travels on, the password does not.
+  t.ok(sec.adminPassword && sec.adminPassword.set === true && sec.adminPassword.length === 3,
+    'the admin password is judged, and its LENGTH is kept because the length is the finding: ' + JSON.stringify(sec.adminPassword));
+  t.ok(JSON.stringify(sec.adminPassword.failsPolicy) === JSON.stringify([
+    'shorter than the 6 characters this project requires', 'no digit, which this project requires']),
+    'against the project’s OWN policy, every rule it breaks — an app demanding six characters of its users whose admin account has three is saying something no external standard would catch');
+
+  const weak = sec.demoUsers.filter(function (u) { return u.userName === 'demo_user'; })[0];
+  const strong = sec.demoUsers.filter(function (u) { return u.userName === 'demo_strong'; })[0];
+  t.ok(weak && weak.password.common === true && weak.password.failsPolicy.length === 1,
+    'a password that needs no cracking is marked as that, separately from what the policy says: ' + JSON.stringify(weak && weak.password));
+  t.ok(strong && strong.password.set === true && strong.password.length === null &&
+    !strong.password.failsPolicy.length && !strong.password.common,
+    'and a password that passes leaves nothing behind but "set" — not even its length, which is only kept where it is itself the finding: ' + JSON.stringify(strong && strong.password));
+
+  const serialized = JSON.stringify(v1);
+  t.ok(serialized.indexOf('abc') === -1 && serialized.indexOf('letmein') === -1 &&
+    serialized.indexOf('Xk7#pQ2mL9vT') === -1,
+    'and NO password value reaches the model — nothing to leak into the browser’s database, a package or a report');
+  t.ok(Object.keys(sec.adminPassword).sort().join(',') === 'common,failsPolicy,length,sameAsUserName,set',
+    'the verdict has no field a password could hide in: ' + Object.keys(sec.adminPassword).sort().join(','));
+
+  // ---- user roles carry what they can hand out ----
+  const owner = v1.userRoles.filter(function (r) { return r.name === 'Owner'; })[0];
+  const guest = v1.userRoles.filter(function (r) { return r.name === 'Guest'; })[0];
+  t.ok(!!owner && owner.manageAllRoles === true, 'a role that can assign every other role says so');
+  t.ok(!!guest && guest.manageAllRoles === false && guest.moduleRoles.length === 0,
+    'and a role that unlocks nothing comes through as unlocking nothing, not as missing');
+
+  // ---- module roles, from the module rather than from the rules ----
+  t.ok(v1.moduleRoles.length === 2 &&
+    JSON.stringify(v1.moduleRoles.map(function (r) { return r.qualifiedName; })) ===
+    JSON.stringify(['Sales.Auditor', 'Sales.User']),
+    'every role a module declares is read, including one no access rule mentions: ' +
+    JSON.stringify(v1.moduleRoles.map(function (r) { return r.qualifiedName; })));
+  t.ok(v1.moduleRoles[0].description === 'Reads everything, changes nothing.',
+    'with the one line of text in which somebody said what the role is for: ' + v1.moduleRoles[0].description);
+
+  // ---- errors are loud, not silent ----
+  const noUnitTable = await mx.evaluate(`(async function () {
+    try {
+      // A well-formed but empty SQLite file has no Unit table at all: an
+      // empty sqlite_master leaf page (page 1) and nothing else.
+      var empty = new Uint8Array(512);
+      empty.set([0x53,0x51,0x4c,0x69,0x74,0x65,0x20,0x66,0x6f,0x72,0x6d,0x61,0x74,0x20,0x33,0x00]); // 'SQLite format 3\\0'
+      empty[16] = 0x02; empty[17] = 0x00; // page size 512
+      empty[20] = 0; // reserved space
+      empty[100] = 0x0d; // leaf table b-tree page, 0 cells (rest already zero)
+      await window.MxMpr.buildModel({ mprBytes: empty.buffer, readContentsFile: function () { return Promise.resolve(null); } });
+      return null;
+    } catch (e) { return e.message; }
+  })()`);
+  t.ok(/No table named "Unit"/.test(noUnitTable), 'a .mpr-shaped file with no Unit table fails loudly, not silently: ' + noUnitTable);
+
+  // ---- a rule's default member access covers its ASSOCIATIONS too ----
+  // In Studio Pro an association is a member of the entity like an attribute
+  // is, so a rule whose DefaultMemberAccessRights is Read grants read on every
+  // association the entity OWNS unless it says otherwise. That expansion runs
+  // over the finished model (an association is only known once every module is
+  // read), which is why it is its own exported step — and why it can be tested
+  // here on a plain model instead of on another binary fixture.
+  const defaults = await mx.evaluate(`(function () {
+    var model = {
+      entities: [
+        { qualifiedName: 'Sales.Order', accessRules: [
+          { moduleRole: 'Sales.User', defaultAccess: 'r', attrAccess: {}, assocAccess: { Order_Note: 'none', Order_Line: 'rw' } },
+          { moduleRole: 'Sales.Admin', defaultAccess: null, attrAccess: {}, assocAccess: {} }
+        ] },
+        { qualifiedName: 'Sales.Customer', accessRules: [
+          { moduleRole: 'Sales.User', defaultAccess: 'rw', attrAccess: {}, assocAccess: {} }
+        ] }
+      ],
+      associations: [
+        { name: 'Order_Setting', owner: 'Sales.Order', other: 'Admin.Setting' },
+        { name: 'Order_Note', owner: 'Sales.Order', other: 'Sales.Note' },
+        { name: 'Order_Line', owner: 'Sales.Order', other: 'Sales.Line' },
+        { name: 'Order_Customer', owner: 'Sales.Order', other: 'Sales.Customer' }
+      ]
+    };
+    window.MxMpr.applyAssociationDefaults(model);
+    return JSON.stringify({
+      user: model.entities[0].accessRules[0].assocAccess,
+      admin: model.entities[0].accessRules[1].assocAccess,
+      customer: model.entities[1].accessRules[0].assocAccess
+    });
+  })()`);
+  const d = JSON.parse(defaults);
+  t.ok(d.user.Order_Setting === 'r' && d.user.Order_Customer === 'r',
+    'the rule’s default reaches the associations it said nothing about: ' + defaults);
+  t.ok(d.user.Order_Note === 'none', 'an explicit denial is not overwritten by the default');
+  t.ok(d.user.Order_Line === 'rw', 'and neither is an explicit grant');
+  t.ok(Object.keys(d.admin).length === 0, 'a rule with no default gains nothing');
+  t.ok(Object.keys(d.customer).length === 0,
+    'and the default only reaches associations the entity OWNS — Sales.Customer owns none');
+
+  await mx.close();
+};

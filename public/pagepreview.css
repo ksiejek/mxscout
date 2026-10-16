@@ -1,0 +1,142 @@
+/* A page drawn the way Studio Pro's page editor draws it (pagepreview.js).
+   Colours from tokens.css only, so it follows the theme. */
+
+.pp { --pp-cond: var(--p2); font-size: 13px; line-height: 1.45; color: var(--ink); }
+
+/* the layout: a pop-up window, or a page with a header and a menu */
+.pp-popup { margin: 0 auto; background: var(--panel); border-radius: 10px; box-shadow: 0 0 0 1px var(--line), var(--box-shadow); overflow: hidden; }
+.pp-popup-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 18px; border-bottom: 1px solid var(--line); font-size: 16px; font-weight: 600; }
+.pp-x { color: var(--muted); font-size: 20px; line-height: 1; }
+.pp-popup-body { padding: 18px; }
+.pp-pageframe { width: 1100px; margin: 0 auto; background: var(--panel); border-radius: 8px; box-shadow: 0 0 0 1px var(--line), var(--box-shadow); overflow: hidden; min-height: 480px; }
+.pp-pf-head { display: flex; align-items: center; height: 30px; padding: 0 14px; background: var(--raised); border-bottom: 1px dashed var(--line2); }
+.pp-pf-layout { font-size: 11px; color: var(--muted); letter-spacing: .02em; }
+.pp-pf-body { padding: 22px; }
+
+/* every widget */
+.pp-w { position: relative; border-radius: 4px; }
+.pp-w.pp-hov { outline: 1px dashed var(--acc); outline-offset: 2px; cursor: pointer; }
+.pp-w.pp-sel { outline: 2px solid var(--acc); outline-offset: 2px; }
+.pp-w.pp-sel::before { content: attr(data-kind); position: absolute; left: -2px; top: -21px; z-index: 3; padding: 1px 7px; border-radius: 4px 4px 0 0;
+  background: var(--acc); color: var(--acc-on); font-size: 10.5px; font-weight: 600; white-space: nowrap; pointer-events: none; }
+.pp-stack { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pp-ghost { opacity: .32; pointer-events: none; }
+.pp-item.pp-ghost { max-height: 96px; overflow: hidden; -webkit-mask-image: linear-gradient(black 40%, transparent); mask-image: linear-gradient(black 40%, transparent); }
+.pp-cmark { position: absolute; top: -7px; right: -7px; z-index: 2; width: 18px; height: 18px; border-radius: 9px; background: var(--p2bg);
+  border: 1px solid color-mix(in srgb, var(--pp-cond) 55%, transparent); color: var(--pp-cond); display: grid; place-items: center; }
+.pp-cmark svg { width: 11px; height: 11px; }
+
+/* layout grids and containers: spacing only, unless "Show structure" */
+.pp-row { display: flex; gap: 18px; align-items: flex-start; min-width: 0; }
+.pp-col { flex: 1 1 0; min-width: 64px; }
+.pp-cont { min-width: 0; }
+.pp-cont.clickable { cursor: pointer; }
+.pp-struct .pp-grid, .pp-struct .pp-cont { outline: 1px dashed var(--bar); outline-offset: 3px; }
+.pp-struct .pp-col { outline: 1px dashed color-mix(in srgb, var(--acc) 30%, transparent); outline-offset: 3px; }
+.pp-struct .pp-cont::after, .pp-struct .pp-grid::after { content: attr(data-name); position: absolute; right: 0; top: -14px; font: 9.5px var(--font-mono); color: var(--muted); }
+
+/* inputs, as the runtime draws them */
+.pp-fld { display: grid; grid-template-columns: 30% minmax(0, 1fr); gap: 10px; align-items: start; }
+.pp-fld.nolabel { grid-template-columns: minmax(0, 1fr); }
+.pp-lbl { padding-top: 7px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.pp-ctl { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 6px 10px; border: 1px solid var(--line2); border-radius: 5px; background: var(--panel); color: var(--muted); min-width: 0; }
+.pp-ph { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .8; }
+.pp-gl { flex: none; display: inline-flex; color: var(--muted); }
+.pp-gl svg { width: 15px; height: 15px; }
+.pp-ctl.area { min-height: 76px; align-items: flex-start; }
+.pp-fld.ro .pp-ctl { background: var(--raised); border-color: var(--line); }
+.pp-radios { display: flex; flex-wrap: wrap; gap: 6px 16px; padding-top: 7px; color: var(--ink2); }
+.pp-radio { display: inline-flex; align-items: center; gap: 6px; }
+.pp-radio i, .pp-check i { display: inline-block; width: 15px; height: 15px; border: 1.5px solid var(--edge); }
+.pp-radio i { border-radius: 8px; }
+.pp-check i { border-radius: 3px; }
+.pp-check { padding-top: 6px; }
+
+/* buttons, in Studio Pro's styles */
+.pp-btnrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 6px 14px; border-radius: 5px;
+  border: 1px solid var(--line2); background: var(--panel); color: var(--ink); font-weight: 600; white-space: nowrap; user-select: none; }
+.pp-btn.icon { padding: 6px 9px; }
+.pp-btn svg { width: 15px; height: 15px; }
+.pp-btn.primary { background: var(--acc); border-color: var(--acc); color: var(--acc-on); }
+.pp-btn.success { background: var(--ok); border-color: var(--ok); color: var(--mx-badge-ink); }
+.pp-btn.danger { background: var(--p1); border-color: var(--p1); color: var(--mx-badge-ink); }
+.pp-btn.warning { background: var(--p2); border-color: var(--p2); color: var(--mx-badge-ink); }
+.pp-btn.info { background: var(--f-db); border-color: var(--f-db); color: var(--mx-badge-ink); }
+.pp-btn.inverse { background: var(--ink2); border-color: var(--ink2); color: var(--panel); }
+.pp-btn.link { border-color: transparent; background: none; color: var(--acc-text); padding-left: 4px; padding-right: 4px; }
+
+/* text */
+.pp-txt { color: var(--ink2); overflow-wrap: anywhere; }
+.pp-tok { display: inline-block; padding: 0 5px; margin: 0 1px; border-radius: 3px; background: var(--raised); border: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 17px; }
+.pp-ttl { font-size: 20px; font-weight: 600; }
+
+/* data containers: a light frame, the entity in a chip on its edge */
+.pp-dv { border: 1px solid var(--line2); border-radius: 6px; padding: 18px 14px 14px; background: var(--panel); margin-top: 6px; }
+.pp-echip { position: absolute; top: -9px; left: 10px; z-index: 1; padding: 0 7px; border-radius: 9px; font-size: 10.5px; font-weight: 600; line-height: 17px; white-space: nowrap;
+  background: var(--f-db-bg); color: var(--mx-type); border: 1px solid color-mix(in srgb, var(--mx-type) 30%, transparent); }
+.pp-echip.np { background: var(--p2bg); color: var(--np); border-style: dashed; }
+.pp-echip.list { background: var(--raised); color: var(--ink2); border-color: var(--line2); }
+.pp-dv-foot { display: flex; justify-content: flex-end; gap: 8px; margin: 16px -14px -14px; padding: 12px 14px; border-top: 1px solid var(--line); background: var(--sunken); border-radius: 0 0 6px 6px; }
+.pp-lst { border: 1px solid var(--line); border-radius: 6px; padding: 16px 12px 10px; background: var(--panel); margin-top: 6px; }
+.pp-item { padding: 10px 6px; border-bottom: 1px solid var(--line); }
+.pp-item:last-child { border-bottom: 0; }
+.pp-tbl { width: 100%; border-collapse: collapse; }
+.pp-tbl th { text-align: left; font-weight: 600; padding: 8px 10px; border-bottom: 2px solid var(--line2); white-space: nowrap; }
+.pp-tbl td { padding: 9px 10px; border-bottom: 1px solid var(--line); }
+.pp-bar { display: block; height: 9px; border-radius: 5px; background: var(--line); }
+
+/* tabs */
+.pp-tabs { min-width: 0; }
+.pp-tabstrip { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line2); }
+.pp-tab { position: relative; padding: 9px 16px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--muted); font: inherit; font-weight: 600; cursor: pointer; }
+.pp-tab:hover { color: var(--ink); }
+.pp-tab.on { color: var(--acc-text); border-bottom-color: var(--acc); }
+.pp-tdot { display: inline-block; width: 6px; height: 6px; border-radius: 3px; background: var(--pp-cond); margin-left: 6px; vertical-align: middle; }
+.pp-tabpane { padding-top: 16px; }
+
+/* a snippet, a widget the drawing has no picture for, images, a tooltip's pop-up */
+.pp-snip { border: 1.5px dotted color-mix(in srgb, var(--f-call) 55%, transparent); border-radius: 6px; padding: 14px 10px 10px; margin-top: 6px; }
+.pp-schip { position: absolute; top: -9px; right: 10px; padding: 0 7px; border-radius: 9px; font-size: 10.5px; font-weight: 600; line-height: 17px; background: var(--f-call-bg); color: var(--f-call); }
+.pp-plug { align-self: flex-start; display: inline-flex; align-items: center; min-height: 30px; padding: 4px 10px; border: 1px dashed var(--bar); border-radius: 5px; color: var(--muted); font-size: 12px; background: var(--sunken); }
+.pp-img { align-self: flex-start; flex: none; width: 40px; height: 40px; border-radius: 20px; background: var(--raised); border: 1px solid var(--line); display: grid; place-items: center; color: var(--muted); }
+.pp-img svg { width: 18px; height: 18px; }
+.pp-img.static { width: 24px; height: 24px; border-radius: 4px; background: none; border: 0; }
+.pp-callout { position: relative; margin-top: 8px; padding: 12px 10px 10px; border: 1px solid var(--line2); border-radius: 8px; background: var(--panel); box-shadow: var(--box-shadow); }
+.pp-callout-tag { position: absolute; top: -9px; left: 10px; padding: 0 6px; font-size: 10.5px; line-height: 16px; color: var(--muted); background: var(--panel); border: 1px solid var(--line2); border-radius: 9px; }
+
+/* the details of what was clicked */
+.pp-detail { display: flex; flex-direction: column; }
+.pp-back { align-self: flex-start; border: 0; background: none; padding: 0; margin-bottom: 14px; color: var(--acc-text); font-size: 12px; font-weight: 600; cursor: pointer; }
+.pp-kind { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--acc-text); }
+.pp-title { margin: 4px 0 14px; font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
+.pp-dl { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 10px 12px; margin: 0; }
+.pp-dl dt { color: var(--muted); font-size: 12px; padding-top: 1px; }
+.pp-dl dd { margin: 0; overflow-wrap: anywhere; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.pp-sub { color: var(--muted); font-size: 12px; }
+.pp-pill { display: inline-flex; align-items: center; padding: 0 8px; border-radius: 10px; font-size: 12px; font-weight: 600; line-height: 20px; border: 0; }
+.pp-pill.ent { background: var(--f-db-bg); color: var(--mx-type); }
+.pp-pill.ent.np { background: var(--p2bg); color: var(--np); }
+.pp-pill.mf { background: var(--f-db-bg); color: var(--f-db); }
+.pp-pill.nf { background: var(--okbg); color: var(--ok); }
+.pp-pill.pg { background: var(--f-call-bg); color: var(--f-call); }
+.pp-pill.cond { background: var(--p2bg); color: var(--p2); }
+.pp-go { cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
+.pp-go:hover { text-decoration: underline; }
+.pp-dev { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 12px; }
+.pp-dev summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 600; }
+.pp-dev-grid { margin-top: 10px; display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 6px 12px; font-size: 12px; }
+.pp-dev-grid span { color: var(--muted); }
+.pp-dev-grid code { font: 11.5px var(--font-mono); color: var(--ink2); overflow-wrap: anywhere; white-space: pre-wrap; }
+
+/* where flowview.js places it: the drawing in the middle, the details beside it */
+.pp-hint { margin: 0; color: var(--ink2); font-size: 12.5px; }
+
+/* in the Pages screen (flowview.js pageDetail): the drawing the whole middle, zoomed with CSS zoom and
+   scrolled both ways, as the Modeler's is; what the page is and what was clicked in a window over it */
+.pp-board .pp-strip { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; align-items: flex-start; border-bottom: 1px solid var(--line); }
+.pp-stage { flex: none; margin: 0 auto; padding: 28px 24px 40px; }
+.pp-structure { display: inline-flex; align-items: center; gap: 6px; flex: none; color: var(--ink2); cursor: pointer; user-select: none; }
+.mf-step-win.pp-win { width: min(560px, 100%); }
+.pp-win-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 16px 20px 20px; }
+.pp-win .pp-back { display: none; }

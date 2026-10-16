@@ -1,0 +1,61 @@
+{
+  "v": 1, "project": "Riverside", "app": "Riverside", "mendix": "11.12.5", "generatedAt": "2026-10-13T08:00:00.000Z",
+  "drawings": true,
+  "kpi": { "modules": 2, "marketplace": 1, "microflows": 8, "nanoflows": 1, "pages": 1, "entities": 3, "roles": 2, "scheduled": 1, "scheduledOn": 0, "services": 1 },
+  "modules": [
+    { "name": "Sales", "marketplace": false, "microflows": ["microflow:Sales.ACT_CreateOrder", "microflow:Sales.SUB_Total", "microflow:Sales.GET_Orders", "microflow:Sales.BCo_Order", "microflow:Sales.Big"], "nanoflows": ["nanoflow:Sales.NF_Refresh"], "pages": ["page:Sales.Order_Edit"], "entities": ["Sales.Order", "Sales.Line"] },
+    { "name": "Admin", "marketplace": false, "microflows": ["microflow:Admin.SCH_Nightly", "microflow:Admin.ACT_Setting"], "nanoflows": [], "pages": [], "entities": ["Admin.Setting"] },
+    { "name": "Atlas_Core", "marketplace": true, "microflows": ["microflow:Atlas_Core.Util"], "nanoflows": [], "pages": [], "entities": [] }
+  ],
+  "flows": {
+    "microflow:Sales.ACT_CreateOrder": { "kind": "microflow", "module": "Sales", "name": "ACT_CreateOrder", "qn": "Sales.ACT_CreateOrder", "path": ["Orders"], "roles": ["Sales.User"], "entityAccess": false, "steps": 12, "calls": [{ "kind": "microflow", "qn": "Sales.SUB_Total" }, { "kind": "microflow", "qn": "Admin.ACT_Setting" }, { "kind": "microflow", "qn": "Atlas_Core.Util" }], "calledBy": [], "desc": "Tworzy zamówienie.",
+      "workflow": [{ "t": "start" }, { "t": "step", "no": 2, "card": { "fam": "obj", "kick": "Create object", "title": "$Order", "off": false } }, { "t": "split", "no": 3, "branches": [{ "label": "true", "body": [{ "t": "step", "no": 4, "card": { "fam": "save", "kick": "Commit object(s)", "title": "$Order", "off": true } }] }, { "label": "false", "body": [] }] }, { "t": "end", "kind": "end" }] },
+    "microflow:Sales.SUB_Total": { "kind": "microflow", "module": "Sales", "name": "SUB_Total", "qn": "Sales.SUB_Total", "path": [], "roles": [], "entityAccess": true, "steps": 5, "calls": [], "calledBy": [{ "kind": "microflow", "qn": "Sales.ACT_CreateOrder" }] },
+    "microflow:Sales.GET_Orders": { "kind": "microflow", "module": "Sales", "name": "GET_Orders", "qn": "Sales.GET_Orders", "path": ["Data", "Get"], "roles": [], "entityAccess": false, "steps": 4, "calls": [], "calledBy": [], "desc": "Pobiera zamówienia." },
+    "microflow:Sales.BCo_Order": { "kind": "microflow", "module": "Sales", "name": "BCo_Order", "qn": "Sales.BCo_Order", "path": [], "roles": [], "entityAccess": false, "steps": 3, "calls": [], "calledBy": [{ "kind": "microflow", "qn": "Admin.SCH_Nightly" }] },
+    "microflow:Sales.Big": { "kind": "microflow", "module": "Sales", "name": "Big", "qn": "Sales.Big", "path": [], "roles": ["Sales.User"], "entityAccess": true, "steps": 31, "calls": [], "calledBy": [] },
+    "nanoflow:Sales.NF_Refresh": { "kind": "nanoflow", "module": "Sales", "name": "NF_Refresh", "qn": "Sales.NF_Refresh", "path": [], "roles": ["Sales.User"], "steps": 2, "calls": [], "calledBy": [] },
+    "page:Sales.Order_Edit": { "kind": "page", "module": "Sales", "name": "Order_Edit", "qn": "Sales.Order_Edit", "path": [], "roles": ["Sales.User"], "calledBy": [{ "kind": "microflow", "qn": "Sales.ACT_CreateOrder" }] },
+    "microflow:Admin.SCH_Nightly": { "kind": "microflow", "module": "Admin", "name": "SCH_Nightly", "qn": "Admin.SCH_Nightly", "path": [], "roles": [], "entityAccess": false, "steps": 27, "calls": [{ "kind": "microflow", "qn": "Sales.BCo_Order" }, { "kind": "microflow", "qn": "Sales.GET_Orders" }], "calledBy": [] },
+    "microflow:Admin.ACT_Setting": { "kind": "microflow", "module": "Admin", "name": "ACT_Setting", "qn": "Admin.ACT_Setting", "path": [], "roles": ["Admin.Admin"], "entityAccess": true, "steps": 6, "calls": [], "calledBy": [{ "kind": "microflow", "qn": "Sales.ACT_CreateOrder" }] },
+    "microflow:Atlas_Core.Util": { "kind": "microflow", "module": "Atlas_Core", "name": "Util", "qn": "Atlas_Core.Util", "path": [], "roles": [], "entityAccess": false, "steps": 2, "calls": [], "calledBy": [] }
+  },
+  "entities": {
+    "Sales.Order": { "qn": "Sales.Order", "module": "Sales", "name": "Order", "persistable": true, "generalization": null, "view": false, "doc": null, "desc": "Zamówienie klienta.",
+      "attributes": [{ "name": "Number", "type": "String(20)" }, { "name": "Note", "type": "String" }, { "name": "Status", "type": "Enumeration Sales.Status" }, { "name": "Total", "type": "Decimal" }, { "name": "Paid", "type": "Boolean" }, { "name": "When", "type": "DateTime" }],
+      "access": [{ "role": "Sales.User", "userRoles": ["User"], "read": 6, "write": 2, "create": true, "del": false, "xpath": "[Sales.Order_Owner = '[%CurrentUser%]' or Sales.Order_Team/Sales.Team/Name='X']" }] },
+    "Sales.Line": { "qn": "Sales.Line", "module": "Sales", "name": "Line", "persistable": false, "generalization": null, "view": false, "doc": "A line.", "attributes": [{ "name": "Qty", "type": "Integer" }], "access": [] },
+    "Admin.Setting": { "qn": "Admin.Setting", "module": "Admin", "name": "Setting", "persistable": true, "generalization": null, "view": false, "doc": null, "attributes": [{ "name": "Key", "type": "String(50)" }], "access": [] }
+  },
+  "associations": [
+    { "name": "Line_Order", "module": "Sales", "from": "Sales.Line", "to": "Sales.Order", "many": false },
+    { "name": "Order_Setting", "module": "Sales", "from": "Sales.Order", "to": "Admin.Setting", "many": true },
+    { "name": "Setting_Order", "module": "Admin", "from": "Admin.Setting", "to": "Sales.Order", "many": false }
+  ],
+  "roles": [{ "name": "User", "moduleRoles": ["Sales.User", "Atlas_Core.Reader"] }, { "name": "Admin", "moduleRoles": ["Admin.Admin", "Sales.User", "System.Administrator"] }],
+  "scheduled": [{ "name": "Admin.Nightly", "microflow": "Admin.SCH_Nightly", "schedule": "every day", "enabled": false }],
+  "services": [{ "name": "Sales.orders", "kind": "REST" }],
+  "quality": { "unreached": ["microflow:Sales.GET_Orders", "microflow:Sales.Big"], "disabled": 1 },
+  "ai": {
+    "app": { "summary": "Riverside obsługuje zamówienia.", "story": "Dłuższa historia.", "audience": "Sprzedawcy i administratorzy.",
+      "processes": [{ "name": "Złożenie zamówienia", "summary": "Klient składa zamówienie.", "story": null, "steps": ["Wybór", "Zapis"], "flows": ["Sales.ACT_CreateOrder", "Sales.SUB_Total", "Sales.Nowhere"] },
+        { "name": "Nocne przeliczenie", "summary": "Co noc.", "story": "Opis.", "steps": [], "flows": ["Admin.SCH_Nightly"] }] },
+    "by": "test", "written": null, "language": "pl",
+    "risks": [
+      { "level": "P2", "title": "Każdy z rolą User może usunąć zamówienie", "detail": "Brak sprawdzenia.", "fix": "Dodaj regułę.", "where": ["Sales.ACT_CreateOrder", "Sales.Order"] },
+      { "level": "P1", "title": "Hasło zapisane jawnym tekstem w ustawieniach", "detail": "Hasło.", "fix": "Przenieś.", "where": ["Admin.Setting"] },
+      { "level": "P3", "title": "Literówka w komunikacie błędu", "detail": "Drobne.", "fix": "Popraw.", "where": ["Sales.Order_Edit"] },
+      { "level": "P3", "title": "Harmonogram wyłączony w modelu, a przetwarzanie na nim polega", "detail": "x", "fix": "y", "where": ["Admin.SCH_Nightly"] },
+      { "level": "P2", "title": "Zamówienia zapisywane pojedynczo w pętli", "detail": "x", "fix": "y", "where": ["Sales.Big"] },
+      { "level": "P2", "title": "Coś zupełnie innego", "detail": "x", "fix": "y", "where": ["Sales.SUB_Total"], "theme": "naming" },
+      { "level": "P3", "title": "Nieznane miejsce", "detail": "x", "fix": "y", "where": ["Sales.Nowhere"] }
+    ],
+    "context": {
+      "where": [["Numeracja zamówień", "Sales.ACT_CreateOrder i Admin.Setting"], ["Uprawnienia", "Moduł Sales"]],
+      "conventions": [["ACT_", "akcja z przycisku w Sales."], ["BCo_<Entity> / BDe_<Entity>", "zdarzenia encji"], ["SUB_ (helper)", "pomocnicze"], ["Prefix with spaces", "nie liczy się"], ["*_Order", "kończy się na Order"]],
+      "pitfalls": ["Zapis poza Sales.ACT_CreateOrder pomija numer.", "Admin.Setting trzyma klucze; Atlas_Core.Util jest z Marketplace."]
+    },
+    "c4": { "context": { "nodes": [{ "id": "a", "name": "Riverside" }], "links": [] }, "containers": { "nodes": [], "links": [] }, "open": ["Gdzie jest kolejka?"] },
+    "modules": { "Sales": { "summary": "Sprzedaż.", "story": "Więcej.", "notes": [{ "title": "Statusy", "text": "Opis", "items": ["a", "b"], "table": { "columns": ["K", "V"], "rows": [["1", "2"]] } }] }, "Admin": { "summary": "Ustawienia.", "story": null, "notes": null } }
+  }
+}

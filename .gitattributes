@@ -1,0 +1,42 @@
+# Line endings: the same bytes on every machine, whatever core.autocrlf says.
+#
+# The audit of 2026-10-15 ran the suite on Windows with core.autocrlf=true and the
+# checkout came out in CRLF: the team guide no longer matched what its script makes
+# (nor the hash its policy names), install.sh would not run in bash, and the tests
+# that read Markdown examples found none. Nobody should have to change a global git
+# setting to get a working copy, so the rules live here, with the repository.
+#
+# Everything git sees as text is stored with LF and checked out with LF, on Windows
+# too. MxScout's own readers accept CRLF anyway (a Mendix project's mxscout/ folder
+# lives in someone else's repository, under their settings, and a clone made before
+# this file existed keeps its CRLF until it is checked out again), so this is about
+# the files below being byte for byte what the suite, the page hashes and the shells
+# expect, not about MxScout needing LF to read anything.
+* text=auto eol=lf
+
+*.js       text eol=lf
+*.json     text eol=lf
+*.md       text eol=lf
+*.html     text eol=lf
+*.css      text eol=lf
+*.txt      text eol=lf
+*.yml      text eol=lf
+*.sh       text eol=lf
+*.command  text eol=lf
+# PowerShell 5.1 and 7 both read a script with LF endings as it is.
+*.ps1      text eol=lf
+LICENSE    text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# The files cmd.exe reads (MxScout.cmd, Update.cmd), and cmd.exe wants CRLF.
+*.cmd      text eol=crlf
+
+# Never converted.
+*.woff2    binary
+*.db       binary
+*.mpr      binary
+*.mxscout  binary
+*.zip      binary
+*.png      binary
+*.ico      binary

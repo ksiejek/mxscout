@@ -1,0 +1,211 @@
+/* MxScout design tokens: every colour, shadow, radius and font the app and
+ * the exported documentation use. Copied from the approved redesign (Claude
+ * Design canvas, 2026-10-12); components read colours ONLY from these
+ * variables, never a literal.
+ *
+ * <html> carries data-theme="dark|light" (the theme in effect, never "auto":
+ * app.js and docs-view.js resolve the system's choice before setting it) and
+ * data-accent="cobalt|lime|vermilion" (cobalt when absent). Accent tints are
+ * color-mix(in srgb, var(--acc) N%, transparent).
+ *
+ * The two fonts ship in public/fonts/ under the SIL Open Font License (the
+ * licence texts sit next to them) and load from this server only. The
+ * exported documentation carries them inside the file, as data: URIs. */
+
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("fonts/InstrumentSans.woff2") format("woff2");
+  font-weight: 400 700;
+  font-stretch: 75% 100%;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --chrome: #0A0B0D;
+  --panel: #111215;
+  --raised: #16171B;
+  --sunken: #0D0E11;
+  --canvas: #0D0E11;
+  --dot: #25282E;
+  --line: #22252B;
+  --line2: #30333A;
+  --bar: #3A3E46;
+  --edge: #3A3E46;
+  --ink: #EDEEF0;
+  --ink2: #BCC1C9;
+  --muted: #8B919B;
+  --seg-on: #24272D;
+  --box: #15161A;
+  --box-head: #1B1D22;
+  --p1: #FF6B6B;
+  --p1bg: #2E1618;
+  --p2: #F5A524;
+  --p2bg: #2B2112;
+  --p3: #A0A6B0;
+  --p3bg: #22252B;
+  --p3bar: #4A4F58;
+  --ok: #4ADE80;
+  --okbg: #112417;
+  --np: #F59E0B;
+  --pers: #8EA0B8;
+  --view-c: #4ADE80;
+  --f-var: #9AA4B2;
+  --f-var-bg: #1D2027;
+  --f-db: #5BB4F0;
+  --f-db-bg: #122331;
+  --f-obj: #F09A52;
+  --f-obj-bg: #2A1D12;
+  --f-save: #4CC38A;
+  --f-save-bg: #11261C;
+  --f-call: #B194F5;
+  --f-call-bg: #211B32;
+  --f-dec: #E0C25B;
+  --f-dec-bg: #28230F;
+  --mx-canvas: #1C1D20;
+  --mx-act-bg: #23264A;
+  --mx-act-border: #5468E8;
+  --mx-dec-bg: #3D3216;
+  --mx-dec-border: #D3A632;
+  --mx-merge-bg: #3B1A1F;
+  --mx-merge-border: #D04A55;
+  --mx-start-bg: #1C3A26;
+  --mx-start-border: #3FB463;
+  --mx-end-border: #E0525A;
+  --mx-param-fill: #3D3216;
+  --mx-param-border: #D3A632;
+  --mx-type: #7FA2FF;
+  --mx-line: #8D939D;
+  --mx-used-bg: #2F6FEB;
+  --mx-usage-bg: #1E8E4E;
+  --mx-badge-ink: #FFFFFF;
+  --seg-shadow: none;
+  --shadow: 0 0 0 1px rgba(0,0,0,0.25), 0 24px 60px -30px rgba(0,0,0,0.7);
+  --box-shadow: 0 1px 0 rgba(0,0,0,0.4), 0 10px 24px -14px rgba(0,0,0,0.8);
+  --scrim: rgba(4,5,7,0.66);
+  --dlg-shadow: 0 40px 120px -20px rgba(0,0,0,0.85);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --chrome: #ECEDF0;
+  --panel: #FFFFFF;
+  --raised: #F6F7F9;
+  --sunken: #FAFAFB;
+  --canvas: #F7F8FA;
+  --dot: #DCDFE4;
+  --line: #E4E6EA;
+  --line2: #D3D7DD;
+  --bar: #CDD1D8;
+  --edge: #AEB4BD;
+  --ink: #121417;
+  --ink2: #3B4048;
+  --muted: #646A74;
+  --seg-on: #FFFFFF;
+  --box: #FFFFFF;
+  --box-head: #F6F7F9;
+  --p1: #C9302C;
+  --p1bg: #FCE9E8;
+  --p2: #B45309;
+  --p2bg: #FBF0E2;
+  --p3: #5B616B;
+  --p3bg: #EEF0F3;
+  --p3bar: #B9BEC6;
+  --ok: #15803D;
+  --okbg: #E7F6EC;
+  --np: #C2710C;
+  --pers: #59647A;
+  --view-c: #15803D;
+  --f-var: #5B6472;
+  --f-var-bg: #EEF0F3;
+  --f-db: #1A74B0;
+  --f-db-bg: #E6F1FA;
+  --f-obj: #B4580A;
+  --f-obj-bg: #FBEFE3;
+  --f-save: #16804F;
+  --f-save-bg: #E5F4EC;
+  --f-call: #6D4BC9;
+  --f-call-bg: #F0EBFB;
+  --f-dec: #8A6A00;
+  --f-dec-bg: #FBF5DD;
+  --mx-canvas: #FFFFFF;
+  --mx-act-bg: #EEF1FF;
+  --mx-act-border: #4357D8;
+  --mx-dec-bg: #FFF5D9;
+  --mx-dec-border: #B8860B;
+  --mx-merge-bg: #FDE9EB;
+  --mx-merge-border: #C23B47;
+  --mx-start-bg: #E3F5E8;
+  --mx-start-border: #2E9E52;
+  --mx-end-border: #CF3F48;
+  --mx-param-fill: #FFF5D9;
+  --mx-param-border: #B8860B;
+  --mx-type: #2457D6;
+  --mx-line: #7A808A;
+  --mx-used-bg: #2F6FEB;
+  --mx-usage-bg: #1E8E4E;
+  --mx-badge-ink: #FFFFFF;
+  --seg-shadow: 0 1px 2px rgba(16,18,23,0.10);
+  --shadow: 0 1px 2px rgba(16,18,23,0.05), 0 18px 40px -28px rgba(16,18,23,0.25);
+  --box-shadow: 0 1px 2px rgba(16,18,23,0.06), 0 8px 20px -14px rgba(16,18,23,0.25);
+  --scrim: rgba(16,18,23,0.36);
+  --dlg-shadow: 0 40px 100px -30px rgba(16,18,23,0.45);
+}
+
+[data-theme="dark"],
+[data-theme="dark"][data-accent="cobalt"] {
+  --acc: #3461F5;
+  --acc-on: #FFFFFF;
+  --acc-text: #8EA8FF;
+  --acc-soft: #172038;
+}
+[data-theme="dark"][data-accent="lime"] {
+  --acc: #C5F04A;
+  --acc-on: #0A0B0D;
+  --acc-text: #C5F04A;
+  --acc-soft: #1C2310;
+}
+[data-theme="dark"][data-accent="vermilion"] {
+  --acc: #FF6A3D;
+  --acc-on: #0A0B0D;
+  --acc-text: #FF8C66;
+  --acc-soft: #2A1812;
+}
+[data-theme="light"],
+[data-theme="light"][data-accent="cobalt"] {
+  --acc: #2A57F0;
+  --acc-on: #FFFFFF;
+  --acc-text: #2148D0;
+  --acc-soft: #EBF0FF;
+}
+[data-theme="light"][data-accent="lime"] {
+  --acc: #C5F04A;
+  --acc-on: #121417;
+  --acc-text: #121417;
+  --acc-soft: #EDF8C9;
+}
+[data-theme="light"][data-accent="vermilion"] {
+  --acc: #D63F12;
+  --acc-on: #FFFFFF;
+  --acc-text: #C23A0F;
+  --acc-soft: #FFEEE7;
+}
+
+:root {
+  --font-ui: "Instrument Sans", "Segoe UI", system-ui, sans-serif;   /* bundle woff2 400/500/600/700 locally (SIL OFL) */
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;  /* bundle woff2 400/500/600 locally (SIL OFL) */
+  --radius-xs: 4px; --radius-s: 7px; --radius-m: 9px; --radius-l: 12px; --radius-xl: 16px;
+  --panel-inset: 8px;   /* main panel margin from the window edge (top/right/bottom) */
+  --sidebar-w: 248px;   /* report sidebar; the app sidebar is 232px */
+}
+@media (min-width: 2000px) {
+  :root { --sidebar-w: 280px; }   /* wide layout, designed at 2560 px; app sidebar 256px */
+}
